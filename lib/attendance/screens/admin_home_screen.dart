@@ -99,48 +99,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       });
     }
   }
-  // Future<void> _fetchLeaveData() async {
-  //   setState(() => isLeaveLoading = true);
-  //   try {
-  //     final dataFromService = await EmployeeService.fetchLeaveStatusSummary();
-
-  //     // Filter out cancelled leaves (just in case)
-  //     final filteredData = dataFromService
-  //         .where((e) => e.status.toLowerCase() != "cancelled")
-  //         .toList();
-
-  //     // Map status → Color
-  //     setState(() {
-  //       leaveChartData = filteredData;
-  //       isLeaveLoading = false;
-  //     });
-
-  //     setState(() {
-  //       leaveChartData = leaveMappedData;
-  //       isLeaveLoading = false;
-  //     });
-  //   } catch (e) {
-  //     debugPrint("Error fetching leave chart: $e");
-  //     setState(() {
-  //       leaveChartData = [];
-  //       isLeaveLoading = false;
-  //     });
-  //   }
-  // }
-
-  // Assign colors based on leave status
-  // Color _getColorForStatus(String status) {
-  //   switch (status.toLowerCase()) {
-  //     case 'approved':
-  //       return Colors.green;
-  //     case 'pending':
-  //       return Colors.amber;
-  //     case 'rejected':
-  //       return Colors.red;
-  //     default:
-  //       return Colors.grey;
-  //   }
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -488,71 +446,6 @@ class _DashboardCard extends StatelessWidget {
     );
   }
 }
-// class _DashboardCard extends StatelessWidget {
-//   final String title;
-//   final String value;
-//   final IconData icon;
-//   final List<Color> gradient;
-
-//   const _DashboardCard({
-//     required this.title,
-//     required this.value,
-//     required this.icon,
-//     required this.gradient,
-//   });
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final bool isDesktop = MediaQuery.of(context).size.width >= 900;
-
-//     return LayoutBuilder(
-//       builder: (context, constraints) {
-//         return Container(
-//           decoration: BoxDecoration(
-//             gradient: LinearGradient(colors: gradient),
-//             borderRadius: BorderRadius.circular(16),
-//           ),
-//           padding: EdgeInsets.all(isDesktop ? 16 : 12),
-//           child: Column(
-//             mainAxisAlignment: MainAxisAlignment.center,
-//             mainAxisSize: MainAxisSize.min,
-//             children: [
-//               Icon(icon, color: Colors.white, size: isDesktop ? 32 : 26),
-//               SizedBox(height: isDesktop ? 12 : 6),
-//               Flexible(
-//                 child: FittedBox(
-//                   fit: BoxFit.scaleDown,
-//                   child: Text(
-//                     value,
-//                     style: TextStyle(
-//                       fontSize: isDesktop ? 22 : 18,
-//                       fontWeight: FontWeight.bold,
-//                       color: Colors.white,
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//               const SizedBox(height: 4),
-//               Flexible(
-//                 child: FittedBox(
-//                   fit: BoxFit.scaleDown,
-//                   child: Text(
-//                     title,
-//                     textAlign: TextAlign.center,
-//                     style: TextStyle(
-//                       color: Colors.white70,
-//                       fontSize: isDesktop ? 16 : 14,
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-//         );
-//       },
-//     );
-//   }
-// }
 
 /// RECENT ACTIVITY CARD
 class _ActivityCard extends StatelessWidget {
@@ -592,4 +485,3 @@ class _ActivityCard extends StatelessWidget {
     );
   }
 }
- 
