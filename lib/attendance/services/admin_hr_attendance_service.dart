@@ -23,7 +23,7 @@ import 'package:http/http.dart' as http;
 import '../models/admin_hr_attendance_model.dart';
 
 class AdminHrAttendanceService {
-  static const String baseUrl = "http://192.168.29.216:3000";
+  static const String baseUrl = "http://192.168.29.103:3000";
 
   static Future<List<AttendanceAdminModel>> fetchAttendance(String date) async {
     final url = "$baseUrl/attendance/by-date-detail?date=$date";

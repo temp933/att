@@ -117,7 +117,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
 
   PreferredSizeWidget _buildAppBar() {
     return PreferredSize(
-      preferredSize: const Size.fromHeight(108),
+      preferredSize: const Size.fromHeight(130), // 🔥 increased height
       child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -135,9 +135,10 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
         ),
         child: SafeArea(
           child: Column(
+            mainAxisSize: MainAxisSize.min, // 🔥 important
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                padding: const EdgeInsets.fromLTRB(20, 10, 12, 0),
                 child: Row(
                   children: [
                     Container(
@@ -154,62 +155,170 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Leave Approval',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.2,
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min, // 🔥 prevents overflow
+                        children: const [
+                          Text(
+                            'Leave Approval',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        Text(
-                          'Review & manage leave requests',
-                          style: TextStyle(fontSize: 11, color: Colors.white60),
-                        ),
-                      ],
+                          Text(
+                            'Review & manage leave requests',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white60,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      color: Colors.white,
+                      onPressed: _loadPending,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                indicatorPadding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 4,
-                ),
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white54,
-                labelStyle: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13,
-                ),
-                tabs: [
-                  _buildTab(
-                    Icons.pending_actions_outlined,
-                    'Pending',
-                    _pendingLeaves.length,
+
+              const SizedBox(height: 6),
+
+              /// 🔥 Prevent TabBar overflow
+              Flexible(
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  _buildTab(Icons.history_rounded, 'History', null),
-                ],
+                  indicatorPadding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white54,
+                  tabs: [
+                    _buildTab(
+                      Icons.pending_actions_outlined,
+                      'Pending',
+                      _pendingLeaves.length,
+                    ),
+                    _buildTab(Icons.history_rounded, 'History', null),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
     );
-  }
+  } // PreferredSizeWidget _buildAppBar() {
+  //   return PreferredSize(
+  //     preferredSize: const Size.fromHeight(108),
+  //     child: Container(
+  //       decoration: const BoxDecoration(
+  //         gradient: LinearGradient(
+  //           colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A), Color(0xFF1e1b4b)],
+  //           begin: Alignment.topLeft,
+  //           end: Alignment.bottomRight,
+  //         ),
+  //         boxShadow: [
+  //           BoxShadow(
+  //             color: Color(0x401A56DB),
+  //             blurRadius: 14,
+  //             offset: Offset(0, 4),
+  //           ),
+  //         ],
+  //       ),
+  //       child: SafeArea(
+  //         child: Column(
+  //           children: [
+  //             Padding(
+  //               padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+  //               child: Row(
+  //                 children: [
+  //                   Container(
+  //                     width: 36,
+  //                     height: 36,
+  //                     decoration: BoxDecoration(
+  //                       color: Colors.white.withOpacity(0.15),
+  //                       borderRadius: BorderRadius.circular(10),
+  //                     ),
+  //                     child: const Icon(
+  //                       Icons.approval_rounded,
+  //                       color: Colors.white,
+  //                       size: 19,
+  //                     ),
+  //                   ),
+  //                   const SizedBox(width: 12),
+  //                   const Column(
+  //                     crossAxisAlignment: CrossAxisAlignment.start,
+  //                     children: [
+  //                       Text(
+  //                         'Leave Approval',
+  //                         style: TextStyle(
+  //                           fontSize: 17,
+  //                           fontWeight: FontWeight.w700,
+  //                           color: Colors.white,
+  //                           letterSpacing: 0.2,
+  //                         ),
+  //                       ),
+  //                       Text(
+  //                         'Review & manage leave requests',
+  //                         style: TextStyle(fontSize: 11, color: Colors.white60),
+  //                       ),
+
+  //                     ],
+
+  //                   ),
+  //                 ],
+  //               ),
+
+  //             ),
+  //             const SizedBox(height: 8),
+  //             TabBar(
+  //               controller: _tabController,
+  //               indicator: BoxDecoration(
+  //                 borderRadius: BorderRadius.circular(8),
+  //               ),
+  //               indicatorPadding: const EdgeInsets.symmetric(
+  //                 horizontal: 4,
+  //                 vertical: 4,
+  //               ),
+  //               labelColor: Colors.white,
+  //               unselectedLabelColor: Colors.white54,
+  //               labelStyle: const TextStyle(
+  //                 fontWeight: FontWeight.w600,
+  //                 fontSize: 13,
+  //               ),
+  //               unselectedLabelStyle: const TextStyle(
+  //                 fontWeight: FontWeight.w500,
+  //                 fontSize: 13,
+  //               ),
+  //               tabs: [
+  //                 _buildTab(
+  //                   Icons.pending_actions_outlined,
+  //                   'Pending',
+  //                   _pendingLeaves.length,
+  //                 ),
+  //                 _buildTab(Icons.history_rounded, 'History', null),
+  //               ],
+  //             ),
+  //           ],
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Tab _buildTab(IconData icon, String label, int? count) => Tab(
     child: Row(

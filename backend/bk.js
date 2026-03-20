@@ -4046,7 +4046,10 @@ app.post("/login", handleLogin);
 async function handleLogin(req, res) {
   try {
     const loginId = req.body.login_id || req.body.username;
-    const { password, device_id } = req.body;
+    const { password, device_id, device_info } = req.body;
+    // device_info shape sent from Flutter:
+    // { brand, model, os, osVersion, deviceId }
+    // e.g. { brand: "Samsung", model: "Galaxy S23", os: "Android", osVersion: "14", deviceId: "abc123" }
 
     if (!loginId || !password)
       return res
@@ -4065,11 +4068,27 @@ async function handleLogin(req, res) {
     if (!user)
       return res.status(401).json({ message: "Invalid username or password" });
 
-    // ✅ Block if already logged in on a DIFFERENT device
+    // Build a stable device fingerprint for comparison
+    // Use deviceId if provided, else fall back to old plain device_id string
+    const incomingDeviceId = device_info?.deviceId || device_id || "unknown";
+
+    // Parse existing session_device — may be JSON or legacy plain string
+    let existingDeviceId = null;
+    if (user.session_device) {
+      try {
+        const parsed = JSON.parse(user.session_device);
+        existingDeviceId = parsed.deviceId || null;
+      } catch {
+        // Legacy plain string stored before this update
+        existingDeviceId = user.session_device;
+      }
+    }
+
+    // Block if already logged in on a DIFFERENT device
     if (
       user.session_token &&
-      user.session_device &&
-      user.session_device !== (device_id || "unknown")
+      existingDeviceId &&
+      existingDeviceId !== incomingDeviceId
     ) {
       return res.status(403).json({
         message: "Already logged in on another device. Please logout first.",
@@ -4077,20 +4096,29 @@ async function handleLogin(req, res) {
       });
     }
 
-    // ✅ Generate new session token
+    // Build device JSON — rich info if provided, fallback to plain id
+    const deviceJson = device_info
+      ? JSON.stringify({
+          brand: device_info.brand || "Unknown",
+          model: device_info.model || "Unknown",
+          os: device_info.os || "Unknown",
+          osVersion: device_info.osVersion || "",
+          deviceId: incomingDeviceId,
+        })
+      : incomingDeviceId; // legacy fallback — plain string
+
     const crypto = require("crypto");
     const sessionToken = crypto.randomUUID();
 
-    // ✅ Update ALL columns: session_token, session_device, device_logged_in, last_login_at
     await dbRun(
-      `UPDATE login_master 
-       SET session_token = ?,
-           session_device = ?,
+      `UPDATE login_master
+       SET session_token    = ?,
+           session_device   = ?,
            device_logged_in = 1,
-           last_login_at = NOW(),
-           updated_at = NOW()
+           last_login_at    = NOW(),
+           updated_at       = NOW()
        WHERE login_id = ?`,
-      [sessionToken, device_id || "unknown", user.login_id],
+      [sessionToken, deviceJson, user.login_id],
     );
 
     res.json({
@@ -4103,6 +4131,46 @@ async function handleLogin(req, res) {
   } catch (err) {
     console.error("[Login]", err);
     res.status(500).json({ message: "Server error" });
+  }
+}
+
+function parseDeviceInfo(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      brand: parsed.brand || "Unknown",
+      model: parsed.model || "Unknown",
+      os: parsed.os || "Unknown",
+      osVersion: parsed.osVersion || "",
+      deviceId: parsed.deviceId || raw,
+      // Human-readable display string e.g. "Samsung Galaxy S23 • Android 14"
+      displayName:
+        [
+          parsed.brand && parsed.brand !== "Unknown" ? parsed.brand : null,
+          parsed.model && parsed.model !== "Unknown" ? parsed.model : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || "Unknown Device",
+      osDisplay:
+        [
+          parsed.os && parsed.os !== "Unknown" ? parsed.os : null,
+          parsed.osVersion || null,
+        ]
+          .filter(Boolean)
+          .join(" ") || null,
+    };
+  } catch {
+    // Legacy plain string (old logins before device_info update)
+    return {
+      brand: "Unknown",
+      model: raw,
+      os: "Unknown",
+      osVersion: "",
+      deviceId: raw,
+      displayName: raw,
+      osDisplay: null,
+    };
   }
 }
 // ─── LOGOUT ──────────────────────────────────────────────────────────────────
@@ -5836,6 +5904,251 @@ app.post("/admin/approve-request", async (req, res) => {
   } catch (err) {
     console.error("[approve-request]", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── ADMIN SESSION MANAGEMENT ROUTES ─────────────────────────────────────────
+// Add these routes to your existing server.js
+// Requires: dbGet, dbAll, dbRun already defined in your server
+
+// ─── GET ALL ACTIVE SESSIONS (Admin view) ────────────────────────────────────
+// Returns every login_master row with session info + employee name
+app.get("/admin/sessions", async (req, res) => {
+  try {
+    const rows = await dbAll(
+      `SELECT
+          lm.login_id,
+          lm.emp_id,
+          lm.username,
+          lm.role_id,
+          r.role_name,
+          CONCAT(
+            e.first_name,
+            CASE WHEN e.mid_name IS NOT NULL AND e.mid_name != ''
+              THEN CONCAT(' ', e.mid_name) ELSE '' END,
+            ' ', e.last_name
+          ) AS full_name,
+          lm.status,
+          lm.session_token,
+          lm.session_device,
+          lm.device_logged_in,
+          lm.last_login_at,
+          lm.updated_at
+       FROM login_master lm
+       LEFT JOIN employee_master e ON lm.emp_id = e.emp_id
+       LEFT JOIN role_master r ON lm.role_id = r.role_id
+       WHERE lm.status = 'Active'
+       ORDER BY lm.last_login_at DESC`,
+    );
+
+    const sessions = rows.map((row) => {
+      const deviceInfo = parseDeviceInfo(row.session_device);
+      return {
+        loginId: row.login_id,
+        empId: row.emp_id,
+        username: row.username,
+        fullName: row.full_name?.trim() || row.username,
+        roleName: row.role_name || "-",
+        isLoggedIn: row.device_logged_in === 1 && row.session_token !== null,
+        deviceInfo, // full structured object
+        lastLoginAt: row.last_login_at || null,
+        updatedAt: row.updated_at || null,
+      };
+    });
+
+    res.json({ success: true, data: sessions });
+  } catch (err) {
+    console.error("[admin/sessions]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── FORCE LOGOUT SINGLE ────────────────────────────────────────────────────
+app.post("/admin/sessions/:loginId/force-logout", async (req, res) => {
+  const { loginId } = req.params;
+  if (!loginId || isNaN(parseInt(loginId)))
+    return res.status(400).json({ success: false, message: "Invalid loginId" });
+
+  try {
+    const user = await dbGet(
+      `SELECT login_id, emp_id, username, device_logged_in, session_token
+       FROM login_master WHERE login_id = ? AND status = 'Active'`,
+      [loginId],
+    );
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found or inactive" });
+
+    if (!user.session_token || user.device_logged_in === 0)
+      return res.json({
+        success: true,
+        message: "User is not currently logged in",
+      });
+
+    await dbRun(
+      `UPDATE login_master
+       SET session_token    = NULL,
+           session_device   = NULL,
+           device_logged_in = 0,
+           updated_at       = NOW()
+       WHERE login_id = ?`,
+      [loginId],
+    );
+
+    res.json({
+      success: true,
+      message: `${user.username} has been logged out`,
+    });
+  } catch (err) {
+    console.error("[force-logout]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── FORCE LOGOUT ALL FOR EMPLOYEE ─────────────────────────────────────────
+app.post("/admin/sessions/force-logout-all/:empId", async (req, res) => {
+  const { empId } = req.params;
+  if (!empId || isNaN(parseInt(empId)))
+    return res.status(400).json({ success: false, message: "Invalid empId" });
+
+  try {
+    const result = await dbRun(
+      `UPDATE login_master
+       SET session_token    = NULL,
+           session_device   = NULL,
+           device_logged_in = 0,
+           updated_at       = NOW()
+       WHERE emp_id = ? AND status = 'Active'`,
+      [empId],
+    );
+    res.json({
+      success: true,
+      message: `All sessions cleared (${result.affectedRows} account(s))`,
+      affectedRows: result.affectedRows,
+    });
+  } catch (err) {
+    console.error("[force-logout-all]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── FORCE LOGOUT A SINGLE USER (Admin) ─────────────────────────────────────
+// Clears session_token, session_device, device_logged_in for a specific login_id
+app.post("/admin/sessions/:loginId/force-logout", async (req, res) => {
+  const { loginId } = req.params;
+
+  if (!loginId || isNaN(parseInt(loginId))) {
+    return res.status(400).json({ success: false, message: "Invalid loginId" });
+  }
+
+  try {
+    // Verify the user exists and is Active
+    const user = await dbGet(
+      `SELECT login_id, emp_id, username, device_logged_in
+       FROM login_master
+       WHERE login_id = ? AND status = 'Active'`,
+      [loginId],
+    );
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found or inactive" });
+    }
+
+    if (user.device_logged_in === 0 || user.session_token === null) {
+      return res
+        .status(200)
+        .json({ success: true, message: "User is not currently logged in" });
+    }
+
+    // Clear the session — user can now log in again from any device
+    await dbRun(
+      `UPDATE login_master
+       SET session_token    = NULL,
+           session_device   = NULL,
+           device_logged_in = 0,
+           updated_at       = NOW()
+       WHERE login_id = ?`,
+      [loginId],
+    );
+
+    res.json({
+      success: true,
+      message: `User ${user.username} has been logged out successfully`,
+    });
+  } catch (err) {
+    console.error("[force-logout]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── FORCE LOGOUT ALL SESSIONS FOR AN EMPLOYEE ───────────────────────────────
+// An employee may have multiple login accounts (edge case) — clear all
+app.post("/admin/sessions/force-logout-all/:empId", async (req, res) => {
+  const { empId } = req.params;
+
+  if (!empId || isNaN(parseInt(empId))) {
+    return res.status(400).json({ success: false, message: "Invalid empId" });
+  }
+
+  try {
+    const result = await dbRun(
+      `UPDATE login_master
+       SET session_token    = NULL,
+           session_device   = NULL,
+           device_logged_in = 0,
+           updated_at       = NOW()
+       WHERE emp_id = ? AND status = 'Active'`,
+      [empId],
+    );
+
+    res.json({
+      success: true,
+      message: `All sessions cleared (${result.affectedRows} account(s) updated)`,
+      affectedRows: result.affectedRows,
+    });
+  } catch (err) {
+    console.error("[force-logout-all]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET SESSION STATUS FOR A SINGLE USER ────────────────────────────────────
+// Used by admin to check if a specific user is currently logged in
+app.get("/admin/sessions/:loginId/status", async (req, res) => {
+  const { loginId } = req.params;
+
+  try {
+    const row = await dbGet(
+      `SELECT
+          lm.login_id,
+          lm.username,
+          lm.session_device,
+          lm.device_logged_in,
+          lm.last_login_at,
+          CONCAT(e.first_name, ' ', e.last_name) AS full_name
+       FROM login_master lm
+       LEFT JOIN employee_master e ON lm.emp_id = e.emp_id
+       WHERE lm.login_id = ?`,
+      [loginId],
+    );
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Not found" });
+    }
+
+    res.json({
+      success: true,
+      loginId: row.login_id,
+      fullName: row.full_name?.trim() || row.username,
+      isLoggedIn: row.device_logged_in === 1,
+      sessionDevice: row.session_device || null,
+      lastLoginAt: row.last_login_at || null,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 // ─── START SERVER ─────────────────────────────────────────────────────────────

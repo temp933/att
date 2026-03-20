@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 // Change this one constant to point at your server.
 // For local development: use your LAN IP.
 // For production:        use your public domain / HTTPS URL.
-const String kServerBaseUrl = "http://192.168.29.216:3000";
+const String kServerBaseUrl = "http://192.168.29.103:3000";
 
 class ApiService {
   static const String baseUrl = kServerBaseUrl;

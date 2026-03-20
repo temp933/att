@@ -700,7 +700,7 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
   List<Map<String, dynamic>> sites = [];
   bool loading = true;
 
-  final String baseUrl = "http://192.168.29.216:3000/sites";
+  final String baseUrl = "http://192.168.29.103:3000/sites";
 
   @override
   void initState() {

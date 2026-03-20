@@ -77,7 +77,7 @@ class AuthService {
   static const _keyToken = 'session_token'; // ✅ NEW
   static const _keyDeviceId = 'device_id'; // ✅ NEW
 
-  static const String _baseUrl = 'http://192.168.29.216:3000';
+  static const String _baseUrl = 'http://192.168.29.103:3000';
 
   // ─── Get a stable unique device ID ─────────────────────────────────────────
   static Future<String> getDeviceId() async {

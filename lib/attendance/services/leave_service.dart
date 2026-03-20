@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/leavemodel.dart';
 
 class LeaveService {
-  final String baseUrl = "http://192.168.29.216:3000";
+  final String baseUrl = "http://192.168.29.103:3000";
 
   // ── Pending leaves (old endpoint — keep for backward compat) ─────────────
   Future<List<LeaveModel>> getPendingLeaves() async {

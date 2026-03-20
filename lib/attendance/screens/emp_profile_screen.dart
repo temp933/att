@@ -57,7 +57,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
       errorMessage = null;
     });
     try {
-      const base = 'http://192.168.29.216:3000';
+      const base = 'http://192.168.29.103:3000';
       final results = await Future.wait([
         http.get(Uri.parse('$base/employees/${widget.employeeId}')),
         http.get(Uri.parse('$base/employees/${widget.employeeId}/education')),
@@ -330,6 +330,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
       'Employee Profile',
       style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
     ),
+     actions: [
+      IconButton(
+        tooltip: 'Refresh',
+        icon: const Icon(Icons.refresh_rounded),
+        onPressed: _fetchAll,
+      ),
+      const SizedBox(width: 4),
+    ],
   );
 
   Widget _buildError(Responsive r) => Center(

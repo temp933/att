@@ -4,7 +4,7 @@ import '../models/employee.dart';
 import 'package:flutter/material.dart';
 import '../models/employee_work_status.dart';
 
-const String baseUrl = 'http://192.168.29.216:3000';
+const String baseUrl = 'http://192.168.29.103:3000';
 
 class EmployeeService {
   // ================= LOGIN =================
@@ -71,6 +71,10 @@ class EmployeeService {
             break;
           case 'Rejected':
             color = Colors.red;
+            break;
+
+          case 'Not_Recommended_By_TL':
+            color = const Color.fromARGB(167, 228, 10, 10);
             break;
           default:
             color = Colors.grey;
@@ -427,6 +431,5 @@ class LeaveData {
   final String status;
   final int count;
   final Color color;
-
-  LeaveData(this.status, this.count, this.color);
+  const LeaveData(this.status, this.count, this.color); // ✅ const
 }

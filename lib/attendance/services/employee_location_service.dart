@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/employee_location_model.dart';
 
 class EmployeeLocationService {
-  final String baseUrl = "http://192.168.29.216:3000";
+  final String baseUrl = "http://192.168.29.103:3000";
 
   Future<EmployeeLocationAssignment?> fetchEmployeeLocation(int empId) async {
     final response = await http.get(

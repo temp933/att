@@ -54,6 +54,8 @@ dependencies:
   path_provider: ^2.1.2
   open_file: ^3.3.2
   file_saver: ^0.2.14
+  url_launcher: ^6.3.0
+  
 
   # ✅ Upgraded — old version doesn't support desiredAccuracy + timeLimit together
   geolocator: ^12.0.0

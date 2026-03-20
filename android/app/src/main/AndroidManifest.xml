@@ -22,12 +22,6 @@
             android:permission="android.permission.FOREGROUND_SERVICE"
             android:exported="false" />
 
-        <!--
-            stopWithTask="false"  → service SURVIVES when app is swiped from recents
-            foregroundServiceType → required for background location on Android 10+
-            tools:replace         → overrides the plugin's own manifest values
-                                    (without this the merger throws a conflict error)
-        -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
@@ -61,10 +55,20 @@
 
     </application>
 
+    <!-- Each intent needs its own <intent> block -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https"
+                android:host="www.google.com" />
         </intent>
     </queries>
 

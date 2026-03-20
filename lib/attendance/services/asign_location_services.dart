@@ -79,7 +79,7 @@ import 'package:http/http.dart' as http;
 import '../models/asign_location.dart';
 
 class AssignLocationService {
-  static const String baseUrl = "http://192.168.29.216:3000";
+  static const String baseUrl = "http://192.168.29.103:3000";
 
   // ── ASSIGN LOCATION ────────────────────────────────────────────────────────
   /// Assigns a location to one or more employees.
