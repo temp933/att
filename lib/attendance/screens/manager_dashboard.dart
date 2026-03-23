@@ -1,34 +1,35 @@
 import '../services/auth_service.dart';
-import '../services/attendance_state.dart';
-import '../services/site_cache.dart';
+import 'package:provider/provider.dart';
+import '../providers/attendance_provider.dart';
 import 'package:flutter/material.dart';
-import 'emp_home_screen.dart';
+import 'hr_home_screen.dart';
 import 'emp_attendance_screen.dart';
-import 'emp_leave_screen.dart';
-import 'emp_profile_screen.dart';
+import 'admin_hr_attendance_screen.dart';
+import 'admin_hr_leave_approval.dart';
 import 'login_screen.dart';
 import '../services/location_services.dart';
-import 'emp_work_location.dart';
+import 'emp_profile_screen.dart';
+import 'manager_leave.dart';
 
-class DashboardScreen extends StatefulWidget {
-  final int loginId;
-  final int empId;
+class ManagerDashboardScreen extends StatefulWidget {
+  final String employeeId;
   final String role;
   final int initialIndex;
+  final int loginId;
 
-  const DashboardScreen({
+  const ManagerDashboardScreen({
     super.key,
     required this.loginId,
-    required this.empId,
+    required this.employeeId,
     required this.role,
     this.initialIndex = 0,
   });
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  State<ManagerDashboardScreen> createState() => _ManagerDashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   // ── Design tokens (identical to AdminDashboardScreen) ──────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _surface = Color(0xFFF0F4FF);
@@ -43,7 +44,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isExpanded = false;
   late LocationService locationService;
 
-  static const int notificationIndex = 9;
+  static const int notificationIndex = 12; // kept for future use
 
   @override
   void initState() {
@@ -52,42 +53,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     locationService = LocationService();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
   // ── Pages ──────────────────────────────────────────────────────────────────
   List<Widget> get pages => [
-    EmployeeHomeScreen(empId: widget.empId, role: widget.role), // 0
-    AttendanceScreen(employeeId: widget.empId), // 1
-    LeaveScreen(employeeId: widget.empId.toString()), // 2
-    // TasksScreen(), // 3
-    EmployeeAssignmentsScreen(empId: widget.empId), // 4
-    // TravelOnsiteScreen(), // 5
-    // ExpenseScreen(), // 6
-    // ReportsScreen(), // 7
-    EmployeeProfileScreen(employeeId: widget.empId.toString()), // 8
-    const Center(
-      child: Text(
-        'Notifications',
-        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-      ),
-    ), // 9
+    HrHomeScreen(employeeId: widget.employeeId), // 0
+    AttendanceScreen(employeeId: int.parse(widget.employeeId)), // 1
+    AdminHrAttendanceScreen(), // 2
+    LeaveApprovalScreen(loginId: widget.loginId), // 3
+    MGLeaveScreen(employeeId: widget.employeeId), // 4
+    EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 5
   ];
 
   // ── Titles ─────────────────────────────────────────────────────────────────
   final List<String> titles = [
     'Dashboard',
-    'Attendance',
-    'Leave Management',
-    // 'My Tasks',
-    'Work Location',
-    // 'Travel / Onsite',
-    // 'Expenses',
-    // 'Reports',
+    'Mark Attendance',
+    'Manage Attendance',
+    'Leave Approval',
+    'Apply Leave',
     'Profile',
-    'Notifications',
   ];
 
   // ── Rail items ─────────────────────────────────────────────────────────────
@@ -100,38 +83,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     NavigationRailDestination(
       icon: Icon(Icons.fingerprint_outlined),
       selectedIcon: Icon(Icons.fingerprint),
-      label: Text('Attendance'),
+      label: Text('Mark Attendance'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.event_note_outlined),
-      selectedIcon: Icon(Icons.event_note),
-      label: Text('Leave'),
+      icon: Icon(Icons.fact_check_outlined),
+      selectedIcon: Icon(Icons.fact_check),
+      label: Text('Manage Attendance'),
     ),
-    // NavigationRailDestination(
-    //   icon: Icon(Icons.task_outlined),
-    //   selectedIcon: Icon(Icons.task),
-    //   label: Text('Tasks'),
-    // ),
     NavigationRailDestination(
-      icon: Icon(Icons.place_outlined),
-      selectedIcon: Icon(Icons.place),
-      label: Text('Work Location'),
+      icon: Icon(Icons.event_busy_outlined),
+      selectedIcon: Icon(Icons.event_busy),
+      label: Text('Leave Approval'),
     ),
-    // NavigationRailDestination(
-    //   icon: Icon(Icons.directions_car_outlined),
-    //   selectedIcon: Icon(Icons.directions_car),
-    //   label: Text('Travel'),
-    // ),
-    // NavigationRailDestination(
-    //   icon: Icon(Icons.receipt_long_outlined),
-    //   selectedIcon: Icon(Icons.receipt_long),
-    //   label: Text('Expenses'),
-    // ),
-    // NavigationRailDestination(
-    //   icon: Icon(Icons.analytics_outlined),
-    //   selectedIcon: Icon(Icons.analytics),
-    //   label: Text('Reports'),
-    // ),
+    NavigationRailDestination(
+      icon: Icon(Icons.beach_access_outlined),
+      selectedIcon: Icon(Icons.beach_access),
+      label: Text('Apply Leave'),
+    ),
     NavigationRailDestination(
       icon: Icon(Icons.person_outline),
       selectedIcon: Icon(Icons.person),
@@ -144,41 +112,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 900;
 
-    return Scaffold(
-      backgroundColor: _surface,
-      appBar: AppBar(
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          titles[selectedIndex],
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 17,
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-            onPressed: () => setState(() => selectedIndex = notificationIndex),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      drawer: isDesktop ? null : _mobileDrawer(),
-      body: Row(
-        children: [
-          if (isDesktop) _desktopSidebar(),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: pages[selectedIndex],
+    return ChangeNotifierProvider(
+      create: (_) => AttendanceProvider(empId: widget.employeeId),
+      child: Scaffold(
+        backgroundColor: _surface,
+        appBar: AppBar(
+          backgroundColor: _primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: Text(
+            titles[selectedIndex],
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
             ),
           ),
-        ],
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              tooltip: 'Notifications',
+              icon: const Icon(
+                Icons.notifications_outlined,
+                color: Colors.white,
+              ),
+              onPressed: () =>
+                  setState(() => selectedIndex = notificationIndex),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        drawer: isDesktop ? null : _mobileDrawer(),
+        body: Row(
+          children: [
+            if (isDesktop) _desktopSidebar(),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: pages[selectedIndex],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -210,12 +185,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
-                          const Icon(Icons.badge_rounded, size: 24),
+                          const Icon(
+                            Icons.supervised_user_circle_rounded,
+                            size: 24,
+                          ),
                           if (wide) ...[
                             const SizedBox(width: 10),
                             const Expanded(
                               child: Text(
-                                'Employee',
+                                'TL Panel',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -443,14 +421,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   child: const Icon(
-                    Icons.badge_rounded,
+                    Icons.supervised_user_circle_rounded,
                     color: Colors.white,
                     size: 26,
                   ),
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Employee',
+                  'TL Panel',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -554,30 +532,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> _logout() async {
-    // 1. Stop site cache auto-sync timer
     try {
-      SiteCache.dispose();
+      await AuthService.clearSession();
     } catch (_) {}
-
-    // 2. Reset AttendanceState singleton in memory
-    try {
-      final state = AttendanceState.instance;
-      state.dayStatus = DayStatus.notStarted;
-      state.startTime = null;
-      state.endTime = null;
-      state.isInsideSite = false;
-      state.currentSiteName = '';
-    } catch (_) {}
-
-    // 3. Call server logout + clear SharedPreferences
-    await AuthService.clearSession();
-
-    // 4. Navigate to login
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 }

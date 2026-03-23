@@ -305,8 +305,8 @@ class _AdminDepartmentsScreenState extends State<AdminDepartmentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Department Management"),
-        backgroundColor: Colors.teal,
+        title: const Text(" "),
+        backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: addDeptDialog,

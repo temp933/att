@@ -5,15 +5,15 @@ import 'responsive_utils.dart';
 
 const String baseUrl = 'http://192.168.29.103:3000';
 
-class LeaveScreen extends StatefulWidget {
+class MGLeaveScreen extends StatefulWidget {
   final String employeeId;
-  const LeaveScreen({super.key, required this.employeeId});
+  const MGLeaveScreen({super.key, required this.employeeId});
 
   @override
-  State<LeaveScreen> createState() => _LeaveScreenState();
+  State<MGLeaveScreen> createState() => _MGLeaveScreenState();
 }
 
-class _LeaveScreenState extends State<LeaveScreen>
+class _MGLeaveScreenState extends State<MGLeaveScreen>
     with SingleTickerProviderStateMixin {
   List<dynamic> leaves = [];
   bool loading = true;

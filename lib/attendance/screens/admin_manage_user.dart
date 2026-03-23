@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../models/employee.dart';
 import '../services/employee_service.dart';
 import 'package:http/http.dart' as http;
@@ -9,7 +8,7 @@ import 'shared_form_widgets.dart';
 const String baseUrl = 'http://192.168.29.103:3000';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Design Tokens — identical to EmployeeProfileScreen & LeaveApprovalScreen
+// Design Tokens
 // ─────────────────────────────────────────────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
 const Color _accent = Color(0xFF0E9F6E);
@@ -22,6 +21,116 @@ const Color _textDark = Color(0xFF0F172A);
 const Color _textMid = Color(0xFF64748B);
 const Color _textLight = Color(0xFF94A3B8);
 const Color _border = Color(0xFFE2E8F0);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared Validators
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns an error string if the date-of-birth string fails any rule,
+/// or null if valid.
+String? validateDob(String? val) {
+  if (val == null || val.trim().isEmpty) {
+    return 'Date of Birth is required';
+  }
+  final dt = DateTime.tryParse(val.trim());
+  if (dt == null) {
+    return 'Invalid date format';
+  }
+  final today = DateTime.now();
+  final age =
+      today.year -
+      dt.year -
+      ((today.month < dt.month ||
+              (today.month == dt.month && today.day < dt.day))
+          ? 1
+          : 0);
+  if (age < 18) {
+    return 'Employee must be at least 18 years old';
+  }
+  if (age > 80) {
+    return 'Please enter a valid date of birth';
+  }
+  return null;
+}
+
+/// Date of joining must be provided and must not be in the future.
+String? validateDoj(String? val) {
+  if (val == null || val.trim().isEmpty) {
+    return 'Date of Joining is required';
+  }
+  final dt = DateTime.tryParse(val.trim());
+  if (dt == null) {
+    return 'Invalid date format';
+  }
+  if (dt.isAfter(DateTime.now())) {
+    return 'Joining date cannot be in the future';
+  }
+  return null;
+}
+
+/// Optional DOJ — only validates format / future if provided.
+String? validateDojOptional(String? val) {
+  if (val == null || val.trim().isEmpty) {
+    return null;
+  }
+  final dt = DateTime.tryParse(val.trim());
+  if (dt == null) {
+    return 'Invalid date format';
+  }
+  if (dt.isAfter(DateTime.now())) {
+    return 'Joining date cannot be in the future';
+  }
+  return null;
+}
+
+/// Date of relieving: only required when status == Relieved; must be
+/// after date-of-joining when both are provided.
+String? validateDor(String? val, String status, String dojText) {
+  if (status == 'Relieved') {
+    if (val == null || val.trim().isEmpty) {
+      return 'Required when status is Relieved';
+    }
+  }
+  if (val == null || val.trim().isEmpty) return null; // optional otherwise
+  final dt = DateTime.tryParse(val.trim());
+  if (dt == null) {
+    return 'Invalid date format';
+  }
+  if (dt.isAfter(DateTime.now())) {
+    return 'Relieving date cannot be in the future';
+  }
+  final doj = DateTime.tryParse(dojText.trim());
+  if (doj != null && dt.isBefore(doj)) {
+    return 'Relieving date must be after joining date';
+  }
+  return null;
+}
+
+/// Years of experience: 0–50.
+String? validateYoe(String? val) {
+  if (val == null || val.trim().isEmpty) {
+    return 'Years of Experience is required';
+  }
+  final n = int.tryParse(val.trim());
+  if (n == null) {
+    return 'Must be a whole number';
+  }
+  if (n < 0) {
+    return 'Cannot be negative';
+  }
+  if (n > 50) {
+    return 'Maximum 50 years';
+  }
+  return null;
+}
+
+/// Department dropdown — must be selected.
+String? validateDept(int? val) =>
+    val == null ? 'Please select a department' : null;
+
+/// Role dropdown — must be selected.
+String? validateRole(int? val) =>
+    val == null ? 'Please select a role/designation' : null;
 
 // Responsive helper
 class _Screen {
@@ -42,7 +151,6 @@ class _Screen {
   double get captionFontSize => isMobile ? 11 : 12;
 }
 
-// ── Responsive layout helpers
 Widget _row2(BuildContext ctx, Widget a, Widget b, {double sp = 12}) {
   if (_Screen(MediaQuery.of(ctx).size.width).isMobile) {
     return Column(
@@ -101,7 +209,6 @@ Widget _row3(BuildContext ctx, Widget a, Widget b, Widget c, {double sp = 12}) {
   );
 }
 
-// Shared AppBar
 PreferredSizeWidget _buildAppBar(
   String title, {
   String? subtitle,
@@ -162,7 +269,6 @@ PreferredSizeWidget _buildAppBar(
   );
 }
 
-// Shared input decoration
 InputDecoration _inputDec(String label) => InputDecoration(
   labelText: label,
   labelStyle: const TextStyle(color: _textMid, fontSize: 13),
@@ -183,7 +289,7 @@ InputDecoration _inputDec(String label) => InputDecoration(
   ),
   errorBorder: OutlineInputBorder(
     borderRadius: BorderRadius.circular(10),
-    borderSide: BorderSide(color: _red.withOpacity(0.6)),
+    borderSide: BorderSide(color: _red.withValues(alpha: 0.6)),
   ),
   focusedErrorBorder: OutlineInputBorder(
     borderRadius: BorderRadius.circular(10),
@@ -191,7 +297,6 @@ InputDecoration _inputDec(String label) => InputDecoration(
   ),
 );
 
-// _SectionCard — form section wrapper (icon-header + body)
 class _SectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -216,7 +321,7 @@ class _SectionCard extends StatelessWidget {
         border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -264,7 +369,6 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// _DetailCard — read-only info display card
 class _DetailCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -299,7 +403,7 @@ class _DetailCard extends StatelessWidget {
         border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -405,7 +509,6 @@ class _Tile {
   const _Tile(this.icon, this.label, this.value, {this.maxLines = 2});
 }
 
-// Shared state widgets
 Widget _loader() => const Center(
   child: CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
 );
@@ -419,7 +522,7 @@ Widget _errorWidget(String msg, VoidCallback retry) => Center(
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: _red.withOpacity(0.08),
+            color: _red.withValues(alpha: 0.08),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.wifi_off_rounded, color: _red, size: 28),
@@ -460,7 +563,9 @@ Widget _errorWidget(String msg, VoidCallback retry) => Center(
   ),
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
 // MANAGE USER SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 class ManageUserScreen extends StatefulWidget {
   final String roleId;
   const ManageUserScreen({super.key, required this.roleId});
@@ -501,10 +606,14 @@ class ManageUserScreenState extends State<ManageUserScreen> {
         departmentList = ['All', ...deptData.map((d) => d['name'].toString())];
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -528,7 +637,6 @@ class ManageUserScreenState extends State<ManageUserScreen> {
       backgroundColor: _surface,
       body: Column(
         children: [
-          // Search + filter bar
           Container(
             color: _card,
             padding: EdgeInsets.symmetric(
@@ -657,7 +765,7 @@ class ManageUserScreenState extends State<ManageUserScreen> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: _primary.withOpacity(0.08),
+                    color: _primary.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -690,7 +798,7 @@ class ManageUserScreenState extends State<ManageUserScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(s.pagePadding, 16, s.pagePadding, 80),
       itemCount: list.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (_, i) => _EmployeeCard(
         employee: list[i],
         screen: s,
@@ -714,23 +822,31 @@ class ManageUserScreenState extends State<ManageUserScreen> {
           ),
         ),
       );
-      if (result == true && mounted) _fetchEmployees();
+      if (result == true && mounted) {
+        _fetchEmployees();
+      }
       return;
     }
     late String id, source;
     late bool readOnly;
     if (e.adminApprove == 'PENDING') {
-      if (e.requestId == null) return;
+      if (e.requestId == null) {
+        return;
+      }
       id = e.requestId.toString();
       source = 'REQUEST';
       readOnly = true;
     } else if (e.adminApprove == 'REJECTED') {
-      if (e.requestId == null) return;
+      if (e.requestId == null) {
+        return;
+      }
       id = e.requestId.toString();
       source = 'REQUEST';
       readOnly = false;
     } else {
-      if (e.empId == 0) return;
+      if (e.empId == 0) {
+        return;
+      }
       id = e.empId.toString();
       source = 'MASTER';
       readOnly = false;
@@ -746,11 +862,15 @@ class ManageUserScreenState extends State<ManageUserScreen> {
         ),
       ),
     );
-    if (result == true && mounted) _fetchEmployees();
+    if (result == true && mounted) {
+      _fetchEmployees();
+    }
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Employee list card
+// ─────────────────────────────────────────────────────────────────────────────
 class _EmployeeCard extends StatelessWidget {
   final Employee employee;
   final _Screen screen;
@@ -782,7 +902,7 @@ class _EmployeeCard extends StatelessWidget {
             border: Border.all(color: _border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -790,7 +910,6 @@ class _EmployeeCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Gradient avatar — same as profile hero
               Container(
                 width: screen.isMobile ? 42 : 46,
                 height: screen.isMobile ? 42 : 46,
@@ -882,9 +1001,9 @@ class _EmployeeCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -909,7 +1028,9 @@ class _EmployeeCard extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // ADD EMPLOYEE PAGE
+// ─────────────────────────────────────────────────────────────────────────────
 class AddEmployeePage extends StatefulWidget {
   const AddEmployeePage({super.key});
   @override
@@ -927,6 +1048,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   final phoneCtrl = TextEditingController();
   final dobCtrl = TextEditingController();
   final fatherCtrl = TextEditingController();
+  final emergencyRelationCtrl = TextEditingController();
   final emergencyCtrl = TextEditingController();
   final dojCtrl = TextEditingController();
   final permAddrCtrl = TextEditingController();
@@ -971,6 +1093,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       phoneCtrl,
       dobCtrl,
       fatherCtrl,
+      emergencyRelationCtrl,
       emergencyCtrl,
       dojCtrl,
       permAddrCtrl,
@@ -1009,6 +1132,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
               key: _formKey,
               child: Column(
                 children: [
+                  // ── Personal Information ──────────────────────────────────────
                   _SectionCard(
                     icon: Icons.person_outline_rounded,
                     title: 'Personal Information',
@@ -1061,11 +1185,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                       SizedBox(height: sp),
                       _row2(
                         context,
+                        // ── DOB with age >= 18 validation ──────────────────────
                         FormDateField(
                           dobCtrl,
                           'Date of Birth',
                           padding: EdgeInsets.zero,
-                          lastDate: DateTime.now(),
+                          lastDate: DateTime.now().subtract(
+                            const Duration(days: 365 * 18),
+                          ), // max = 18 yrs ago
+                          validator: validateDob,
                         ),
                         FormDropdownString(
                           'Gender',
@@ -1095,10 +1223,22 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                         ),
                         sp: sp,
                       ),
+                      SizedBox(height: sp),
+                      FormTextField(
+                        emergencyRelationCtrl,
+                        'Emergency Contact Relation',
+                        required: true,
+                        padding: EdgeInsets.zero,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Relation is required (e.g. Father, Spouse)'
+                            : null,
+                      ),
                     ],
                   ),
 
                   SizedBox(height: s.sectionSpacing),
+
+                  // ── Employment Information ────────────────────────────────────
                   _SectionCard(
                     icon: Icons.work_outline_rounded,
                     title: 'Employment Information',
@@ -1107,6 +1247,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                     children: [
                       _row2(
                         context,
+                        // ── Department required ────────────────────────────────
                         FormDropdownMap(
                           'Department',
                           departments,
@@ -1114,6 +1255,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                           (v) => setState(() => selectedDeptId = v),
                           padding: EdgeInsets.zero,
                         ),
+                        // ── Role required ──────────────────────────────────────
                         FormDropdownMap(
                           'Role / Designation',
                           roles,
@@ -1124,10 +1266,13 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                         sp: sp,
                       ),
                       SizedBox(height: sp),
+                      // ── DOJ — cannot be in future ──────────────────────────
                       FormDateField(
                         dojCtrl,
                         'Date of Joining',
                         padding: EdgeInsets.zero,
+                        lastDate: DateTime.now(),
+                        validator: validateDoj,
                       ),
                       SizedBox(height: sp),
                       _row2(
@@ -1162,17 +1307,21 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                         useIconButton: false,
                       ),
                       SizedBox(height: sp),
+                      // ── Years of experience 0–50 ───────────────────────────
                       FormTextField(
                         yearsExpCtrl,
                         'Years of Experience',
                         required: true,
                         fieldType: 'yoe',
                         padding: EdgeInsets.zero,
+                        validator: validateYoe,
                       ),
                     ],
                   ),
 
                   SizedBox(height: s.sectionSpacing),
+
+                  // ── Documents & Statutory ─────────────────────────────────────
                   _SectionCard(
                     icon: Icons.description_outlined,
                     title: 'Documents & Statutory',
@@ -1226,6 +1375,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                   EducationFormSection(key: _eduKey),
                   SizedBox(height: s.sectionSpacing),
 
+                  // ── Login Credentials ─────────────────────────────────────────
                   _SectionCard(
                     icon: Icons.lock_outline_rounded,
                     title: 'Login Credentials',
@@ -1295,6 +1445,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    // Extra checks for dropdowns (FormDropdownMap validators may not fire)
+    if (selectedDeptId == null) {
+      _snack('Please select a department');
+      return;
+    }
+    if (selectedRoleId == null) {
+      _snack('Please select a role / designation');
+      return;
+    }
     setState(() => _submitting = true);
     final body = {
       'first_name': firstNameCtrl.text,
@@ -1315,6 +1474,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       'pan_number': panCtrl.text,
       'passport_number': passportCtrl.text,
       'father_name': fatherCtrl.text,
+      'emergency_contact_relation': emergencyRelationCtrl.text,
       'emergency_contact': emergencyCtrl.text,
       'pf_number': pfCtrl.text,
       'esic_number': esicCtrl.text,
@@ -1334,7 +1494,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
         _snack('Employee request submitted successfully!', ok: true);
-        Navigator.pop(context);
+        if (mounted) {
+          Navigator.pop(context);
+        }
       } else {
         _snack(data['message'] ?? 'Submission failed');
       }
@@ -1374,7 +1536,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   }
 }
 
-// EMPLOYEE DETAIL PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+// EMPLOYEE DETAIL PAGE  (unchanged logic, just carried over)
+// ─────────────────────────────────────────────────────────────────────────────
 class EmployeeDetailPage extends StatefulWidget {
   final String id, source;
   final bool readOnly;
@@ -1409,14 +1573,17 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
       if (!mounted) return;
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
+        // Handle both {data: {...}} and raw object responses
+        final emp = data is Map && data.containsKey('data')
+            ? data['data']
+            : data;
         setState(() {
-          employeeData = data;
+          employeeData = Map<String, dynamic>.from(emp);
           isLoading = false;
         });
-        // Load education
         final eduId = widget.source == 'MASTER'
-            ? data['emp_id']
-            : data['request_id'];
+            ? emp['emp_id']
+            : emp['request_id'];
         if (eduId != null) {
           final eduUrl = widget.source == 'MASTER'
               ? Uri.parse('$baseUrl/employees/$eduId/education')
@@ -1440,8 +1607,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
     if (d == null || d.toString().isEmpty) return '-';
     try {
       final dt = DateTime.parse(d.toString());
-      return '${dt.day.toString().padLeft(2, '0')} '
-          '${_mon(dt.month)} ${dt.year}';
+      return '${dt.day.toString().padLeft(2, '0')} ${_mon(dt.month)} ${dt.year}';
     } catch (_) {
       return d.toString();
     }
@@ -1471,9 +1637,8 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
 
   List<Map<String, dynamic>> get _eduList {
     final raw = employeeData?['education'];
-    if (raw is List) {
+    if (raw is List)
       return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-    }
     return [];
   }
 
@@ -1507,8 +1672,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                           ),
                         ),
                       );
-                      if (result == true && mounted)
+                      if (result == true && mounted) {
                         Navigator.pop(context, true);
+                      }
                     },
             ),
           if (_canEdit && _isRejected)
@@ -1528,7 +1694,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                   ),
                 ),
                 style: TextButton.styleFrom(
-                  backgroundColor: _amber.withOpacity(0.85),
+                  backgroundColor: _amber.withValues(alpha: 0.85),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1541,7 +1707,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                           EmployeeResubmitPage(requestData: employeeData!),
                     ),
                   );
-                  if (result == true && mounted) Navigator.pop(context, true);
+                  if (result == true && mounted) {
+                    Navigator.pop(context, true);
+                  }
                 },
               ),
             ),
@@ -1624,7 +1792,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: _primary.withOpacity(0.08),
+            color: _primary.withValues(alpha: 0.08),
             shape: BoxShape.circle,
           ),
           child: const Icon(
@@ -1642,12 +1810,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
     ),
   );
 
-  // ── Hero card (matches EmployeeProfileScreen)
   Widget _heroCard(_Screen s) {
     final fullName =
-        '${employeeData!['first_name'] ?? ''} '
-                '${employeeData!['mid_name'] ?? ''} '
-                '${employeeData!['last_name'] ?? ''}'
+        '${employeeData!['first_name'] ?? ''} ${employeeData!['mid_name'] ?? ''} ${employeeData!['last_name'] ?? ''}'
             .trim();
     final statusText = widget.source == 'MASTER'
         ? employeeData!['status'] ?? '-'
@@ -1678,7 +1843,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: _primary.withOpacity(0.35),
+            color: _primary.withValues(alpha: 0.35),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -1694,7 +1859,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
               ),
             ),
           ),
@@ -1713,9 +1878,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                         borderRadius: BorderRadius.circular(
                           s.isMobile ? 14 : 18,
                         ),
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           width: 2,
                         ),
                       ),
@@ -1748,7 +1913,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                           Text(
                             employeeData!['role_name'] ?? '',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(alpha: 0.8),
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                             ),
@@ -1756,7 +1921,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                           Text(
                             employeeData!['department_name'] ?? '',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.55),
+                              color: Colors.white.withValues(alpha: 0.55),
                               fontSize: 12,
                             ),
                           ),
@@ -1765,7 +1930,6 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                             spacing: 8,
                             runSpacing: 6,
                             children: [
-                              // Status badge
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
@@ -1798,17 +1962,16 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                                   ],
                                 ),
                               ),
-                              // ID badge
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 9,
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: Colors.white.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: Colors.white.withOpacity(0.2),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                   ),
                                 ),
                                 child: Text(
@@ -1816,7 +1979,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                                       ? 'ID: ${employeeData!["emp_id"] ?? "-"}'
                                       : 'Req: ${employeeData!["request_id"] ?? "-"}',
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.65),
+                                    color: Colors.white.withValues(alpha: 0.65),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1830,7 +1993,10 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                Container(height: 1, color: Colors.white.withOpacity(0.12)),
+                Container(
+                  height: 1,
+                  color: Colors.white.withValues(alpha: 0.12),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1876,7 +2042,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
           l,
           style: TextStyle(
             fontSize: 9,
-            color: Colors.white.withOpacity(0.5),
+            color: Colors.white.withValues(alpha: 0.5),
             letterSpacing: 0.5,
             fontWeight: FontWeight.w500,
           ),
@@ -1885,8 +2051,11 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
     ),
   );
 
-  Widget _heroVDiv() =>
-      Container(width: 1, height: 28, color: Colors.white.withOpacity(0.12));
+  Widget _heroVDiv() => Container(
+    width: 1,
+    height: 28,
+    color: Colors.white.withValues(alpha: 0.12),
+  );
 
   Widget _basicCard() => _DetailCard(
     icon: Icons.person_outline_rounded,
@@ -1920,6 +2089,11 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
         Icons.emergency_outlined,
         'Emergency Contact',
         employeeData!['emergency_contact'],
+      ),
+      _Tile(
+        Icons.people_outline_rounded,
+        'Relation to Employee',
+        employeeData!['emergency_contact_relation'],
       ),
       _Tile(
         Icons.home_outlined,
@@ -2029,7 +2203,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
         border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -2073,7 +2247,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _accent.withOpacity(0.1),
+                      color: _accent.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -2119,9 +2293,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
 
   Widget _rejectionCard() => Container(
     decoration: BoxDecoration(
-      color: _red.withOpacity(0.05),
+      color: _red.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _red.withOpacity(0.3)),
+      border: Border.all(color: _red.withValues(alpha: 0.3)),
     ),
     padding: const EdgeInsets.all(16),
     child: Row(
@@ -2130,7 +2304,7 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
         Container(
           padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
-            color: _red.withOpacity(0.1),
+            color: _red.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Icon(Icons.warning_amber_rounded, color: _red, size: 16),
@@ -2161,7 +2335,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
   );
 }
 
-// Education read-only card (shared between detail pages)
+// ─────────────────────────────────────────────────────────────────────────────
+// Education read-only card
+// ─────────────────────────────────────────────────────────────────────────────
 class _EduDetailCard extends StatelessWidget {
   final Map<String, dynamic> entry;
   const _EduDetailCard({required this.entry});
@@ -2197,9 +2373,9 @@ class _EduDetailCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.04),
+        color: color.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2212,9 +2388,9 @@ class _EduDetailCard extends StatelessWidget {
                   vertical: 3,
                 ),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: color.withOpacity(0.3)),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   level,
@@ -2261,9 +2437,9 @@ class _EduDetailCard extends StatelessWidget {
   Widget _chip(IconData icon, String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: color.withOpacity(0.08),
+      color: color.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(7),
-      border: Border.all(color: color.withOpacity(0.2)),
+      border: Border.all(color: color.withValues(alpha: 0.2)),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -2283,7 +2459,9 @@ class _EduDetailCard extends StatelessWidget {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // EMPLOYEE RESUBMIT PAGE
+// ─────────────────────────────────────────────────────────────────────────────
 class EmployeeResubmitPage extends StatefulWidget {
   final Map<String, dynamic> requestData;
   const EmployeeResubmitPage({super.key, required this.requestData});
@@ -2309,6 +2487,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       passportCtrl,
       usernameCtrl,
       fatherCtrl,
+      emergencyRelationCtrl,
       emergencyCtrl,
       pfCtrl,
       esicCtrl,
@@ -2340,6 +2519,9 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
     passportCtrl = TextEditingController(text: d['passport_number'] ?? '');
     usernameCtrl = TextEditingController(text: d['username'] ?? '');
     fatherCtrl = TextEditingController(text: d['father_name'] ?? '');
+    emergencyRelationCtrl = TextEditingController(
+      text: d['emergency_contact_relation'] ?? '',
+    );
     emergencyCtrl = TextEditingController(text: d['emergency_contact'] ?? '');
     pfCtrl = TextEditingController(text: d['pf_number'] ?? '');
     esicCtrl = TextEditingController(text: d['esic_number'] ?? '');
@@ -2399,6 +2581,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       passportCtrl,
       usernameCtrl,
       fatherCtrl,
+      emergencyRelationCtrl,
       emergencyCtrl,
       pfCtrl,
       esicCtrl,
@@ -2435,8 +2618,8 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                     padding: const EdgeInsets.all(14),
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: _red.withOpacity(0.05),
-                      border: Border.all(color: _red.withOpacity(0.3)),
+                      color: _red.withValues(alpha: 0.05),
+                      border: Border.all(color: _red.withValues(alpha: 0.3)),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -2445,7 +2628,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: _red.withOpacity(0.1),
+                            color: _red.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -2537,7 +2720,10 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                           dobCtrl,
                           'Date of Birth',
                           padding: EdgeInsets.zero,
-                          lastDate: DateTime.now(),
+                          lastDate: DateTime.now().subtract(
+                            const Duration(days: 365 * 18),
+                          ),
+                          validator: validateDob,
                         ),
                         FormDropdownString(
                           'Gender',
@@ -2566,6 +2752,16 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                           padding: EdgeInsets.zero,
                         ),
                         sp: sp,
+                      ),
+                      SizedBox(height: sp),
+                      FormTextField(
+                        emergencyRelationCtrl,
+                        'Emergency Contact Relation',
+                        required: true,
+                        padding: EdgeInsets.zero,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Relation is required (e.g. Father, Spouse)'
+                            : null,
                       ),
                     ],
                   ),
@@ -2600,6 +2796,8 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                         dojCtrl,
                         'Date of Joining',
                         padding: EdgeInsets.zero,
+                        lastDate: DateTime.now(),
+                        validator: validateDoj,
                       ),
                       SizedBox(height: sp),
                       _row2(
@@ -2638,6 +2836,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                         'Years of Experience',
                         fieldType: 'yoe',
                         padding: EdgeInsets.zero,
+                        validator: validateYoe,
                       ),
                     ],
                   ),
@@ -2748,6 +2947,14 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
 
   Future<void> _resubmit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (selectedDeptId == null) {
+      _snack('Please select a department');
+      return;
+    }
+    if (selectedRoleId == null) {
+      _snack('Please select a role');
+      return;
+    }
     setState(() => _submitting = true);
     final body = {
       'first_name': firstNameCtrl.text,
@@ -2769,6 +2976,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       'passport_number': passportCtrl.text,
       'username': usernameCtrl.text,
       'father_name': fatherCtrl.text,
+      'emergency_contact_relation': emergencyRelationCtrl.text,
       'emergency_contact': emergencyCtrl.text,
       'pf_number': pfCtrl.text,
       'esic_number': esicCtrl.text,
@@ -2778,8 +2986,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
     try {
       final res = await http.put(
         Uri.parse(
-          '$baseUrl/admin/resubmit-request/'
-          '${widget.requestData["request_id"]}',
+          '$baseUrl/admin/resubmit-request/${widget.requestData["request_id"]}',
         ),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
@@ -2787,38 +2994,35 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Request resubmitted!',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            backgroundColor: _accent,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _snack('Request resubmitted!', ok: true);
         Navigator.pop(context, true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Resubmit failed')),
-        );
+        _snack(data['message'] ?? 'Resubmit failed');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
+
+  void _snack(String msg, {bool ok = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w500)),
+        backgroundColor: ok ? _accent : _red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // EMPLOYEE EDIT PAGE
+// ─────────────────────────────────────────────────────────────────────────────
 class EmployeeEditPage extends StatefulWidget {
   final Employee employee;
   final String source;
@@ -2847,6 +3051,7 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       commAddrCtrl,
       editReasonCtrl,
       fatherCtrl,
+      emergencyRelationCtrl,
       emergencyCtrl,
       pfCtrl,
       esicCtrl,
@@ -2890,6 +3095,9 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
     );
     editReasonCtrl = TextEditingController();
     fatherCtrl = TextEditingController(text: e.fatherName ?? '');
+    emergencyRelationCtrl = TextEditingController(
+      text: e.emergencyContactRelation ?? '',
+    );
     emergencyCtrl = TextEditingController(text: e.emergencyContact ?? '');
     pfCtrl = TextEditingController(text: e.pfNumber ?? '');
     esicCtrl = TextEditingController(text: e.esicNumber ?? '');
@@ -2958,6 +3166,7 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       commAddrCtrl,
       editReasonCtrl,
       fatherCtrl,
+      emergencyRelationCtrl,
       emergencyCtrl,
       pfCtrl,
       esicCtrl,
@@ -3041,11 +3250,15 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                       SizedBox(height: sp),
                       _row2(
                         context,
+                        // ── DOB age >= 18 ──────────────────────────────────────
                         FormDateField(
                           dobCtrl,
                           'Date of Birth',
                           padding: EdgeInsets.zero,
-                          lastDate: DateTime.now(),
+                          lastDate: DateTime.now().subtract(
+                            const Duration(days: 365 * 18),
+                          ),
+                          validator: validateDob,
                         ),
                         FormDropdownString(
                           'Gender',
@@ -3072,6 +3285,18 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                           padding: EdgeInsets.zero,
                         ),
                         sp: sp,
+                      ),
+                      SizedBox(height: sp),
+                      FormTextField(
+                        emergencyRelationCtrl,
+                        'Emergency Contact Relation',
+                        padding: EdgeInsets.zero,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return null;
+                          } // optional on edit
+                          return null;
+                        },
                       ),
                     ],
                   ),
@@ -3102,10 +3327,13 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                         sp: sp,
                       ),
                       SizedBox(height: sp),
+                      // ── DOJ optional on edit but validated if filled ──────────
                       FormDateField(
                         dojCtrl,
                         'Date of Joining',
                         padding: EdgeInsets.zero,
+                        lastDate: DateTime.now(),
+                        validator: validateDojOptional,
                       ),
                       SizedBox(height: sp),
                       _row2(
@@ -3140,11 +3368,22 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                         useIconButton: false,
                       ),
                       SizedBox(height: sp),
+                      // ── YOE 0–50 on edit ──────────────────────────────────────
                       FormTextField(
                         yearsExpCtrl,
                         'Years of Experience',
                         fieldType: 'yoe',
                         padding: EdgeInsets.zero,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return null;
+                          } // optional on edit
+                          final n = int.tryParse(v.trim());
+                          if (n == null) return 'Must be a whole number';
+                          if (n < 0) return 'Cannot be negative';
+                          if (n > 50) return 'Maximum 50 years';
+                          return null;
+                        },
                       ),
                     ],
                   ),
@@ -3188,17 +3427,15 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                         padding: EdgeInsets.zero,
                       ),
                       SizedBox(height: sp),
+                      // ── DOR: required if Relieved, must be after DOJ ──────────
                       FormDateField(
                         dorCtrl,
                         'Date of Relieving (if applicable)',
                         required: false,
                         padding: EdgeInsets.zero,
-                        validator: (val) {
-                          if (status == 'Relieved' &&
-                              (val == null || val.isEmpty))
-                            return 'Required when status is Relieved';
-                          return null;
-                        },
+                        lastDate: DateTime.now(),
+                        validator: (val) =>
+                            validateDor(val, status, dojCtrl.text),
                       ),
                     ],
                   ),
@@ -3247,19 +3484,15 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                         controller: editReasonCtrl,
                         maxLines: 3,
                         style: const TextStyle(fontSize: 13, color: _textDark),
-                        decoration:
-                            _inputDec(
-                              'Explain why this record is being updated',
-                            ).copyWith(
-                              labelText: null,
-                              hintText:
-                                  'Explain why this record is being updated…',
-                              hintStyle: const TextStyle(
-                                color: _textLight,
-                                fontSize: 13,
-                              ),
-                            ),
-                        validator: (v) => (v == null || v.isEmpty)
+                        decoration: _inputDec('').copyWith(
+                          labelText: null,
+                          hintText: 'Explain why this record is being updated…',
+                          hintStyle: const TextStyle(
+                            color: _textLight,
+                            fontSize: 13,
+                          ),
+                        ),
+                        validator: (v) => (v == null || v.trim().isEmpty)
                             ? 'Edit reason is required'
                             : null,
                       ),
@@ -3309,6 +3542,14 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
 
   Future<void> _submitEdit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (selectedDeptId == null) {
+      _snack('Please select a department');
+      return;
+    }
+    if (selectedRoleId == null) {
+      _snack('Please select a role');
+      return;
+    }
     setState(() => _submitting = true);
     final body = {
       'emp_id': widget.employee.empId,
@@ -3332,6 +3573,7 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       'edit_reason': editReasonCtrl.text,
       'admin_approve': 'PENDING',
       'father_name': fatherCtrl.text,
+      'emergency_contact_relation': emergencyRelationCtrl.text,
       'emergency_contact': emergencyCtrl.text,
       'pf_number': pfCtrl.text,
       'esic_number': esicCtrl.text,
@@ -3347,33 +3589,28 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Edit request submitted for approval!',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            backgroundColor: _accent,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _snack('Edit request submitted for approval!', ok: true);
         Navigator.pop(context, true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Submission failed')),
-        );
+        _snack(data['message'] ?? 'Submission failed');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _snack(String msg, {bool ok = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w500)),
+        backgroundColor: ok ? _accent : _red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 }

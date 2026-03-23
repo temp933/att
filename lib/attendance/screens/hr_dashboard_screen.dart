@@ -1,358 +1,21 @@
-// import 'package:provider/provider.dart';
-// import '../providers/attendance_provider.dart';
-// import 'package:flutter/material.dart';
-// import 'hr_home_screen.dart';
-// import 'emp_attendance_screen.dart';
-// import 'admin_hr_attendance_screen.dart';
-// import 'admin_hr_leave_approval.dart';
-// import 'admin_hr_manage_expenses.dart';
-// import 'admin_hr_assign_task.dart';
-// import 'admin_hr_manage_task.dart';
-// import 'admin_hr_travel_onsite.dart';
-// import 'hr_report.dart';
-// import 'admin_manage_user.dart';
-// import 'login_screen.dart';
-// import 'admin_assign_location.dart';
-// import '../services/location_services.dart';
-// import 'emp_profile_screen.dart';
-// import '../services/auth_service.dart';
-
-// class HRDashboardScreen extends StatefulWidget {
-//   final String employeeId;
-
-//   final String roleId;
-//   final int initialIndex;
-//   final int loginId;
-
-//   const HRDashboardScreen({
-//     super.key,
-//     required this.loginId,
-//     required this.employeeId,
-
-//     required this.roleId,
-//     this.initialIndex = 0,
-//   });
-
-//   @override
-//   State<HRDashboardScreen> createState() => _HrDashboardScreenState();
-// }
-
-// class _HrDashboardScreenState extends State<HRDashboardScreen> {
-//   final GlobalKey manageUserKey = GlobalKey();
-//   late int selectedIndex;
-//   bool isExpanded = false;
-//   late LocationService locationService;
-//   late List<Widget> pages; // ✅ NOT a getter anymore
-
-//   static const int notificationIndex = 12;
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     selectedIndex = widget.initialIndex;
-//     locationService = LocationService();
-
-//     // ✅ Build pages ONCE — so onNavigate callback stays alive
-//     pages = [
-//       HrHomeScreen(
-//         employeeId: widget.employeeId,
-//         onNavigate: (index) => setState(() => selectedIndex = index),
-//       ), // 0
-//       AttendanceScreen(), // 1
-//       AdminHrAttendanceScreen(), // 2
-//       LeaveApprovalScreen(loginId: widget.loginId), // 3
-//       ExpenseApprovalScreen(), // 4
-//       AssignTaskScreen(), // 5
-//       ManageTaskScreen(), // 6
-//       TravelAssignmentScreen(), // 7
-//       HRReportsScreen(), // 8
-//       ManageUserScreen(key: manageUserKey, roleId: widget.roleId), // 9
-//       AdminAssignLocation(role: widget.roleId), // 10
-//       EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 11
-//       const Center(
-//         child: Text(
-//           "Notifications",
-//           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-//         ),
-//       ), // 12
-//     ];
-//   }
-
-//   final List<String> titles = [
-//     "Dashboard",
-//     "Mark Attendance",
-//     "Manage Attendance",
-//     "Leave Approval",
-//     "Expense Approval",
-//     "Assign Task",
-//     "Manage Task",
-//     "Travel / On-Site",
-//     "Reports",
-//     "Manage Users",
-//     "Assign Location",
-//     "Profile",
-//     "Notifications",
-//   ];
-
-//   final List<NavigationRailDestination> railItems = const [
-//     NavigationRailDestination(
-//       icon: Icon(Icons.dashboard_outlined),
-//       selectedIcon: Icon(Icons.dashboard),
-//       label: Text("Dashboard"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.login_outlined),
-//       selectedIcon: Icon(Icons.login),
-//       label: Text("Mark Attendance"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.manage_accounts_outlined),
-//       selectedIcon: Icon(Icons.manage_accounts),
-//       label: Text("Manage Attendance"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.event_busy_outlined),
-//       selectedIcon: Icon(Icons.event_busy),
-//       label: Text("Leave Approval"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.payments_outlined),
-//       selectedIcon: Icon(Icons.payments),
-//       label: Text("Expense Approval"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.assignment_add),
-//       selectedIcon: Icon(Icons.assignment_add),
-//       label: Text("Assign Task"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.task_outlined),
-//       selectedIcon: Icon(Icons.task),
-//       label: Text("Manage Task"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.flight_takeoff_outlined),
-//       selectedIcon: Icon(Icons.flight_takeoff),
-//       label: Text("Travel / On-Site"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.summarize_outlined),
-//       selectedIcon: Icon(Icons.summarize),
-//       label: Text("Reports"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.manage_accounts_outlined),
-//       selectedIcon: Icon(Icons.manage_accounts),
-//       label: Text("Manage Users"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.place_outlined),
-//       selectedIcon: Icon(Icons.place),
-//       label: Text("Assign Location"),
-//     ),
-//     NavigationRailDestination(
-//       icon: Icon(Icons.person_rounded),
-//       selectedIcon: Icon(Icons.person),
-//       label: Text("Profile"),
-//     ),
-//   ];
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final bool isDesktop = MediaQuery.of(context).size.width >= 900;
-
-//     return ChangeNotifierProvider(
-//       create: (_) => AttendanceProvider(empId: widget.employeeId),
-//       child: Scaffold(
-//         backgroundColor: Colors.grey.shade100,
-//         appBar: AppBar(
-//           elevation: 1,
-//           backgroundColor: Colors.white,
-//           iconTheme: const IconThemeData(color: Colors.black87),
-//           title: Text(
-//             titles[selectedIndex],
-//             style: const TextStyle(
-//               color: Colors.black87,
-//               fontWeight: FontWeight.w600,
-//             ),
-//           ),
-//           actions: [
-//             IconButton(
-//               tooltip: "Notifications",
-//               icon: const Icon(Icons.notifications_outlined),
-//               onPressed: () =>
-//                   setState(() => selectedIndex = notificationIndex),
-//             ),
-//             IconButton(
-//               tooltip: "Logout",
-//               icon: const Icon(Icons.logout, color: Colors.red),
-//               onPressed: _logout,
-//             ),
-//             const SizedBox(width: 8),
-//           ],
-//         ),
-//         drawer: isDesktop ? null : _mobileDrawer(),
-//         body: Row(
-//           children: [
-//             if (isDesktop) _desktopSidebar(),
-//             Expanded(
-//               child: IndexedStack(
-//                 // ✅ keeps pages alive, no rebuild on switch
-//                 index: selectedIndex,
-//                 children: pages,
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-
-//   Widget _desktopSidebar() {
-//     return MouseRegion(
-//       onEnter: (_) => setState(() => isExpanded = true),
-//       onExit: (_) => setState(() => isExpanded = false),
-//       child: AnimatedContainer(
-//         duration: const Duration(milliseconds: 250),
-//         width: isExpanded ? 230 : 72,
-//         color: Colors.white,
-//         child: ListView.builder(
-//           itemCount: railItems.length,
-//           itemBuilder: (context, index) {
-//             final item = railItems[index];
-//             final bool selected = selectedIndex == index;
-
-//             return InkWell(
-//               onTap: () => setState(() => selectedIndex = index),
-//               child: Container(
-//                 margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-//                 padding: const EdgeInsets.symmetric(
-//                   vertical: 12,
-//                   horizontal: 12,
-//                 ),
-//                 decoration: selected
-//                     ? BoxDecoration(
-//                         color: Colors.indigo.shade50,
-//                         borderRadius: BorderRadius.circular(10),
-//                       )
-//                     : null,
-//                 child: Row(
-//                   children: [
-//                     IconTheme(
-//                       data: IconThemeData(
-//                         color: selected ? Colors.indigo : Colors.grey,
-//                       ),
-//                       child: selected ? item.selectedIcon : item.icon,
-//                     ),
-//                     if (isExpanded)
-//                       Expanded(
-//                         child: Padding(
-//                           padding: const EdgeInsets.only(left: 14),
-//                           child: Text(
-//                             (item.label as Text).data!,
-//                             overflow: TextOverflow.ellipsis,
-//                             style: TextStyle(
-//                               fontWeight: selected
-//                                   ? FontWeight.w600
-//                                   : FontWeight.normal,
-//                             ),
-//                           ),
-//                         ),
-//                       ),
-//                   ],
-//                 ),
-//               ),
-//             );
-//           },
-//         ),
-//       ),
-//     );
-//   }
-
-//   Widget _mobileDrawer() {
-//     return Drawer(
-//       child: ListView(
-//         children: [
-//           const DrawerHeader(
-//             decoration: BoxDecoration(color: Colors.indigo),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               mainAxisAlignment: MainAxisAlignment.end,
-//               children: [
-//                 Icon(Icons.badge, color: Colors.white, size: 40),
-//                 SizedBox(height: 12),
-//                 Text(
-//                   "HR Panel",
-//                   style: TextStyle(
-//                     color: Colors.white,
-//                     fontSize: 18,
-//                     fontWeight: FontWeight.bold,
-//                   ),
-//                 ),
-//                 Text(
-//                   "Employee Attendance System",
-//                   style: TextStyle(color: Colors.white70),
-//                 ),
-//               ],
-//             ),
-//           ),
-//           ...List.generate(railItems.length, (index) {
-//             final bool selected = selectedIndex == index;
-//             return ListTile(
-//               leading: IconTheme(
-//                 data: IconThemeData(
-//                   color: selected ? Colors.indigo : Colors.grey,
-//                 ),
-//                 child: railItems[index].icon,
-//               ),
-//               title: Text((railItems[index].label as Text).data!),
-//               selected: selected,
-//               selectedTileColor: Colors.indigo.shade50,
-//               onTap: () {
-//                 setState(() => selectedIndex = index);
-//                 Navigator.pop(context);
-//               },
-//             );
-//           }),
-//         ],
-//       ),
-//     );
-//   }
-
-//   void _logout() async {
-//     await AuthService.clearSession();
-//     if (!mounted) return;
-//     Navigator.of(context).pushAndRemoveUntil(
-//       MaterialPageRoute(builder: (_) => const LoginScreen()),
-//       (route) => false,
-//     );
-//   }
-// }
-
-import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 import '../providers/attendance_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
+import 'admin_hr_attendance_screen.dart';
+import 'login_screen.dart';
 import 'hr_home_screen.dart';
 import 'emp_attendance_screen.dart';
-import 'admin_hr_attendance_screen.dart';
-import 'admin_hr_leave_approval.dart';
-import 'admin_hr_manage_expenses.dart';
-import 'admin_hr_assign_task.dart';
-import 'admin_hr_manage_task.dart';
-import 'admin_hr_travel_onsite.dart';
-import 'hr_report.dart';
-import 'admin_manage_user.dart';
-import 'login_screen.dart';
-import 'admin_assign_location.dart';
+import 'emp_leave_screen.dart';
 import '../services/location_services.dart';
 import 'emp_profile_screen.dart';
-import '../services/auth_service.dart';
+
+import 'admin_manage_user.dart';
 
 class HRDashboardScreen extends StatefulWidget {
-  final String employeeId;
-
-  final String roleId;
   final int initialIndex;
+  final String employeeId;
+  final String roleId;
   final int loginId;
 
   const HRDashboardScreen({
@@ -363,180 +26,207 @@ class HRDashboardScreen extends StatefulWidget {
     required this.roleId,
     this.initialIndex = 0,
   });
-
   @override
-  State<HRDashboardScreen> createState() => _HrDashboardScreenState();
+  State<HRDashboardScreen> createState() => _HRDashboardScreenScreenState();
 }
 
-class _HrDashboardScreenState extends State<HRDashboardScreen> {
-  final GlobalKey<ManageUserScreenState> manageUserKey =
-      GlobalKey<ManageUserScreenState>();
+class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
+  // ── Design tokens ──────────────────────────────────────────────────────────
+  static const Color _primary = Color(0xFF1A56DB);
+  static const Color _surface = Color(0xFFF0F4FF);
+  static const Color _border = Color(0xFFE2E8F0);
+  static const Color _textDark = Color(0xFF0F172A);
+  static const Color _textMid = Color(0xFF64748B);
+  static const Color _selectedBg = Color(0xFFEEF2FF);
+
+  static const double _expandThreshold = 120.0;
+
   late int selectedIndex;
   bool isExpanded = false;
-  late LocationService locationService;
-  late List<Widget> pages; // ✅ NOT a getter anymore
 
-  static const int notificationIndex = 12;
-  static const int manageUserIndex = 9; // ✅ index for ManageUserScreen
+  static const int notificationIndex = 16;
 
   @override
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex;
-    locationService = LocationService();
+  }
 
-    // ✅ Build pages ONCE — so onNavigate callback stays alive
-    pages = [
+  // ── Pages ──────────────────────────────────────────────────────────────────
+  late final LocationService locationService = LocationService();
+  final List<Widget> pages = [];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    pages.clear();
+    pages.addAll([
       HrHomeScreen(
         employeeId: widget.employeeId,
         onNavigate: (index) => setState(() => selectedIndex = index),
       ), // 0
       AttendanceScreen(employeeId: int.parse(widget.employeeId)), // 1
       AdminHrAttendanceScreen(), // 2
-      LeaveApprovalScreen(loginId: widget.loginId), // 3
-      ExpenseApprovalScreen(), // 4
-      AssignTaskScreen(), // 5
-      ManageTaskScreen(), // 6
-      TravelAssignmentScreen(), // 7
-      HRReportsScreen(), // 8
-      ManageUserScreen(key: manageUserKey, roleId: widget.roleId), // 9
-      AdminAssignLocation(role: widget.roleId), // 10
-      EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 11
-      const Center(
-        child: Text(
-          "Notifications",
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-      ), // 12
-    ];
+      LeaveScreen(employeeId: widget.employeeId), // 3
+      // ExpenseApprovalScreen(), // 4
+      // AssignTaskScreen(), // 5
+      // ManageTaskScreen(), // 6
+      // AdminDepartmentsScreen(), // 7
+      // DrawCampusOSM(), // 8
+      // AdminReportScreen(), // 9
+      ManageUserScreen(roleId: widget.roleId), // 10
+      // AdminApprovalPage(), // 11
+      // ManageLocationPage(), // 12
+      // AdminAssignLocation(role: widget.roleId), // 13
+      // AdminSessionManagementScreen(), // 14
+      EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 15
+      // const Center(
+      //   child: Text(
+      //     'Notifications',
+      //     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      //   ),
+      // ), // 16
+    ]);
   }
 
-  /// ✅ Navigates to the given index and refreshes ManageUserScreen if applicable
-  void _navigateTo(int index) {
-    setState(() => selectedIndex = index);
-    if (index == manageUserIndex) {
-      manageUserKey.currentState?.refreshUsers();
-    }
-  }
-
+  // ── Titles ─────────────────────────────────────────────────────────────────
   final List<String> titles = [
-    "Dashboard",
-    "Mark Attendance",
-    "Manage Attendance",
-    "Leave Approval",
-    "Expense Approval",
-    "Assign Task",
-    "Manage Task",
-    "Travel / On-Site",
-    "Reports",
-    "Manage Users",
-    "Assign Location",
-    "Profile",
-    "Notifications",
+    'Dashboard',
+    'Attendance',
+    'Manage Attendance',
+    'Apply Leave',
+    // 'Manage Expenses',
+    // 'Assign Task',
+    // 'Manage Tasks',
+    // 'Departments',
+    // 'Audit Logs',
+    // 'System Reports',
+    'Manage Users',
+    // 'Approval Page',
+    // 'Add Location',
+    // 'Assign Location',
+    // 'Session Management',
+    'Profile',
+    // 'Notifications',
   ];
 
+  // ── Rail items ─────────────────────────────────────────────────────────────
   final List<NavigationRailDestination> railItems = const [
     NavigationRailDestination(
       icon: Icon(Icons.dashboard_outlined),
       selectedIcon: Icon(Icons.dashboard),
-      label: Text("Dashboard"),
+      label: Text('Dashboard'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.login_outlined),
-      selectedIcon: Icon(Icons.login),
-      label: Text("Mark Attendance"),
+      icon: Icon(Icons.fingerprint_outlined),
+      selectedIcon: Icon(Icons.fingerprint),
+      label: Text('Attendance'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.manage_accounts_outlined),
-      selectedIcon: Icon(Icons.manage_accounts),
-      label: Text("Manage Attendance"),
+      icon: Icon(Icons.fact_check_outlined),
+      selectedIcon: Icon(Icons.fact_check),
+      label: Text('Manage Attendance'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.event_busy_outlined),
       selectedIcon: Icon(Icons.event_busy),
-      label: Text("Leave Approval"),
+      label: Text('Apply Leave'),
     ),
-    NavigationRailDestination(
-      icon: Icon(Icons.payments_outlined),
-      selectedIcon: Icon(Icons.payments),
-      label: Text("Expense Approval"),
-    ),
-    NavigationRailDestination(
-      icon: Icon(Icons.assignment_add),
-      selectedIcon: Icon(Icons.assignment_add),
-      label: Text("Assign Task"),
-    ),
-    NavigationRailDestination(
-      icon: Icon(Icons.task_outlined),
-      selectedIcon: Icon(Icons.task),
-      label: Text("Manage Task"),
-    ),
-    NavigationRailDestination(
-      icon: Icon(Icons.flight_takeoff_outlined),
-      selectedIcon: Icon(Icons.flight_takeoff),
-      label: Text("Travel / On-Site"),
-    ),
-    NavigationRailDestination(
-      icon: Icon(Icons.summarize_outlined),
-      selectedIcon: Icon(Icons.summarize),
-      label: Text("Reports"),
-    ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.payments_outlined),
+    //   selectedIcon: Icon(Icons.payments),
+    //   label: Text('Manage Expenses'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.assignment_add),
+    //   selectedIcon: Icon(Icons.assignment_add),
+    //   label: Text('Assign Task'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.task_alt_outlined),
+    //   selectedIcon: Icon(Icons.task_alt),
+    //   label: Text('Manage Tasks'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.apartment_outlined),
+    //   selectedIcon: Icon(Icons.apartment),
+    //   label: Text('Departments'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.history_outlined),
+    //   selectedIcon: Icon(Icons.history),
+    //   label: Text('Audit Logs'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.summarize_outlined),
+    //   selectedIcon: Icon(Icons.summarize),
+    //   label: Text('System Reports'),
+    // ),
     NavigationRailDestination(
       icon: Icon(Icons.manage_accounts_outlined),
       selectedIcon: Icon(Icons.manage_accounts),
-      label: Text("Manage Users"),
+      label: Text('Manage Users'),
     ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.approval_outlined),
+    //   selectedIcon: Icon(Icons.approval),
+    //   label: Text('Approval Page'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.place_outlined),
+    //   selectedIcon: Icon(Icons.place),
+    //   label: Text('Location'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.location_on_outlined),
+    //   selectedIcon: Icon(Icons.location_on),
+    //   label: Text('Assign Location'),
+    // ),
+    // NavigationRailDestination(
+    //   icon: Icon(Icons.devices_outlined),
+    //   selectedIcon: Icon(Icons.devices),
+    //   label: Text('Sessions'),
+    // ),
     NavigationRailDestination(
-      icon: Icon(Icons.place_outlined),
-      selectedIcon: Icon(Icons.place),
-      label: Text("Assign Location"),
-    ),
-    NavigationRailDestination(
-      icon: Icon(Icons.person_rounded),
+      icon: Icon(Icons.person_outline),
       selectedIcon: Icon(Icons.person),
-      label: Text("Profile"),
+      label: Text('Profile'),
     ),
   ];
 
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 900;
 
     return ChangeNotifierProvider(
-      create: (_) => AttendanceProvider(empId: widget.employeeId),
+      create: (_) => AttendanceProvider(empId: widget.employeeId.toString()),
       child: Scaffold(
-        backgroundColor: Colors.grey.shade100,
+        backgroundColor: _surface,
         appBar: AppBar(
-          elevation: 1,
-          backgroundColor: Colors.white,
-          iconTheme: const IconThemeData(color: Colors.black87),
+          backgroundColor: _primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
           title: Text(
             titles[selectedIndex],
             style: const TextStyle(
-              color: Colors.black87,
-              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
             ),
           ),
+          iconTheme: const IconThemeData(color: Colors.white),
           actions: [
-            // ✅ Refresh button — only visible on Manage Users screen
-            if (selectedIndex == manageUserIndex)
-              IconButton(
-                tooltip: "Refresh",
-                icon: const Icon(Icons.refresh),
-                onPressed: () => manageUserKey.currentState?.refreshUsers(),
-              ),
             IconButton(
-              tooltip: "Notifications",
-              icon: const Icon(Icons.notifications_outlined),
+              tooltip: 'Notifications',
+              icon: const Icon(
+                Icons.notifications_outlined,
+                color: Colors.white,
+              ),
               onPressed: () =>
                   setState(() => selectedIndex = notificationIndex),
             ),
-            IconButton(
-              tooltip: "Logout",
-              icon: const Icon(Icons.logout, color: Colors.red),
-              onPressed: _logout,
-            ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
           ],
         ),
         drawer: isDesktop ? null : _mobileDrawer(),
@@ -544,10 +234,9 @@ class _HrDashboardScreenState extends State<HRDashboardScreen> {
           children: [
             if (isDesktop) _desktopSidebar(),
             Expanded(
-              child: IndexedStack(
-                // ✅ keeps pages alive, no rebuild on switch
-                index: selectedIndex,
-                children: pages,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: pages[selectedIndex],
               ),
             ),
           ],
@@ -556,124 +245,387 @@ class _HrDashboardScreenState extends State<HRDashboardScreen> {
     );
   }
 
+  // ── Desktop sidebar ────────────────────────────────────────────────────────
   Widget _desktopSidebar() {
     return MouseRegion(
       onEnter: (_) => setState(() => isExpanded = true),
       onExit: (_) => setState(() => isExpanded = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        width: isExpanded ? 230 : 72,
-        color: Colors.white,
-        child: ListView.builder(
-          itemCount: railItems.length,
-          itemBuilder: (context, index) {
-            final item = railItems[index];
-            final bool selected = selectedIndex == index;
+        curve: Curves.easeInOut,
+        width: isExpanded ? 232 : 72,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(right: BorderSide(color: _border, width: 1)),
+        ),
+        // ClipRect prevents children from painting outside the animated bounds.
+        child: ClipRect(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Drive layout from actual width, not from the boolean.
+              final bool wide = constraints.maxWidth >= _expandThreshold;
 
-            return InkWell(
-              onTap: () => _navigateTo(index), // ✅ use _navigateTo
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 12,
-                ),
-                decoration: selected
-                    ? BoxDecoration(
-                        color: Colors.indigo.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                      )
-                    : null,
-                child: Row(
-                  children: [
-                    IconTheme(
-                      data: IconThemeData(
-                        color: selected ? Colors.indigo : Colors.grey,
+              return Column(
+                children: [
+                  // ── Header ─────────────────────────────────────────────
+                  SizedBox(
+                    height: 56,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.admin_panel_settings_rounded,
+                            size: 24,
+                          ),
+                          if (wide) ...[
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'HR Panel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      child: selected ? item.selectedIcon : item.icon,
                     ),
-                    if (isExpanded)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 14),
-                          child: Text(
-                            (item.label as Text).data!,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: selected
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
+                  ),
+
+                  // ── Nav items ───────────────────────────────────────────
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: railItems.length,
+                      itemBuilder: (context, index) {
+                        final item = railItems[index];
+                        final selected = selectedIndex == index;
+                        final label = (item.label as Text).data!;
+
+                        return Tooltip(
+                          message: wide ? '' : label,
+                          preferBelow: false,
+                          child: InkWell(
+                            onTap: () => setState(() => selectedIndex = index),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              padding: wide
+                                  ? const EdgeInsets.only(
+                                      top: 11,
+                                      bottom: 11,
+                                      left: 10,
+                                      right: 8,
+                                    )
+                                  : const EdgeInsets.symmetric(vertical: 11),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? _selectedBg
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                border: selected
+                                    ? Border.all(
+                                        color: _primary.withOpacity(0.15),
+                                        width: 1,
+                                      )
+                                    : null,
+                              ),
+                              child: wide
+                                  ? Row(
+                                      children: [
+                                        // Icon — always 20 px wide
+                                        IconTheme(
+                                          data: IconThemeData(
+                                            color: selected
+                                                ? _primary
+                                                : _textMid,
+                                            size: 20,
+                                          ),
+                                          child: selected
+                                              ? item.selectedIcon
+                                              : item.icon,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        // Label — takes all remaining space
+                                        Expanded(
+                                          child: Text(
+                                            label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: selected
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400,
+                                              color: selected
+                                                  ? _primary
+                                                  : _textDark,
+                                            ),
+                                          ),
+                                        ),
+                                        // Dot — fixed 10 px slot, always
+                                        // reserved so layout is predictable
+                                        SizedBox(
+                                          width: 10,
+                                          child: selected
+                                              ? Center(
+                                                  child: Container(
+                                                    width: 6,
+                                                    height: 6,
+                                                    decoration: BoxDecoration(
+                                                      color: _primary,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      ],
+                                    )
+                                  : Center(
+                                      child: IconTheme(
+                                        data: IconThemeData(
+                                          color: selected ? _primary : _textMid,
+                                          size: 20,
+                                        ),
+                                        child: selected
+                                            ? item.selectedIcon
+                                            : item.icon,
+                                      ),
+                                    ),
                             ),
                           ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // ── Footer logout ───────────────────────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border(top: BorderSide(color: _border, width: 1)),
+                    ),
+                    child: InkWell(
+                      onTap: _logout,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 8,
                         ),
+                        padding: wide
+                            ? const EdgeInsets.only(
+                                top: 11,
+                                bottom: 11,
+                                left: 10,
+                                right: 8,
+                              )
+                            : const EdgeInsets.symmetric(vertical: 11),
+                        child: wide
+                            ? Row(
+                                children: const [
+                                  Icon(
+                                    Icons.logout_rounded,
+                                    color: Color(0xFFEF4444),
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Logout',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFFEF4444),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Center(
+                                child: Icon(
+                                  Icons.logout_rounded,
+                                  color: Color(0xFFEF4444),
+                                  size: 20,
+                                ),
+                              ),
                       ),
-                  ],
-                ),
-              ),
-            );
-          },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
+  // ── Mobile drawer ──────────────────────────────────────────────────────────
   Widget _mobileDrawer() {
     return Drawer(
-      child: ListView(
+      backgroundColor: Colors.white,
+      child: Column(
         children: [
-          const DrawerHeader(
-            decoration: BoxDecoration(color: Colors.indigo),
+          // Header gradient
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 20,
+              left: 20,
+              right: 20,
+              bottom: 20,
+            ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF1A56DB),
+                  Color(0xFF1E3A8A),
+                  Color(0xFF1e1b4b),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Icon(Icons.badge, color: Colors.white, size: 40),
-                SizedBox(height: 12),
-                Text(
-                  "HR Panel",
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.25),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'HR Panel',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
                   ),
                 ),
+                const SizedBox(height: 3),
                 Text(
-                  "Employee Attendance System",
-                  style: TextStyle(color: Colors.white70),
+                  'Employee Attendance System',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ],
             ),
           ),
-          ...List.generate(railItems.length, (index) {
-            final bool selected = selectedIndex == index;
-            return ListTile(
-              leading: IconTheme(
-                data: IconThemeData(
-                  color: selected ? Colors.indigo : Colors.grey,
-                ),
-                child: railItems[index].icon,
-              ),
-              title: Text((railItems[index].label as Text).data!),
-              selected: selected,
-              selectedTileColor: Colors.indigo.shade50,
-              onTap: () {
-                _navigateTo(index); // ✅ use _navigateTo
-                Navigator.pop(context);
+
+          // Nav items
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: railItems.length,
+              itemBuilder: (context, index) {
+                final selected = selectedIndex == index;
+                final label = (railItems[index].label as Text).data!;
+                return ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 1,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  leading: IconTheme(
+                    data: IconThemeData(
+                      color: selected ? _primary : _textMid,
+                      size: 20,
+                    ),
+                    child: selected
+                        ? railItems[index].selectedIcon
+                        : railItems[index].icon,
+                  ),
+                  title: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected ? _primary : _textDark,
+                    ),
+                  ),
+                  selected: selected,
+                  selectedTileColor: _selectedBg,
+                  onTap: () {
+                    setState(() => selectedIndex = index);
+                    Navigator.pop(context);
+                  },
+                );
               },
-            );
-          }),
+            ),
+          ),
+
+          // Footer logout
+          Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: _border, width: 1)),
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
+              leading: const Icon(
+                Icons.logout_rounded,
+                color: Color(0xFFEF4444),
+                size: 20,
+              ),
+              title: const Text(
+                'Logout',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _logout();
+              },
+            ),
+          ),
+
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
+  // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> _logout() async {
     try {
-      await AuthService.clearSession(); // clears DB session fields
+      await AuthService.clearSession();
     } catch (_) {}
-
     if (!mounted) return;
-
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,

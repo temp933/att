@@ -170,7 +170,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         icon: Icons.people_outline,
                         gradient: const [Colors.blue, Colors.lightBlueAccent],
                         onTap: () => widget.onNavigate?.call(
-                          10,
+                          5,
                         ), // ✅ index 9 = Manage Users
                       ),
 

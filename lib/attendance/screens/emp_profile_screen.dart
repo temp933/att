@@ -285,6 +285,10 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
     _Row('Email', _fmt(employeeData!['email_id']), highlight: true),
     _Row('Phone', _fmt(employeeData!['phone_number'])),
     _Row('Emergency Contact', _fmt(employeeData!['emergency_contact'])),
+    _Row(
+      'Emergency Contact Relation',
+      _fmt(employeeData!['emergency_contact_relation']),
+    ),
   ];
   List<_Row> _workRows() => [
     _Row('Department', _fmt(employeeData!['department_name'])),
@@ -323,14 +327,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
   ];
 
   PreferredSizeWidget _buildAppBar() => AppBar(
-    backgroundColor: _primary,
-    foregroundColor: Colors.white,
+    // backgroundColor: _primary,
+    foregroundColor: const Color.fromARGB(255, 5, 5, 5),
     elevation: 0,
-    title: const Text(
-      'Employee Profile',
-      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
-    ),
-     actions: [
+    // title: const Text(
+    //   'Employee Profile',
+    //   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+    // ),
+    actions: [
       IconButton(
         tooltip: 'Refresh',
         icon: const Icon(Icons.refresh_rounded),

@@ -156,7 +156,11 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     child: Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A), Color(0xFF1e1b4b)],
+          colors: [
+            Color.fromARGB(255, 255, 255, 255),
+            Color.fromARGB(255, 255, 255, 255),
+            Color.fromARGB(255, 255, 255, 255),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -179,21 +183,12 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      'Manage Attendance',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
                     const SizedBox(height: 2),
                     Text(
-                      _displayDate(_selectedDate),
+                      "Date: ${_displayDate(_selectedDate)}",
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Colors.white60,
+                        color: Color.fromARGB(255, 0, 0, 0),
                       ),
                     ),
                   ],
@@ -201,7 +196,10 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
               ),
               IconButton(
                 tooltip: 'Download Report',
-                icon: const Icon(Icons.download_rounded, color: Colors.white),
+                icon: const Icon(
+                  Icons.download_rounded,
+                  color: Color.fromARGB(255, 0, 0, 0),
+                ),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(

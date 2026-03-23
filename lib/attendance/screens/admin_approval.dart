@@ -1350,7 +1350,11 @@ class _AdminApprovalPageState extends State<AdminApprovalPage> {
       child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A), Color(0xFF1e1b4b)],
+            colors: [
+              Color.fromARGB(255, 253, 253, 253),
+              Color.fromARGB(255, 255, 255, 255),
+              Color.fromARGB(255, 255, 255, 255),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -1390,13 +1394,16 @@ class _AdminApprovalPageState extends State<AdminApprovalPage> {
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: Color.fromARGB(255, 0, 0, 0),
                         letterSpacing: 0.2,
                       ),
                     ),
                     Text(
                       'Review & approve employee requests',
-                      style: TextStyle(fontSize: 11, color: Colors.white60),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color.fromARGB(131, 5, 5, 5),
+                      ),
                     ),
                   ],
                 ),
@@ -2679,6 +2686,11 @@ class ApprovalDetailPage extends StatelessWidget {
                         icon: Icons.phone_android_rounded,
                         label: 'Emergency Contact',
                         value: request['emergency_contact'] ?? '-',
+                      ),
+                      _infoTile(
+                        icon: Icons.phone_android_rounded,
+                        label: 'Emergency Contact relation ',
+                        value: request['emergency_contact_relation'] ?? '-',
                       ),
                     ],
                   ),

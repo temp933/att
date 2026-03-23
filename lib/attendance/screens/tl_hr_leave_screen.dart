@@ -5,15 +5,15 @@ import 'responsive_utils.dart';
 
 const String baseUrl = 'http://192.168.29.103:3000';
 
-class LeaveScreen extends StatefulWidget {
+class TL_HR_LeaveScreen extends StatefulWidget {
   final String employeeId;
-  const LeaveScreen({super.key, required this.employeeId});
+  const TL_HR_LeaveScreen({super.key, required this.employeeId});
 
   @override
-  State<LeaveScreen> createState() => _LeaveScreenState();
+  State<TL_HR_LeaveScreen> createState() => _TL_HR_LeaveScreenState();
 }
 
-class _LeaveScreenState extends State<LeaveScreen>
+class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     with SingleTickerProviderStateMixin {
   List<dynamic> leaves = [];
   bool loading = true;
@@ -71,7 +71,7 @@ class _LeaveScreenState extends State<LeaveScreen>
     });
     try {
       final res = await http.get(
-        Uri.parse('$baseUrl/employees/${widget.employeeId}  '),
+        Uri.parse('$baseUrl/employees/${widget.employeeId}/leaves'),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -964,6 +964,11 @@ class _LeaveCardState extends State<_LeaveCard> {
               ),
               const SizedBox(height: 10),
 
+              // ── Team Lead block ─────────────────────────────────────────
+              // Show whenever TL has taken ANY action:
+              //   - recommended_by is set (recommend OR not_recommend)
+              //   - status is Rejected_By_TL (old path where TL id may not be stored)
+              //   - status is Not_Recommended_By_TL
               if (hasTLAction ||
                   status == 'Rejected_By_TL' ||
                   tlNotRecommended) ...[

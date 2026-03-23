@@ -112,10 +112,16 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
     switch (status.toLowerCase()) {
       case 'approved':
         return Colors.green;
-      case 'pending':
-        return Colors.amber;
-      case 'rejected':
+      case 'pending_tl':
+        return Colors.blue;
+      case 'pending_hr':
+        return Colors.teal;
+      case 'not_recommended_by_tl':
+        return Colors.orange;
+      case 'rejected_by_hr':
         return Colors.red;
+      case 'cancelled':
+        return Colors.grey;
       default:
         return Colors.grey;
     }
@@ -191,7 +197,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
                         icon: Icons.people_outline,
                         gradient: const [Colors.blue, Colors.lightBlueAccent],
                         onTap: () => widget.onNavigate?.call(
-                          9,
+                          4,
                         ), // ✅ index 9 = Manage Users
                       ),
 

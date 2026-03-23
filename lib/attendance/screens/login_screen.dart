@@ -3,9 +3,10 @@ import 'emp_dashboard_screen.dart';
 import 'admin_dashboard.dart';
 import 'hr_dashboard_screen.dart';
 import '../services/employee_service.dart';
-import '../services/auth_service.dart'; 
+import '../services/auth_service.dart';
 import 'package:flutter/services.dart';
 import 'team_lead_dashboard.dart';
+import 'manager_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -81,6 +82,18 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => TLDashboardScreen(
+              loginId: loginId,
+              employeeId: empId.toString(),
+              role: roleId.toString(),
+            ),
+          ),
+        );
+      } else if (roleId == 8) {
+        // TEAM LEAD
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ManagerDashboardScreen(
               loginId: loginId,
               employeeId: empId.toString(),
               role: roleId.toString(),

@@ -2817,14 +2817,6 @@
 // //   console.log(`Server running on http://0.0.0.0:${PORT}`),
 // // );
 // /**
-//  * Employee Attendance System — Express Server
-//  * Fixed issues:
-//  *  1. Added /auth/login route (was missing, ApiService called /auth/login)
-//  *  2. batch-sync now uses DATE(timestamp) instead of CURDATE() so offline
-//  *     events synced after midnight land on the correct work_date
-//  *  3. attendance/status returns correct state including cross-device "done"
-//  *  4. All routes use consistent error handling and response shapes
-//  */
 
 // const express = require("express");
 // const mysql = require("mysql2");
@@ -3977,15 +3969,6 @@
 // app.listen(PORT, "0.0.0.0", () =>
 //   console.log(`✅ Server running on http://0.0.0.0:${PORT}`),
 // );
-/**
- * Employee Attendance System — Express Server
- * Fixed issues:
- *  1. Added /auth/login route (was missing, ApiService called /auth/login)
- *  2. batch-sync now uses DATE(timestamp) instead of CURDATE() so offline
- *     events synced after midnight land on the correct work_date
- *  3. attendance/status returns correct state including cross-device "done"
- *  4. All routes use consistent error handling and response shapes
- */
 
 const express = require("express");
 const mysql = require("mysql2");
@@ -4090,9 +4073,32 @@ async function handleLogin(req, res) {
       existingDeviceId &&
       existingDeviceId !== incomingDeviceId
     ) {
+      // Parse the stored device info so Flutter can show the device name
+      let storedDeviceInfo = null;
+      try {
+        const parsed = JSON.parse(user.session_device);
+        storedDeviceInfo = {
+          brand: parsed.brand || "Unknown",
+          model: parsed.model || "Unknown",
+          os: parsed.os || "Unknown",
+          osVersion: parsed.osVersion || "",
+          deviceId: parsed.deviceId || existingDeviceId,
+        };
+      } catch {
+        // Legacy plain string stored before device_info was introduced
+        storedDeviceInfo = {
+          brand: "Unknown",
+          model: user.session_device || "Unknown device",
+          os: "Unknown",
+          osVersion: "",
+          deviceId: existingDeviceId,
+        };
+      }
+
       return res.status(403).json({
         message: "Already logged in on another device. Please logout first.",
         alreadyLoggedIn: true,
+        deviceInfo: storedDeviceInfo, // ← NEW: Flutter reads this for the dialog
       });
     }
 
@@ -4311,26 +4317,105 @@ app.get("/employees/:empId/leaves", async (req, res) => {
   }
 });
 
+app.put("/leave/:id/manager-action", async (req, res) => {
+  const { status, login_id, rejection_reason } = req.body;
+
+  try {
+    if (!["Approved", "Rejected_By_Manager"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid manager action",
+      });
+    }
+
+    await dbRun(
+      `UPDATE leave_master
+       SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = NOW()
+       WHERE leave_id = ?`,
+      [status, login_id, rejection_reason || null, req.params.id],
+    );
+
+    res.json({
+      success: true,
+      message:
+        status === "Approved"
+          ? "Leave approved by Manager"
+          : "Leave rejected by Manager",
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 app.post("/employees/:empId/apply-leave", async (req, res) => {
   const { leave_type, leave_start_date, leave_end_date, reason } = req.body;
-  if (!leave_type || !leave_start_date || !leave_end_date)
-    return res
-      .status(400)
-      .json({ success: false, message: "Leave type and dates are required" });
+
+  if (!leave_type || !leave_start_date || !leave_end_date) {
+    return res.status(400).json({
+      success: false,
+      message: "Leave type and dates are required",
+    });
+  }
+
   try {
+    // 🔥 Get employee role_id
+    const employee = await dbGet(
+      `SELECT role_id FROM employee_master WHERE emp_id = ?`,
+      [req.params.empId],
+    );
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    // 🎯 Decide status based on role
+    let status;
+
+    switch (employee.role_id) {
+      case 1: // Employee
+        status = "Pending_TL";
+        break;
+
+      case 2: // Team Lead
+        status = "Pending_Manager"; // ✅ TL skips HR
+        break;
+
+      case 3: // HR
+        status = "Pending_Manager";
+        break;
+
+      case 8: // Manager
+        status = "Approved"; // ✅ self approval
+        break;
+
+      default:
+        status = "Pending_TL";
+    }
+
+    // ✅ Insert leave
     await dbRun(
       `INSERT INTO leave_master
-         (emp_id, leave_type, leave_start_date, leave_end_date, reason, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'Pending_TL', NOW(), NOW())`,
+        (emp_id, leave_type, leave_start_date, leave_end_date, reason, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         req.params.empId,
         leave_type,
         leave_start_date,
         leave_end_date,
         reason || "",
+        status,
       ],
     );
-    res.json({ success: true, message: "Leave applied successfully" });
+
+    res.json({
+      success: true,
+      message:
+        status === "Pending_Manager"
+          ? "Leave applied and sent directly to Manager"
+          : "Leave applied successfully",
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -5085,6 +5170,7 @@ app.get("/admin/pending-requests", async (req, res) => {
           COALESCE(p.pf_number,         e.pf_number)         AS pf_number,
           COALESCE(p.esic_number,       e.esic_number)       AS esic_number,
           COALESCE(p.years_experience,  e.years_experience)  AS years_experience,
+          COALESCE(p.emergency_contact_relation,  e.emergency_contact_relation)  AS emergency_contact_relation,
           p.admin_approve, p.username, p.request_type,
           p.edit_reason, p.reject_reason,
           p.created_at, p.updated_at,
@@ -5353,7 +5439,7 @@ app.put("/leave/:leaveId/hr-action", async (req, res) => {
       return res.status(404).json({ success: false, message: "Invalid user" });
 
     const hrRoles = await dbAll(
-      `SELECT role_id FROM role_master WHERE LOWER(role_name) LIKE '%hr%' OR LOWER(role_name) LIKE '%admin%'`,
+      `SELECT role_id FROM role_master WHERE LOWER(role_name) LIKE '%manager%' OR LOWER(role_name) LIKE '%admin%'`,
     );
     if (!hrRoles.some((r) => r.role_id === user.role_id))
       return res
@@ -5377,26 +5463,34 @@ app.put("/leave/:leaveId/hr-action", async (req, res) => {
 });
 
 // Get user info by emp_id (replaces login-user by loginId)
-app.get("/employee-user/:empId", async (req, res) => {
+app.get("/employee-user/:loginId", async (req, res) => {
   try {
     const u = await dbGet(
-      `SELECT lm.login_id, lm.emp_id, lm.username, r.role_name,
-          CONCAT(e.first_name,
+      `SELECT
+          lm.login_id,
+          lm.emp_id,
+          lm.username,
+          r.role_name,
+          CONCAT(
+            e.first_name,
             CASE WHEN e.mid_name IS NOT NULL AND e.mid_name != ''
               THEN CONCAT(' ', e.mid_name) ELSE '' END,
-            ' ', e.last_name) AS full_name
+            ' ', e.last_name
+          ) AS full_name
        FROM login_master lm
-       LEFT JOIN employee_master e ON lm.emp_id = e.emp_id
-       LEFT JOIN role_master r ON lm.role_id = r.role_id
-       WHERE lm.emp_id = ?`,
-      [req.params.empId],
+       LEFT JOIN employee_master e ON lm.emp_id  = e.emp_id
+       LEFT JOIN role_master     r ON lm.role_id = r.role_id
+       WHERE lm.login_id = ?`,
+      [req.params.loginId],
     );
+
     if (!u)
       return res.status(404).json({ success: false, message: "Not found" });
+
     res.json({
       success: true,
-      emp_id: u.emp_id,
       login_id: u.login_id,
+      emp_id: u.emp_id,
       full_name: u.full_name?.trim() || u.username,
       role_name: u.role_name || "-",
     });
@@ -5628,6 +5722,7 @@ app.post("/employee-pending-request", async (req, res) => {
     pan_number,
     passport_number,
     father_name,
+    emergency_contact_relation,
     emergency_contact,
     pf_number,
     esic_number,
@@ -5677,9 +5772,10 @@ app.post("/employee-pending-request", async (req, res) => {
         (first_name, mid_name, last_name, email_id, phone_number, date_of_birth, gender,
          department_id, role_id, date_of_joining, employment_type, work_type,
          permanent_address, communication_address, aadhar_number, pan_number, passport_number,
-         father_name, emergency_contact, pf_number, esic_number, years_experience,
+         father_name, emergency_contact_relation, emergency_contact,
+         pf_number, esic_number, years_experience,
          admin_approve, username, password, request_type, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?,'NEW',NOW(),NOW())`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?,'NEW',NOW(),NOW())`,
       [
         first_name,
         safe(mid_name),
@@ -5699,6 +5795,7 @@ app.post("/employee-pending-request", async (req, res) => {
         safe(pan_number),
         safe(passport_number),
         safe(father_name),
+        safe(emergency_contact_relation),
         safe(emergency_contact),
         safe(pf_number),
         safe(esic_number),
@@ -5709,7 +5806,6 @@ app.post("/employee-pending-request", async (req, res) => {
     );
 
     const requestId = result.insertId;
-
     if (Array.isArray(education) && education.length > 0) {
       const eduValues = education.map((e) => [
         requestId,
@@ -5727,7 +5823,6 @@ app.post("/employee-pending-request", async (req, res) => {
         [eduValues],
       );
     }
-
     res.json({
       success: true,
       message: "Employee request submitted",
@@ -5744,167 +5839,333 @@ app.post("/admin/approve-request", async (req, res) => {
   if (!request_id)
     return res.status(400).json({ error: "request_id is required" });
 
-  try {
-    const request = await dbGet(
-      "SELECT * FROM employee_pending_request WHERE request_id=?",
-      [request_id],
-    );
-    if (!request) return res.status(404).json({ error: "Request not found" });
+  // Grab a dedicated connection so we can open a transaction
+  db.getConnection(async (connErr, conn) => {
+    if (connErr) return res.status(500).json({ error: connErr.message });
 
-    if (request.request_type === "NEW") {
-      // ── Duplicate check ────────────────────────────────────────────────────
-      const dupEmail = await dbGet(
-        "SELECT emp_id FROM employee_master WHERE email_id=?",
-        [request.email_id],
+    // Per-connection promise helpers
+    const run = (sql, params = []) =>
+      new Promise((resolve, reject) =>
+        conn.query(sql, params, (err, result) =>
+          err ? reject(err) : resolve(result),
+        ),
       );
-      if (dupEmail) {
-        await dbRun(
-          "UPDATE employee_pending_request SET admin_approve='REJECTED', reject_reason=? WHERE request_id=?",
-          ["Duplicate email: " + request.email_id, request_id],
+    const get = (sql, params = []) =>
+      new Promise((resolve, reject) =>
+        conn.query(sql, params, (err, rows) =>
+          err ? reject(err) : resolve(rows[0] || null),
+        ),
+      );
+
+    try {
+      await run("START TRANSACTION");
+
+      // ── 1. Load the pending request ──────────────────────────────────────
+      const request = await get(
+        `SELECT * FROM employee_pending_request
+         WHERE request_id = ? AND admin_approve = 'PENDING'`,
+        [request_id],
+      );
+      if (!request) {
+        await run("ROLLBACK");
+        conn.release();
+        return res
+          .status(404)
+          .json({ error: "Request not found or already processed." });
+      }
+
+      // ── 2. Duplicate checks ──────────────────────────────────────────────
+      // UPDATE: exclude the employee being updated; NEW: check everyone
+      const excludeId =
+        request.request_type === "UPDATE" ? (request.emp_id ?? 0) : 0;
+
+      const dupChecks = [
+        {
+          field: "email_id",
+          value: request.email_id,
+          label: "Email already exists",
+        },
+        {
+          field: "phone_number",
+          value: request.phone_number,
+          label: "Phone number already exists",
+        },
+        {
+          field: "aadhar_number",
+          value: request.aadhar_number,
+          label: "Aadhar number already exists",
+        },
+        {
+          field: "pan_number",
+          value: request.pan_number,
+          label: "PAN number already exists",
+        },
+      ];
+
+      for (const check of dupChecks) {
+        if (!check.value || check.value.toString().trim() === "") continue;
+        const dup = await get(
+          `SELECT emp_id FROM employee_master
+           WHERE ${check.field} = ? AND emp_id != ?`,
+          [check.value, excludeId],
         );
-        return res.status(409).json({
-          error: "Duplicate email address — request auto-rejected.",
+        if (dup) {
+          await run(
+            `UPDATE employee_pending_request
+             SET admin_approve = 'REJECTED', reject_reason = ?
+             WHERE request_id = ?`,
+            [check.label, request_id],
+          );
+          await run("COMMIT");
+          conn.release();
+          return res.status(409).json({ error: check.label });
+        }
+      }
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      const n = (v) => (v != null && v.toString().trim() !== "" ? v : null);
+      const toInt = (v) => (v != null && v !== "" ? parseInt(v, 10) : null);
+
+      // ────────────────────────────────────────────────────────────────────
+      // 3a. NEW employee → INSERT into employee_master
+      // ────────────────────────────────────────────────────────────────────
+      if (request.request_type === "NEW") {
+        const empResult = await run(
+          `INSERT INTO employee_master (
+              first_name, mid_name, last_name,
+              email_id, phone_number,
+              date_of_birth, gender,
+              father_name,
+              emergency_contact_relation,
+              emergency_contact,
+              department_id, role_id,
+              date_of_joining, date_of_relieving,
+              employment_type, work_type,
+              permanent_address, communication_address,
+              aadhar_number, pan_number, passport_number,
+              pf_number, esic_number,
+              years_experience,
+              status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')`,
+          [
+            request.first_name,
+            n(request.mid_name),
+            request.last_name,
+            request.email_id,
+            request.phone_number,
+            request.date_of_birth,
+            request.gender,
+            // father / emergency — ✅ emergency_contact_relation now included
+            n(request.father_name),
+            n(request.emergency_contact_relation),
+            n(request.emergency_contact),
+            // job
+            request.department_id,
+            request.role_id,
+            request.date_of_joining,
+            n(request.date_of_relieving),
+            request.employment_type,
+            request.work_type,
+            // address
+            request.permanent_address,
+            n(request.communication_address),
+            // documents
+            n(request.aadhar_number),
+            n(request.pan_number),
+            n(request.passport_number),
+            n(request.pf_number),
+            n(request.esic_number),
+            // misc
+            toInt(request.years_experience),
+          ],
+        );
+
+        const empId = empResult.insertId;
+
+        // Copy education rows: pending → master
+        await run(
+          `INSERT INTO education_details
+             (emp_id, education_level, stream, score,
+              year_of_passout, university, college_name)
+           SELECT ?, education_level, stream, score,
+              year_of_passout, university, college_name
+           FROM education_pending_request
+           WHERE request_id = ?`,
+          [empId, request_id],
+        );
+
+        // Create login_master entry
+        await run(
+          `INSERT INTO login_master (emp_id, username, password, role_id, status)
+           VALUES (?, ?, ?, ?, 'Active')`,
+          [empId, request.username, request.password, request.role_id],
+        );
+
+        // Mark approved and record the generated emp_id
+        await run(
+          `UPDATE employee_pending_request
+           SET admin_approve = 'APPROVED', emp_id = ?
+           WHERE request_id = ?`,
+          [empId, request_id],
+        );
+
+        // Clean up staging education rows
+        await run(
+          `DELETE FROM education_pending_request WHERE request_id = ?`,
+          [request_id],
+        );
+
+        await run("COMMIT");
+        conn.release();
+        return res.json({
+          success: true,
+          message: "New employee approved successfully!",
+          emp_id: empId,
         });
       }
 
-      const empResult = await dbRun("INSERT INTO employee_master SET ?", {
-        first_name: request.first_name,
-        mid_name: request.mid_name || null,
-        last_name: request.last_name,
-        email_id: request.email_id,
-        phone_number: request.phone_number,
-        date_of_birth: request.date_of_birth,
-        gender: request.gender,
-        department_id: request.department_id,
-        role_id: request.role_id,
-        date_of_joining: request.date_of_joining,
-        date_of_relieving: request.date_of_relieving || null,
-        employment_type: request.employment_type,
-        work_type: request.work_type,
-        permanent_address: request.permanent_address,
-        communication_address: request.communication_address || null,
-        aadhar_number: request.aadhar_number || null,
-        pan_number: request.pan_number || null,
-        passport_number: request.passport_number || null,
-        father_name: request.father_name || null,
-        emergency_contact: request.emergency_contact || null,
-        pf_number: request.pf_number || null,
-        esic_number: request.esic_number || null,
-        years_experience:
-          request.years_experience != null
-            ? parseInt(request.years_experience)
-            : null,
-        status: "Active",
-      });
+      // ────────────────────────────────────────────────────────────────────
+      // 3b. UPDATE existing employee → UPDATE employee_master
+      // ────────────────────────────────────────────────────────────────────
+      if (request.request_type === "UPDATE") {
+        if (!request.emp_id) {
+          await run("ROLLBACK");
+          conn.release();
+          return res
+            .status(400)
+            .json({ error: "emp_id missing on UPDATE request." });
+        }
 
-      const empId = empResult.insertId;
+        // Only persist date_of_relieving when status is Relieved
+        const dorValue =
+          request.status === "Relieved" ? n(request.date_of_relieving) : null;
 
-      await dbRun(
-        `INSERT INTO education_details
-           (emp_id, education_level, stream, score, year_of_passout, university, college_name)
-         SELECT ?, education_level, stream, score, year_of_passout, university, college_name
-         FROM education_pending_request WHERE request_id=?`,
-        [empId, request_id],
-      );
+        const updateResult = await run(
+          `UPDATE employee_master SET
+              first_name                 = ?,
+              mid_name                   = ?,
+              last_name                  = ?,
+              email_id                   = ?,
+              phone_number               = ?,
+              date_of_birth              = ?,
+              gender                     = ?,
+              father_name                = ?,
+              emergency_contact_relation = ?,
+              emergency_contact          = ?,
+              department_id              = ?,
+              role_id                    = ?,
+              date_of_joining            = ?,
+              date_of_relieving          = ?,
+              employment_type            = ?,
+              work_type                  = ?,
+              permanent_address          = ?,
+              communication_address      = ?,
+              aadhar_number              = ?,
+              pan_number                 = ?,
+              passport_number            = ?,
+              pf_number                  = ?,
+              esic_number                = ?,
+              years_experience           = ?,
+              status                     = ?
+            WHERE emp_id = ?`,
+          [
+            request.first_name,
+            n(request.mid_name),
+            request.last_name,
+            request.email_id,
+            request.phone_number,
+            request.date_of_birth,
+            request.gender,
+            // ✅ emergency_contact_relation now included
+            n(request.father_name),
+            n(request.emergency_contact_relation),
+            n(request.emergency_contact),
+            // job
+            request.department_id,
+            request.role_id,
+            request.date_of_joining,
+            dorValue,
+            request.employment_type,
+            request.work_type,
+            // address
+            request.permanent_address,
+            n(request.communication_address),
+            // ✅ aadhar / pan / passport now included
+            n(request.aadhar_number),
+            n(request.pan_number),
+            n(request.passport_number),
+            n(request.pf_number),
+            n(request.esic_number),
+            toInt(request.years_experience),
+            request.status || "Active",
+            request.emp_id,
+          ],
+        );
 
-      await dbRun("INSERT INTO login_master SET ?", {
-        emp_id: empId,
-        username: request.username,
-        password: request.password,
-        role_id: request.role_id,
-        status: "Active",
-      });
+        if (updateResult.affectedRows === 0) {
+          await run("ROLLBACK");
+          conn.release();
+          return res.status(404).json({ error: "Employee not found." });
+        }
 
-      await dbRun(
-        "UPDATE employee_pending_request SET admin_approve='APPROVED', emp_id=? WHERE request_id=?",
-        [empId, request_id],
-      );
-      await dbRun("DELETE FROM education_pending_request WHERE request_id=?", [
-        request_id,
-      ]);
+        // Keep login_master role + status in sync
+        await run(
+          `UPDATE login_master SET role_id = ?, status = ? WHERE emp_id = ?`,
+          [request.role_id, request.status || "Active", request.emp_id],
+        );
 
-      return res.json({
-        message: "New employee approved successfully!",
-        emp_id: empId,
-      });
-    } else if (request.request_type === "UPDATE") {
-      if (!request.emp_id)
-        return res
-          .status(400)
-          .json({ error: "emp_id missing for update request" });
+        // Replace education: delete old rows, copy from pending
+        await run(`DELETE FROM education_details WHERE emp_id = ?`, [
+          request.emp_id,
+        ]);
+        await run(
+          `INSERT INTO education_details
+             (emp_id, education_level, stream, score,
+              year_of_passout, university, college_name)
+           SELECT ?, education_level, stream, score,
+              year_of_passout, university, college_name
+           FROM education_pending_request
+           WHERE request_id = ?`,
+          [request.emp_id, request_id],
+        );
 
-      const dorValue =
-        request.status === "Relieved"
-          ? request.date_of_relieving || null
-          : null;
+        // Mark approved
+        await run(
+          `UPDATE employee_pending_request
+           SET admin_approve = 'APPROVED'
+           WHERE request_id = ?`,
+          [request_id],
+        );
 
-      await dbRun("UPDATE employee_master SET ? WHERE emp_id=?", [
-        {
-          first_name: request.first_name,
-          mid_name: request.mid_name || null,
-          last_name: request.last_name,
-          email_id: request.email_id,
-          phone_number: request.phone_number,
-          date_of_birth: request.date_of_birth,
-          gender: request.gender,
-          department_id: request.department_id,
-          role_id: request.role_id,
-          date_of_joining: request.date_of_joining,
-          date_of_relieving: dorValue,
-          employment_type: request.employment_type,
-          work_type: request.work_type,
-          permanent_address: request.permanent_address,
-          communication_address: request.communication_address || null,
-          aadhar_number: request.aadhar_number || null,
-          pan_number: request.pan_number || null,
-          passport_number: request.passport_number || null,
-          father_name: request.father_name || null,
-          emergency_contact: request.emergency_contact || null,
-          pf_number: request.pf_number || null,
-          esic_number: request.esic_number || null,
-          years_experience:
-            request.years_experience != null
-              ? parseInt(request.years_experience)
-              : null,
-          status: request.status || "Active",
-        },
-        request.emp_id,
-      ]);
+        // Clean up staging education rows
+        await run(
+          `DELETE FROM education_pending_request WHERE request_id = ?`,
+          [request_id],
+        );
 
-      await dbRun(
-        "UPDATE login_master SET role_id=?, status=? WHERE emp_id=?",
-        [request.role_id, request.status || "Active", request.emp_id],
-      );
+        await run("COMMIT");
+        conn.release();
+        return res.json({
+          success: true,
+          message: "Employee update approved successfully!",
+        });
+      }
 
-      await dbRun("DELETE FROM education_details WHERE emp_id=?", [
-        request.emp_id,
-      ]);
-      await dbRun(
-        `INSERT INTO education_details
-           (emp_id, education_level, stream, score, year_of_passout, university, college_name)
-         SELECT ?, education_level, stream, score, year_of_passout, university, college_name
-         FROM education_pending_request WHERE request_id=?`,
-        [request.emp_id, request_id],
-      );
-
-      await dbRun(
-        "UPDATE employee_pending_request SET admin_approve='APPROVED' WHERE request_id=?",
-        [request_id],
-      );
-      await dbRun("DELETE FROM education_pending_request WHERE request_id=?", [
-        request_id,
-      ]);
-
-      return res.json({ message: "Employee update approved successfully!" });
-    } else {
+      // Unrecognised request_type
+      await run("ROLLBACK");
+      conn.release();
       return res
         .status(400)
-        .json({ error: "Unknown request type: " + request.request_type });
+        .json({ error: "Unknown request_type: " + request.request_type });
+    } catch (err) {
+      try {
+        conn.query("ROLLBACK", () => {});
+      } catch (_) {}
+      conn.release();
+      console.error("[approve-request]", err);
+      return res.status(500).json({ error: err.message });
     }
-  } catch (err) {
-    console.error("[approve-request]", err);
-    res.status(500).json({ error: err.message });
-  }
+  });
 });
 
 // ─── ADMIN SESSION MANAGEMENT ROUTES ─────────────────────────────────────────
@@ -6151,6 +6412,289 @@ app.get("/admin/sessions/:loginId/status", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+app.post("/employee-edit-request", async (req, res) => {
+  const {
+    emp_id,
+    first_name,
+    mid_name,
+    last_name,
+    email_id,
+    phone_number,
+    date_of_birth,
+    gender,
+    department_id,
+    role_id,
+    date_of_joining,
+    date_of_relieving,
+    employment_type,
+    work_type,
+    permanent_address,
+    communication_address,
+    aadhar_number,
+    pan_number,
+    passport_number,
+    father_name,
+    emergency_contact_relation,
+    emergency_contact,
+    pf_number,
+    esic_number,
+    years_experience,
+    edit_reason,
+    status,
+    education,
+  } = req.body;
+
+  if (!emp_id)
+    return res.status(400).json({ success: false, message: "emp_id required" });
+
+  const emptyToNull = (v) =>
+    v != null && v.toString().trim() !== "" ? v : null;
+
+  if (
+    status === "Relieved" &&
+    (!date_of_relieving || date_of_relieving.toString().trim() === "")
+  )
+    return res.status(400).json({
+      success: false,
+      message: "Date of Relieving is required when status is Relieved",
+    });
+
+  const dorValue =
+    status === "Relieved" ? emptyToNull(date_of_relieving) : null;
+  const safeInt = (v) => (v != null && v !== "" ? parseInt(v) : null);
+
+  try {
+    const existing = await dbGet(
+      "SELECT request_id FROM employee_pending_request WHERE emp_id=? AND admin_approve='PENDING' LIMIT 1",
+      [emp_id],
+    );
+
+    const sharedFields = [
+      first_name,
+      emptyToNull(mid_name),
+      last_name,
+      email_id,
+      phone_number,
+      date_of_birth,
+      gender,
+      safeInt(department_id),
+      safeInt(role_id),
+      date_of_joining,
+      dorValue,
+      employment_type,
+      work_type,
+      permanent_address,
+      emptyToNull(communication_address),
+      emptyToNull(aadhar_number),
+      emptyToNull(pan_number),
+      emptyToNull(passport_number),
+      emptyToNull(father_name),
+      emptyToNull(emergency_contact_relation),
+      emptyToNull(emergency_contact),
+      emptyToNull(pf_number),
+      emptyToNull(esic_number),
+      safeInt(years_experience),
+      status || "Active",
+      emptyToNull(edit_reason),
+    ];
+
+    let requestId;
+
+    if (existing) {
+      await dbRun(
+        `UPDATE employee_pending_request SET
+           first_name=?, mid_name=?, last_name=?, email_id=?, phone_number=?,
+           date_of_birth=?, gender=?, department_id=?, role_id=?,
+           date_of_joining=?, date_of_relieving=?, employment_type=?, work_type=?,
+           permanent_address=?, communication_address=?,
+           aadhar_number=?, pan_number=?, passport_number=?,
+           father_name=?, emergency_contact_relation =?, emergency_contact=?,
+           pf_number=?, esic_number=?,
+           years_experience=?, status=?, edit_reason=?, updated_at=NOW()
+         WHERE emp_id=? AND admin_approve='PENDING'`,
+        [...sharedFields, emp_id],
+      );
+      requestId = existing.request_id;
+    } else {
+      const result = await dbRun(
+        `INSERT INTO employee_pending_request
+           (emp_id, first_name, mid_name, last_name, email_id, phone_number,
+            date_of_birth, gender, department_id, role_id, date_of_joining,
+            date_of_relieving, employment_type, work_type, permanent_address,
+            communication_address, aadhar_number, pan_number, passport_number,
+            father_name, emergency_contact_relation, emergency_contact,
+            pf_number, esic_number,
+            years_experience, status, admin_approve, username, password,
+            request_type, edit_reason, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING','-','-','UPDATE',?,NOW(),NOW())`,
+        [emp_id, ...sharedFields],
+      );
+      requestId = result.insertId;
+    }
+
+    if (requestId) {
+      await dbRun("DELETE FROM education_pending_request WHERE request_id=?", [
+        requestId,
+      ]);
+      if (Array.isArray(education) && education.length > 0) {
+        const eduValues = education.map((e) => [
+          requestId,
+          e.education_level,
+          e.stream || null,
+          e.score != null && e.score !== "" ? parseFloat(e.score) : null,
+          e.year_of_passout || null,
+          e.university || null,
+          e.college_name || null,
+        ]);
+        await dbRun(
+          `INSERT INTO education_pending_request
+             (request_id, education_level, stream, score, year_of_passout, university, college_name)
+           VALUES ?`,
+          [eduValues],
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: existing
+        ? "Pending request updated!"
+        : "Pending request submitted!",
+      request_id: requestId,
+    });
+  } catch (err) {
+    console.error("[employee-edit-request]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get("/admin/request/:request_id", async (req, res) => {
+  try {
+    const row = await dbGet(
+      `SELECT p.*,
+          COALESCE(p.department_id, e.department_id) AS dept_id_resolved,
+          COALESCE(p.role_id,       e.role_id)       AS role_id_resolved,
+          d.department_name, r.role_name
+       FROM employee_pending_request p
+       LEFT JOIN employee_master   e ON p.emp_id        = e.emp_id
+       LEFT JOIN department_master d ON COALESCE(p.department_id, e.department_id) = d.department_id
+       LEFT JOIN role_master       r ON COALESCE(p.role_id,       e.role_id)       = r.role_id
+       WHERE p.request_id = ?`,
+      [req.params.request_id],
+    );
+    if (!row)
+      return res
+        .status(404)
+        .json({ success: false, message: "Request not found" });
+    res.json({ success: true, data: row });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.put("/admin/resubmit-request/:request_id", async (req, res) => {
+  const {
+    first_name,
+    mid_name,
+    last_name,
+    email_id,
+    phone_number,
+    date_of_birth,
+    gender,
+    department_id,
+    role_id,
+    date_of_joining,
+    employment_type,
+    work_type,
+    permanent_address,
+    communication_address,
+    aadhar_number,
+    pan_number,
+    passport_number,
+    father_name,
+    emergency_contact_relation,
+    emergency_contact,
+    pf_number,
+    esic_number,
+    years_experience,
+    username,
+    education,
+  } = req.body;
+
+  try {
+    const result = await dbRun(
+      `UPDATE employee_pending_request SET
+         first_name=?, mid_name=?, last_name=?, email_id=?, phone_number=?,
+         date_of_birth=?, gender=?, department_id=?, role_id=?, date_of_joining=?,
+         employment_type=?, work_type=?, permanent_address=?, communication_address=?,
+         aadhar_number=?, pan_number=?, passport_number=?,
+         father_name=?, emergency_contact_relation=?, emergency_contact=?,
+         pf_number=?, esic_number=?, years_experience=?,
+         username=?, admin_approve='PENDING', reject_reason=NULL, updated_at=NOW()
+       WHERE request_id=? AND admin_approve='REJECTED'`,
+      [
+        first_name,
+        mid_name || null,
+        last_name,
+        email_id,
+        phone_number,
+        date_of_birth,
+        gender,
+        department_id,
+        role_id,
+        date_of_joining,
+        employment_type,
+        work_type,
+        permanent_address,
+        communication_address || null,
+        aadhar_number || null,
+        pan_number || null,
+        passport_number || null,
+        father_name || null,
+        emergency_contact_relation || null,
+        emergency_contact || null,
+        pf_number || null,
+        esic_number || null,
+        years_experience ? parseInt(years_experience) : null,
+        username,
+        req.params.request_id,
+      ],
+    );
+
+    if (result.affectedRows === 0)
+      return res.status(404).json({
+        success: false,
+        message: "Request not found or not in REJECTED state",
+      });
+
+    await dbRun("DELETE FROM education_pending_request WHERE request_id=?", [
+      req.params.request_id,
+    ]);
+    if (Array.isArray(education) && education.length > 0) {
+      const eduValues = education.map((e) => [
+        req.params.request_id,
+        e.education_level,
+        e.stream || null,
+        e.score ? parseFloat(e.score) : null,
+        e.year_of_passout || null,
+        e.university || null,
+        e.college_name || null,
+      ]);
+      await dbRun(
+        `INSERT INTO education_pending_request
+           (request_id, education_level, stream, score, year_of_passout, university, college_name)
+         VALUES ?`,
+        [eduValues],
+      );
+    }
+
+    res.json({ success: true, message: "Request resubmitted successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── START SERVER ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () =>

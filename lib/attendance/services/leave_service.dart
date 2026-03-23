@@ -81,14 +81,36 @@ class LeaveService {
   }
 
   // ── HR/Admin action: Approved or Rejected_By_HR ──────────────────────────
-  Future<bool> hrLeaveAction({
+  // Future<bool> hrLeaveAction({
+  //   required int leaveId,
+  //   required String status, // "Approved" | "Rejected_By_HR"
+  //   required int loginId,
+  //   String? rejectionReason,
+  // }) async {
+  //   final response = await http.put(
+  //     Uri.parse("$baseUrl/leave/$leaveId/hr-action"),
+  //     headers: {"Content-Type": "application/json"},
+  //     body: json.encode({
+  //       "status": status,
+  //       "login_id": loginId,
+  //       if (rejectionReason != null) "rejection_reason": rejectionReason,
+  //     }),
+  //   );
+  //   if (response.statusCode == 200) {
+  //     final decoded = json.decode(response.body);
+  //     return decoded['success'] == true;
+  //   }
+  //   return false;
+  // }
+
+  Future<bool> managerLeaveAction({
     required int leaveId,
-    required String status, // "Approved" | "Rejected_By_HR"
+    required String status, // Approved / Rejected_By_Manager
     required int loginId,
     String? rejectionReason,
   }) async {
     final response = await http.put(
-      Uri.parse("$baseUrl/leave/$leaveId/hr-action"),
+      Uri.parse("$baseUrl/leave/$leaveId/manager-action"),
       headers: {"Content-Type": "application/json"},
       body: json.encode({
         "status": status,
@@ -96,6 +118,7 @@ class LeaveService {
         if (rejectionReason != null) "rejection_reason": rejectionReason,
       }),
     );
+
     if (response.statusCode == 200) {
       final decoded = json.decode(response.body);
       return decoded['success'] == true;
@@ -123,7 +146,6 @@ class LeaveService {
   }
 
   // ── Leave history ─────────────────────────────────────────────────────────
-
 
   Future<List<LeaveModel>> getAllLeaveHistory(int empId) async {
     final response = await http.get(

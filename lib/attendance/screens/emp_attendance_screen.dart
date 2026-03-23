@@ -499,20 +499,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text(
-          'Attendance',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: Colors.grey.shade200, height: 1),
-        ),
-      ),
+
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(

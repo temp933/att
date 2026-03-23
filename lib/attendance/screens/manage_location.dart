@@ -819,11 +819,10 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Locations"),
-        backgroundColor: Colors.teal,
-      ),
-
+      // appBar: AppBar(
+      //   title: const Text("Locations"),
+      //   backgroundColor: Colors.teal,
+      // ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : sites.isEmpty

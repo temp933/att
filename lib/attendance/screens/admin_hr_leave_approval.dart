@@ -121,7 +121,11 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
       child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A), Color(0xFF1e1b4b)],
+            colors: [
+              Color.fromARGB(255, 255, 255, 255),
+              Color.fromARGB(255, 255, 255, 255),
+              Color.fromARGB(255, 255, 255, 255),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -150,7 +154,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                       ),
                       child: const Icon(
                         Icons.approval_rounded,
-                        color: Colors.white,
+                        color: Color.fromARGB(255, 0, 0, 0),
                         size: 19,
                       ),
                     ),
@@ -167,7 +171,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: Color.fromARGB(255, 0, 0, 0),
                             ),
                           ),
                           Text(
@@ -175,7 +179,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.white60,
+                              color: Color.fromARGB(143, 0, 0, 0),
                             ),
                           ),
                         ],
@@ -184,7 +188,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
 
                     IconButton(
                       icon: const Icon(Icons.refresh_rounded),
-                      color: Colors.white,
+                      color: const Color.fromARGB(255, 0, 0, 0),
                       onPressed: _loadPending,
                     ),
                   ],
@@ -204,8 +208,8 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                     horizontal: 4,
                     vertical: 4,
                   ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white54,
+                  labelColor: const Color.fromARGB(255, 0, 0, 0),
+                  unselectedLabelColor: const Color.fromARGB(137, 0, 0, 0),
                   tabs: [
                     _buildTab(
                       Icons.pending_actions_outlined,
@@ -376,8 +380,14 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
             itemBuilder: (_, i) => _PendingCard(
               leave: _pendingLeaves[i],
               fmt: _fmt,
-              onApprove: (l) => _hrAction(l, 'Approved'),
-              onReject: _showRejectionDialog,
+              onApprove: (l) {
+                if (l.status == 'Pending_TL') {
+                  _handleLeaveAction(l, 'recommend');
+                } else if (l.status == 'Pending_Manager') {
+                  _handleLeaveAction(l, 'Approved'); // final approval
+                }
+              },
+              onReject: (l) => _showRejectionDialog(l),
             ),
           ),
         ),
@@ -633,7 +643,17 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
                 return;
               }
               Navigator.pop(context);
-              _hrAction(leave, 'Rejected_By_HR', rejectionReason: reason);
+              String status;
+
+              if (leave.status == 'Pending_TL') {
+                status = 'Not_Recommended_By_TL';
+              } else if (leave.status == 'Pending_Manager ') {
+                status = 'Rejected_By_HR';
+              } else {
+                status = 'Rejected_By_Manager';
+              }
+
+              _handleLeaveAction(leave, status, rejectionReason: reason);
             },
             child: const Text(
               'Reject',
@@ -645,12 +665,12 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
     );
   }
 
-  Future<void> _hrAction(
+  Future<void> _handleLeaveAction(
     LeaveModel leave,
     String status, {
     String? rejectionReason,
   }) async {
-    final ok = await _leaveService.hrLeaveAction(
+    final ok = await _leaveService.managerLeaveAction(
       leaveId: leave.leaveId!,
       status: status,
       loginId: widget.loginId,
@@ -710,7 +730,7 @@ class _PendingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPendingHR = leave.status == 'Pending_HR';
+    final isPendingManager = leave.status == 'Pending_Manager';
     final isPendingTL = leave.status == 'Pending_TL';
     final insufficient =
         leave.remainingDays != null &&
@@ -886,21 +906,21 @@ class _PendingCard extends StatelessWidget {
           ),
 
           // ── Banners & actions ─────────────────────────────────────────
-          if (isPendingTL || isPendingHR) ...[
+          if (isPendingTL || isPendingManager) ...[
             const Divider(height: 1, thickness: 1, color: _border),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
               child: Column(
                 children: [
-                  if (isPendingTL)
+                  if (leave.status == 'Pending_Manager ')
                     _Banner(
-                      icon: Icons.hourglass_top_rounded,
-                      message: 'Awaiting Team Lead recommendation',
-                      color: _primary,
-                      bg: const Color(0xFFEEF2FF),
-                      borderColor: const Color(0xFFBFD0FF),
+                      icon: Icons.people_alt_rounded,
+                      message: 'Awaiting HR review',
+                      color: _purple,
+                      bg: Color(0xFFF3E8FF),
+                      borderColor: Color(0xFFD8B4FE),
                     ),
-                  if (isPendingHR && insufficient) ...[
+                  if (isPendingManager && insufficient) ...[
                     _Banner(
                       icon: Icons.warning_amber_rounded,
                       message:
@@ -911,7 +931,7 @@ class _PendingCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  if (isPendingHR) ...[
+                  if (isPendingManager) ...[
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -1437,98 +1457,6 @@ class _DesktopHistoryState extends State<_DesktopHistory> {
     );
   }
 }
-// Desktop History — fixed flex columns, chips not stretched
-// class _DesktopHistory extends StatelessWidget {
-//   final List<LeaveModel> leaves;
-//   final String Function(DateTime) fmt;
-
-//   static const List<int> _flex = [3, 2, 3, 1, 2, 2];
-//   static const List<String> _headers = [
-//     'Employee',
-//     'Leave Type',
-//     'Duration',
-//     'Days',
-//     'Status',
-//     'Processed By',
-//   ];
-
-//   const _DesktopHistory({required this.leaves, required this.fmt});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return SingleChildScrollView(
-//       physics: const AlwaysScrollableScrollPhysics(),
-//       padding: const EdgeInsets.all(20),
-//       child: Center(
-//         child: ConstrainedBox(
-//           constraints: const BoxConstraints(maxWidth: 1100),
-//           child: Container(
-//             decoration: BoxDecoration(
-//               color: _card,
-//               borderRadius: BorderRadius.circular(16),
-//               border: Border.all(color: _border),
-//               boxShadow: [
-//                 BoxShadow(
-//                   color: Colors.black.withOpacity(0.05),
-//                   blurRadius: 14,
-//                   offset: const Offset(0, 4),
-//                 ),
-//               ],
-//             ),
-//             clipBehavior: Clip.antiAlias,
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 // Header
-//                 Container(
-//                   padding: const EdgeInsets.symmetric(
-//                     vertical: 13,
-//                     horizontal: 20,
-//                   ),
-//                   decoration: const BoxDecoration(
-//                     gradient: LinearGradient(
-//                       colors: [
-//                         Color(0xFF1A56DB),
-//                         Color(0xFF1E3A8A),
-//                         Color(0xFF1e1b4b),
-//                       ],
-//                       begin: Alignment.centerLeft,
-//                       end: Alignment.centerRight,
-//                     ),
-//                   ),
-//                   child: Row(
-//                     children: List.generate(_headers.length, (i) {
-//                       return Expanded(
-//                         flex: _flex[i],
-//                         child: Text(
-//                           _headers[i],
-//                           style: const TextStyle(
-//                             fontSize: 12,
-//                             fontWeight: FontWeight.w600,
-//                             color: Colors.white,
-//                             letterSpacing: 0.4,
-//                           ),
-//                         ),
-//                       );
-//                     }),
-//                   ),
-//                 ),
-//                 // Rows
-//                 ...leaves.asMap().entries.map(
-//                   (e) => _DesktopRow(
-//                     leave: e.value,
-//                     fmt: fmt,
-//                     isEven: e.key.isEven,
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
 
 class _DesktopRow extends StatelessWidget {
   final LeaveModel leave;
@@ -1689,18 +1617,25 @@ String _statusLabel(String s) {
   switch (s) {
     case 'Pending_TL':
       return 'Awaiting TL';
-    case 'Pending_HR':
-      return 'TL Recommended';
+
+    case 'Pending_Manager':
+      return 'Awaiting Manager'; // ✅ ADD
+
     case 'Approved':
       return 'Approved';
-    case 'Not_Recommended_By_TL':
-      return 'Not Recommended'; // ← ADD
-    case 'Rejected_By_TL':
-      return 'Rejected by TL';
+
     case 'Rejected_By_HR':
-      return 'Rejected by HR';
+      return 'Rejected by HR'; // ✅ ADD
+
+    case 'Rejected_By_Manager':
+      return 'Rejected by Manager';
+
+    case 'Not_Recommended_By_TL':
+      return 'Not Recommended';
+
     case 'Cancelled':
       return 'Cancelled';
+
     default:
       return s;
   }
@@ -1710,14 +1645,14 @@ Color _statusColor(String s) {
   switch (s) {
     case 'Approved':
       return _accent; // green
-    case 'Rejected_By_HR':
+    case 'Rejected_By_Manager':
     case 'Rejected_By_TL':
       return _red;
     case 'Not_Recommended_By_TL':
       return _red;
     case 'Cancelled':
       return _amber;
-    case 'Pending_HR':
+    case 'Pending_Manager':
       return _purple;
     case 'Pending_TL':
     default:
@@ -1879,6 +1814,33 @@ class _ReasonSection extends StatelessWidget {
       );
     }
 
+    if (leave.status == 'Pending_Manager') {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.schedule_outlined,
+          label: 'Waiting for Manager Approval',
+          text:
+              'This leave has been reviewed by HR and is pending final approval.',
+          iconColor: _purple,
+          iconBg: const Color(0xFFF3E8FF),
+          textColor: _textDark,
+        ),
+      );
+    }
+
+    if (leave.status == 'Rejected_By_Manager' &&
+        leave.rejectionReason?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.business_center_outlined,
+          label: 'Rejected by Manager',
+          text: leave.rejectionReason!,
+          iconColor: _red,
+          iconBg: const Color(0xFFFEE2E2),
+          textColor: _red,
+        ),
+      );
+    }
     // 4 — Cancel reason
     if (leave.cancelReason?.isNotEmpty == true) {
       tiles.add(

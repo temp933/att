@@ -382,13 +382,13 @@ class _AdminSessionManagementScreenState
 
   // ── AppBar — same style as profile screen ────────────────────────────────────
   PreferredSizeWidget _buildAppBar() => AppBar(
-    backgroundColor: _primary,
-    foregroundColor: Colors.white,
+    // backgroundColor: _primary,
+    foregroundColor: const Color.fromARGB(255, 9, 9, 9),
     elevation: 0,
-    title: const Text(
-      'Session Management',
-      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
-    ),
+    // title: const Text(
+    //   'Session Management',
+    //   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+    // ),
     actions: [
       IconButton(
         tooltip: 'Refresh',
