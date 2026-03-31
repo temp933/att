@@ -88,3 +88,11 @@ Thumbs.db
 # ==============================
 google-services.json
 GoogleService-Info.plist
+
+# Node
+backend/node_modules/
+node_modules/
+
+# Flutter
+.dart_tool/
+build/
