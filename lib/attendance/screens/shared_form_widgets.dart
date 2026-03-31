@@ -1163,9 +1163,6 @@ const _kTextLight = Color(0xFF9EA3B8);
 
 const _kEduLevels = ['10', '12', 'Diploma', 'UG', 'PG', 'PhD'];
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  FormTextField
-// ═════════════════════════════════════════════════════════════════════════════
 class FormTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -1327,16 +1324,6 @@ class FormTextField extends StatelessWidget {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  FormDateField
-//
-//  FIX 1: readOnly removed — field is tappable and opens the date picker.
-//  FIX 2: initialDate is clamped between firstDate and lastDate so the picker
-//         never opens outside its own valid range (avoids assertion crash).
-//  FIX 3: For DOB the lastDate passed by callers is already
-//         DateTime.now() - 18 years, so the picker will never allow a date
-//         that makes the employee younger than 18.
-// ═════════════════════════════════════════════════════════════════════════════
 class FormDateField extends StatelessWidget {
   final TextEditingController controller;
   final String label;

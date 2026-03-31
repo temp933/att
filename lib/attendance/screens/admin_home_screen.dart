@@ -18,7 +18,7 @@ class AdminHomeScreen extends StatefulWidget {
 }
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
-  String hrName = ""; // HR's name to display
+  String AdminName = ""; // admin's name to display
   bool isLoading = true; // Loading state
   int totalEmployees = 0;
   List<LeaveData> leaveChartData = [];
@@ -56,7 +56,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       }
 
       setState(() {
-        hrName = fullName;
+        AdminName = fullName;
 
         // ✅ SET DASHBOARD VALUES FROM API
         totalEmployees = dashboard['totalEmployees'];
@@ -71,7 +71,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     } catch (e) {
       debugPrint("Error fetching Admin data: $e");
       setState(() {
-        hrName = "Admin";
+        AdminName = "Admin";
         isLoading = false;
       });
     }
@@ -132,7 +132,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               isLoading
                   ? const CircularProgressIndicator()
                   : Text(
-                      "Welcome back HR, $hrName",
+                      "Welcome back Admin, $AdminName",
                       style: TextStyle(color: Colors.grey, fontSize: 16),
                     ),
 

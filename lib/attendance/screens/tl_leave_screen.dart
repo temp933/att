@@ -2,6 +2,20 @@ import 'package:flutter/material.dart';
 import '../models/leavemodel.dart';
 import '../services/leave_service.dart';
 
+// ── Design Tokens (in sync with LeaveApprovalScreen) ─────────────────────────
+const Color _primary = Color(0xFF1A56DB);
+const Color _accent = Color(0xFF0E9F6E);
+const Color _purple = Color(0xFF7C3AED);
+const Color _amber = Color(0xFFF59E0B);
+const Color _red = Color(0xFFEF4444);
+const Color _surface = Color(0xFFF0F4FF);
+const Color _card = Colors.white;
+const Color _textDark = Color(0xFF0F172A);
+const Color _textMid = Color(0xFF64748B);
+const Color _textLight = Color(0xFF94A3B8);
+const Color _border = Color(0xFFE2E8F0);
+
+// ─────────────────────────────────────────────────────────────────────────────
 class TLLeaveScreen extends StatefulWidget {
   final int loginId;
   const TLLeaveScreen({super.key, required this.loginId});
@@ -13,16 +27,20 @@ class TLLeaveScreen extends StatefulWidget {
 class _TLLeaveScreenState extends State<TLLeaveScreen>
     with SingleTickerProviderStateMixin {
   final LeaveService _leaveService = LeaveService();
-
   late TabController _tabController;
-  late Future<List<LeaveModel>> _pendingFuture;
-  late Future<List<LeaveModel>> _historyFuture;
+
+  List<LeaveModel> _pendingLeaves = [];
+  List<LeaveModel> _historyLeaves = [];
+  bool _pendingLoading = true;
+  bool _historyLoading = true;
+  String? _pendingError;
+  String? _historyError;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _reload();
+    _loadAll();
   }
 
   @override
@@ -31,261 +49,118 @@ class _TLLeaveScreenState extends State<TLLeaveScreen>
     super.dispose();
   }
 
-  void _reload() {
+  Future<void> _loadAll() => Future.wait([_loadPending(), _loadHistory()]);
+
+  Future<void> _loadPending() async {
     setState(() {
-      _pendingFuture = _leaveService.getPendingTLLeaves();
-      _historyFuture = _leaveService.getAllLeavesHistory();
+      _pendingLoading = true;
+      _pendingError = null;
     });
+    try {
+      final data = await _leaveService.getPendingTLLeaves(widget.loginId);
+      if (mounted) setState(() => _pendingLeaves = data);
+    } catch (e) {
+      if (mounted) setState(() => _pendingError = '$e');
+    } finally {
+      if (mounted) setState(() => _pendingLoading = false);
+    }
   }
 
-  String _formatDate(DateTime d) =>
-      "${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}";
+  Future<void> _loadHistory() async {
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final data = await _leaveService.getTLLeavesHistory(widget.loginId);
+      if (mounted) setState(() => _historyLeaves = data);
+    } catch (e) {
+      if (mounted) setState(() => _historyError = '$e');
+    } finally {
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
 
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')} ${_mon(d.month)} ${d.year}';
+
+  String _mon(int m) => const [
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][m];
+
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final bool isDesktop = size.width >= 900;
-    final double spacing = isDesktop ? 20 : 12;
-    final double fontTitle = isDesktop ? 18 : 14;
-    final double fontSub = isDesktop ? 16 : 12;
-
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.teal,
-        title: const Text("TL Leave Review"),
-        actions: [
-          IconButton(
-            tooltip: "Refresh",
-            icon: const Icon(Icons.refresh),
-            onPressed: _reload,
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          tabs: const [
-            Tab(icon: Icon(Icons.pending_actions), text: "Pending"),
-            Tab(icon: Icon(Icons.history), text: "History"),
-          ],
-        ),
-      ),
+      backgroundColor: _surface,
+      appBar: _buildAppBar(),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          // Recommend / Not Recommend buttons
-          FutureBuilder<List<LeaveModel>>(
-            future: _pendingFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.inbox_outlined, size: 64, color: Colors.teal),
-                      SizedBox(height: 12),
-                      Text(
-                        "No pending leave requests",
-                        style: TextStyle(fontSize: 16, color: Colors.black54),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              final leaves = snapshot.data!;
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 900),
-                  child: ListView.builder(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isDesktop ? 24 : 16,
-                      vertical: spacing,
-                    ),
-                    itemCount: leaves.length,
-                    itemBuilder: (context, index) {
-                      final leave = leaves[index];
-
-                      return Card(
-                        margin: EdgeInsets.only(bottom: spacing),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ExpansionTile(
-                          tilePadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          title: Text(
-                            leave.employeeName ?? "",
-                            style: TextStyle(
-                              fontSize: fontTitle,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            "${leave.departmentName ?? ""} | ${leave.roleName ?? ""}",
-                            style: TextStyle(
-                              fontSize: fontSub,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          trailing: _statusChip(leave.status),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            16,
-                            4,
-                            16,
-                            16,
-                          ),
-                          children: [
-                            _infoRow("Emp ID", leave.empId.toString()),
-                            _infoRow("Leave Type", leave.leaveType),
-                            _infoRow("From", _formatDate(leave.fromDate)),
-                            _infoRow("To", _formatDate(leave.toDate)),
-                            _infoRow(
-                              "Total Days",
-                              leave.numberOfDays.toString(),
-                            ),
-                            _infoRow("Reason", leave.reason ?? "-"),
-                            const Divider(height: 20),
-                            _infoRow(
-                              "Taken",
-                              leave.takenDays?.toString() ?? "0",
-                            ),
-                            _infoRow(
-                              "Remaining",
-                              leave.remainingDays?.toString() ?? "0",
-                            ),
-                            const SizedBox(height: 12),
-
-                            // ── Recommend / Not Recommend buttons ──────────
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.red,
-                                    side: const BorderSide(color: Colors.red),
-                                  ),
-                                  icon: const Icon(Icons.close, size: 16),
-                                  label: const Text("Not Recommend"),
-                                  onPressed: () =>
-                                      _showNotRecommendDialog(leave),
-                                ),
-                                const SizedBox(width: 10),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.teal,
-                                  ),
-                                  icon: const Icon(Icons.check, size: 16),
-                                  label: const Text("Recommend"),
-                                  onPressed: () =>
-                                      _tlAction(leave, "recommend"),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // ══════════════════════════════════════════════════════════════════
-          // TAB 2 — FULL HISTORY
-          // ══════════════════════════════════════════════════════════════════
-          FutureBuilder<List<LeaveModel>>(
-            future: _historyFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Center(child: Text("No leave records found"));
-              }
-
-              final leaves = snapshot.data!;
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth >= 900) {
-                    return _buildDesktopHistory(leaves);
-                  } else {
-                    return _buildMobileHistory(leaves);
-                  }
-                },
-              );
-            },
-          ),
-        ],
+        physics: const NeverScrollableScrollPhysics(),
+        children: [_buildPendingTab(), _buildHistoryTab()],
       ),
     );
   }
 
-  // ── Desktop: table with expandable details ──────────────────────────────
-  Widget _buildDesktopHistory(List<LeaveModel> leaves) {
-    const headers = [
-      "Employee",
-      "Type",
-      "From",
-      "To",
-      "Days",
-      "Status",
-      "Approved By",
-    ];
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  PreferredSizeWidget _buildAppBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(56),
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF1A56DB), Color(0xFF1A56DB), Color(0xFF1A56DB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x401A56DB),
+              blurRadius: 14,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Row(
             children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.teal.shade700,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(10),
+              Expanded(
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorPadding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
                   ),
-                ),
-                child: Row(
-                  children: headers
-                      .map(
-                        (h) => Expanded(
-                          child: Text(
-                            h,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white60,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                  tabs: [
+                    _buildTab(
+                      Icons.pending_actions_outlined,
+                      'Pending',
+                      _pendingLeaves.length,
+                    ),
+                    _buildTab(Icons.history_rounded, 'History', null),
+                  ],
                 ),
               ),
-              // Rows
-              ...leaves.asMap().entries.map(
-                (e) => _TLHistoryDetailRow(
-                  leave: e.value,
-                  formatDate: _formatDate,
-                  isEven: e.key.isEven,
-                ),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                onPressed: _loadAll,
               ),
             ],
           ),
@@ -294,177 +169,322 @@ class _TLLeaveScreenState extends State<TLLeaveScreen>
     );
   }
 
-  // ── Mobile: card list ───────────────────────────────────────────────────
-  Widget _buildMobileHistory(List<LeaveModel> leaves) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: leaves.length,
-      itemBuilder: (context, index) {
-        final leave = leaves[index];
-        final color = _statusColorValue(leave.status);
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: color.withOpacity(0.4)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        leave.employeeName ?? "Emp #${leave.empId}",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    _statusChip(leave.status),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  "${leave.leaveType} • ${_formatDate(leave.fromDate)} → ${_formatDate(leave.toDate)} • ${leave.numberOfDays} day(s)",
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-                if (leave.reason != null && leave.reason!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    "Reason: ${leave.reason}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-                if (leave.rejectionReason != null &&
-                    leave.rejectionReason!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    "Rejection: ${leave.rejectionReason}",
-                    style: const TextStyle(fontSize: 12, color: Colors.red),
-                  ),
-                ],
-                if (leave.approvedBy != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    "Approved By: ${leave.approvedBy}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-              ],
+  Tab _buildTab(IconData icon, String label, int? count) => Tab(
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 6),
+        Text(label),
+        if (count != null && count > 0) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
             ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ── Shared helpers ──────────────────────────────────────────────────────
-  Widget _statusChip(String status) {
-    return Chip(
-      label: Text(
-        _statusLabel(status),
-        style: const TextStyle(color: Colors.white, fontSize: 11),
-      ),
-      backgroundColor: _statusColorValue(status),
-      padding: EdgeInsets.zero,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case "Pending_TL":
-        return "Pending Review";
-      case "Pending_HR":
-        return "TL Recommended";
-      case "Approved":
-        return "Approved";
-      case "Rejected_By_TL":
-        return "Rejected by TL";
-      case "Rejected_By_HR":
-        return "Rejected by HR";
-      case "Cancelled":
-        return "Cancelled";
-      default:
-        return status;
-    }
-  }
-
-  Color _statusColorValue(String status) {
-    switch (status) {
-      case "Approved":
-        return Colors.green.shade600;
-      case "Rejected_By_HR":
-      case "Rejected_By_TL":
-        return Colors.red.shade600;
-      case "Cancelled":
-        return Colors.orange.shade600;
-      case "Pending_HR":
-        return Colors.teal.shade600;
-      case "Pending_TL":
-      default:
-        return Colors.blue.shade600;
-    }
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 110,
             child: Text(
-              "$label:",
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              '$count',
+              style: const TextStyle(
+                fontSize: 10,
+                color: _primary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          Expanded(child: Text(value)),
         ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
 
-  void _showNotRecommendDialog(LeaveModel leave) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Reason for Not Recommending"),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: "Enter your reason...",
-            border: OutlineInputBorder(),
+  // ── TAB 1 — PENDING ────────────────────────────────────────────────────────
+  Widget _buildPendingTab() {
+    if (_pendingLoading) return _loader();
+    if (_pendingError != null) return _error(_pendingError!, _loadPending);
+    if (_pendingLeaves.isEmpty) {
+      return _empty(
+        icon: Icons.inbox_outlined,
+        title: 'All clear!',
+        subtitle: 'No pending leave requests right now.',
+        onRefresh: _loadPending,
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadPending,
+      color: _primary,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            itemCount: _pendingLeaves.length,
+            itemBuilder: (_, i) => _TLPendingCard(
+              leave: _pendingLeaves[i],
+              fmt: _fmt,
+              onRecommend: (l) => _tlAction(l, 'recommend'),
+              onNotRecommend: (l) => _showNotRecommendDialog(l),
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
+      ),
+    );
+  }
+
+  // ── TAB 2 — HISTORY ────────────────────────────────────────────────────────
+  Widget _buildHistoryTab() {
+    if (_historyLoading) return _loader();
+    if (_historyError != null) return _error(_historyError!, _loadHistory);
+    if (_historyLeaves.isEmpty) {
+      return _empty(
+        icon: Icons.history_toggle_off_rounded,
+        title: 'No records yet',
+        subtitle: 'Leave history will appear here.',
+        onRefresh: _loadHistory,
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadHistory,
+      color: _primary,
+      child: LayoutBuilder(
+        builder: (ctx, cs) => cs.maxWidth >= 860
+            ? _TLDesktopHistory(leaves: _historyLeaves, fmt: _fmt)
+            : _TLMobileHistory(leaves: _historyLeaves, fmt: _fmt),
+      ),
+    );
+  }
+
+  // ── Shared state widgets ───────────────────────────────────────────────────
+  Widget _loader() => const Center(
+    child: CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
+  );
+
+  Widget _error(String msg, VoidCallback retry) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _red.withOpacity(0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.wifi_off_rounded, color: _red, size: 28),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          const SizedBox(height: 16),
+          const Text(
+            'Something went wrong',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: _textDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            msg,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: _textMid),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: retry,
+            style: FilledButton.styleFrom(
+              backgroundColor: _primary,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text(
+              'Try Again',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _empty({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onRefresh,
+  }) => RefreshIndicator(
+    onRefresh: () async => onRefresh(),
+    color: _primary,
+    child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverFillRemaining(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _primary.withOpacity(0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 36, color: _primary),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _textDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 13, color: _textMid),
+              ),
+              const SizedBox(height: 20),
+              TextButton.icon(
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Refresh'),
+                style: TextButton.styleFrom(
+                  foregroundColor: _primary,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  // ── Dialogs & Actions ──────────────────────────────────────────────────────
+  void _showNotRecommendDialog(LeaveModel leave) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (_) => AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.thumb_down_alt_rounded,
+                color: _red,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Not Recommend Leave',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Reason for not recommending',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _textMid,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 13, color: _textDark),
+              decoration: InputDecoration(
+                hintText: 'Briefly describe the reason…',
+                hintStyle: const TextStyle(color: _textLight, fontSize: 13),
+                filled: true,
+                fillColor: _surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _primary, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _textMid,
+              side: const BorderSide(color: _border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(9),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: _red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(9),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
             onPressed: () {
-              final reason = controller.text.trim();
+              final reason = ctrl.text.trim();
               if (reason.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Please enter a reason")),
+                  const SnackBar(content: Text('Please enter a reason')),
                 );
                 return;
               }
               Navigator.pop(context);
-              _tlAction(leave, "not_recommend", rejectionReason: reason);
+              _tlAction(leave, 'not_recommend', rejectionReason: reason);
             },
-            child: const Text("Submit"),
+            child: const Text(
+              'Submit',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -476,219 +496,1189 @@ class _TLLeaveScreenState extends State<TLLeaveScreen>
     String action, {
     String? rejectionReason,
   }) async {
-    final success = await _leaveService.tlLeaveAction(
+    final ok = await _leaveService.tlLeaveAction(
       leaveId: leave.leaveId!,
       action: action,
       loginId: widget.loginId,
       rejectionReason: rejectionReason,
     );
-
     if (!mounted) return;
-
-    if (success) {
-      final msg = action == "recommend"
-          ? "Leave recommended to HR ✓"
-          : "Leave rejected ✗";
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: action == "recommend"
-              ? Colors.teal
-              : Colors.red.shade700,
+    final recommended = action == 'recommend';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              ok
+                  ? (recommended
+                        ? Icons.check_circle_rounded
+                        : Icons.cancel_rounded)
+                  : Icons.error_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              ok
+                  ? (recommended
+                        ? 'Leave recommended successfully'
+                        : 'Leave not recommended')
+                  : 'Action failed. Please try again.',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-      );
-      _reload();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Failed to update. Please try again."),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+        backgroundColor: ok ? (recommended ? _accent : _red) : _red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    if (ok) _loadAll();
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Desktop history row — expandable with full details
-// ═════════════════════════════════════════════════════════════════════════════
-class _TLHistoryDetailRow extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════════════════
+// TL Pending Card
+// ═══════════════════════════════════════════════════════════════════════════════
+class _TLPendingCard extends StatefulWidget {
   final LeaveModel leave;
-  final String Function(DateTime) formatDate;
-  final bool isEven;
+  final String Function(DateTime) fmt;
+  final void Function(LeaveModel) onRecommend;
+  final void Function(LeaveModel) onNotRecommend;
 
-  const _TLHistoryDetailRow({
+  const _TLPendingCard({
     required this.leave,
-    required this.formatDate,
-    required this.isEven,
+    required this.fmt,
+    required this.onRecommend,
+    required this.onNotRecommend,
   });
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case "Approved":
-        return Colors.green.shade600;
-      case "Rejected_By_HR":
-      case "Rejected_By_TL":
-        return Colors.red.shade600;
-      case "Cancelled":
-        return Colors.orange.shade600;
-      case "Pending_HR":
-        return Colors.teal.shade600;
-      default:
-        return Colors.blue.shade600;
-    }
+  @override
+  State<_TLPendingCard> createState() => _TLPendingCardState();
+}
+
+class _TLPendingCardState extends State<_TLPendingCard>
+    with SingleTickerProviderStateMixin {
+  bool _expanded = false;
+  late final AnimationController _ctrl;
+  late final Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _expandAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
   }
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case "Pending_TL":
-        return "Pending Review";
-      case "Pending_HR":
-        return "TL Recommended";
-      case "Approved":
-        return "Approved";
-      case "Rejected_By_TL":
-        return "Rejected by TL";
-      case "Rejected_By_HR":
-        return "Rejected by HR";
-      case "Cancelled":
-        return "Cancelled";
-      default:
-        return s;
-    }
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    _expanded ? _ctrl.forward() : _ctrl.reverse();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final leave = widget.leave;
+    final insufficient =
+        leave.remainingDays != null &&
+        leave.remainingDays! < leave.numberOfDays;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: isEven ? Colors.white : Colors.grey.shade50,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        title: Row(
-          children: [
-            // Employee name
-            Expanded(
-              child: Text(
-                leave.employeeName ?? "Emp #${leave.empId}",
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // Leave type
-            Expanded(
-              child: Text(
-                leave.leaveType,
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // From
-            Expanded(
-              child: Text(
-                formatDate(leave.fromDate),
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            // To
-            Expanded(
-              child: Text(
-                formatDate(leave.toDate),
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            // Days
-            Expanded(
-              child: Text(
-                leave.numberOfDays.toString(),
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            // Status badge
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _statusColor(leave.status).withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _statusLabel(leave.status),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: _statusColor(leave.status),
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            // Approved by
-            Expanded(
-              child: Text(
-                leave.approvedBy ?? "-",
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        color: _card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _expanded ? _amber.withOpacity(0.4) : _border,
+          width: _expanded ? 1.5 : 1.0,
         ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        boxShadow: [
+          BoxShadow(
+            color: _expanded
+                ? _amber.withOpacity(0.08)
+                : Colors.black.withOpacity(0.05),
+            blurRadius: _expanded ? 16 : 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
         children: [
-          const Divider(height: 1),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 40,
-            runSpacing: 10,
-            children: [
-              _detail("Emp ID", leave.empId.toString()),
-              _detail("Leave Type", leave.leaveType),
-              _detail("From", formatDate(leave.fromDate)),
-              _detail("To", formatDate(leave.toDate)),
-              _detail("Total Days", leave.numberOfDays.toString()),
-              _detail("Status", _statusLabel(leave.status)),
-              if (leave.approvedBy != null)
-                _detail("Approved By", leave.approvedBy!),
-              if (leave.reason != null && leave.reason!.isNotEmpty)
-                _detail("Reason", leave.reason!),
-              if (leave.rejectionReason != null &&
-                  leave.rejectionReason!.isNotEmpty)
-                _detail(
-                  "Rejection Reason",
-                  leave.rejectionReason!,
-                  valueColor: Colors.red.shade700,
+          // ── Header ──────────────────────────────────────────────────────
+          InkWell(
+            onTap: _toggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        (leave.employeeName ?? '?')
+                            .substring(0, 1)
+                            .toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          leave.employeeName ?? 'Employee #${leave.empId}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [leave.departmentName, leave.roleName]
+                              .where((e) => e != null && e.isNotEmpty)
+                              .join('  ·  '),
+                          style: const TextStyle(fontSize: 12, color: _textMid),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _TLStatusBadge(leave.status),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: _expanded ? _amber : _textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Expandable Body ──────────────────────────────────────────
+          SizeTransition(
+            sizeFactor: _expandAnim,
+            axisAlignment: -1,
+            child: Column(
+              children: [
+                const Divider(height: 1, thickness: 1, color: _border),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.badge_outlined,
+                            label: 'Emp ID',
+                            value: leave.empId.toString(),
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.category_outlined,
+                            label: 'Leave Type',
+                            value: leave.leaveType,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.calendar_today_outlined,
+                            label: 'From',
+                            value: widget.fmt(leave.fromDate),
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.event_outlined,
+                            label: 'To',
+                            value: widget.fmt(leave.toDate),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.today_outlined,
+                            label: 'Total Days',
+                            value: '${leave.numberOfDays} day(s)',
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.account_balance_wallet_outlined,
+                            label: 'Balance',
+                            value: '${leave.remainingDays ?? 0} remaining',
+                            valueColor: insufficient ? _red : null,
+                          ),
+                        ],
+                      ),
+                      if (leave.reason != null && leave.reason!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _border),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.notes_rounded,
+                                size: 14,
+                                color: _textMid,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  leave.reason!,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: _textDark,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-            ],
+
+                // Action buttons
+                const Divider(height: 1, thickness: 1, color: _border),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                  child: Column(
+                    children: [
+                      if (insufficient) ...[
+                        _Banner(
+                          icon: Icons.warning_amber_rounded,
+                          message:
+                              'Insufficient balance — only ${leave.remainingDays} day(s) remaining',
+                          color: const Color(0xFF92400E),
+                          bg: const Color(0xFFFFFBEB),
+                          borderColor: const Color(0xFFFCD34D),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _red,
+                              side: BorderSide(color: _red.withOpacity(0.5)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 9,
+                              ),
+                            ),
+                            icon: const Icon(Icons.close_rounded, size: 15),
+                            label: const Text(
+                              'Not Recommend',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () => widget.onNotRecommend(leave),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _accent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 9,
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.thumb_up_alt_rounded,
+                              size: 15,
+                            ),
+                            label: const Text(
+                              'Recommend',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () => widget.onRecommend(leave),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _detail(String label, String value, {Color? valueColor}) {
-    return SizedBox(
-      width: 180,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade500,
-              fontWeight: FontWeight.w500,
+// ═══════════════════════════════════════════════════════════════════════════════
+// Mobile History
+// ═══════════════════════════════════════════════════════════════════════════════
+class _TLMobileHistory extends StatefulWidget {
+  final List<LeaveModel> leaves;
+  final String Function(DateTime) fmt;
+  const _TLMobileHistory({required this.leaves, required this.fmt});
+
+  @override
+  State<_TLMobileHistory> createState() => _TLMobileHistoryState();
+}
+
+class _TLMobileHistoryState extends State<_TLMobileHistory> {
+  final Set<int> _expanded = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+      itemCount: widget.leaves.length,
+      itemBuilder: (_, i) {
+        final l = widget.leaves[i];
+        final isOpen = _expanded.contains(i);
+        final accentColor = _tlStatusColor(l.status);
+        final hasAnyDetail =
+            l.reason?.isNotEmpty == true ||
+            l.rejectionReason?.isNotEmpty == true ||
+            l.cancelReason?.isNotEmpty == true ||
+            l.approvedBy?.isNotEmpty == true;
+
+        return GestureDetector(
+          onTap: hasAnyDetail
+              ? () => setState(
+                  () => isOpen ? _expanded.remove(i) : _expanded.add(i),
+                )
+              : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isOpen ? accentColor.withOpacity(0.4) : _border,
+                width: isOpen ? 1.5 : 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isOpen
+                      ? accentColor.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.04),
+                  blurRadius: isOpen ? 14 : 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(width: 4, color: accentColor),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l.employeeName ?? 'Emp #${l.empId}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: _textDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${l.leaveType}  ·  ${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}  ·  ${l.numberOfDays} day(s)',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _textMid,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  _TLStatusBadge(l.status),
+                                  if (hasAnyDetail) ...[
+                                    const SizedBox(height: 6),
+                                    AnimatedRotation(
+                                      turns: isOpen ? 0.5 : 0,
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        size: 18,
+                                        color: isOpen
+                                            ? accentColor
+                                            : _textLight,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 220),
+                        sizeCurve: Curves.easeInOut,
+                        crossFadeState: isOpen
+                            ? CrossFadeState.showSecond
+                            : CrossFadeState.showFirst,
+                        firstChild: const SizedBox.shrink(),
+                        secondChild: _TLReasonSection(leave: l),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Desktop History
+// ═══════════════════════════════════════════════════════════════════════════════
+class _TLDesktopHistory extends StatefulWidget {
+  final List<LeaveModel> leaves;
+  final String Function(DateTime) fmt;
+
+  static const List<int> _flex = [3, 2, 3, 1, 2, 2];
+  static const List<String> _headers = [
+    'Employee',
+    'Leave Type',
+    'Duration',
+    'Days',
+    'Status',
+    'Approved By',
+  ];
+
+  const _TLDesktopHistory({required this.leaves, required this.fmt});
+
+  @override
+  State<_TLDesktopHistory> createState() => _TLDesktopHistoryState();
+}
+
+class _TLDesktopHistoryState extends State<_TLDesktopHistory> {
+  final Set<int> _expanded = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header row
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 13,
+                    horizontal: 20,
+                  ),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF1A56DB),
+                        Color(0xFF1E3A8A),
+                        Color(0xFF1e1b4b),
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 28),
+                      ...List.generate(
+                        _TLDesktopHistory._headers.length,
+                        (i) => Expanded(
+                          flex: _TLDesktopHistory._flex[i],
+                          child: Text(
+                            _TLDesktopHistory._headers[i],
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Data rows
+                ...widget.leaves.asMap().entries.map((e) {
+                  final i = e.key;
+                  final l = e.value;
+                  final isOpen = _expanded.contains(i);
+                  final accentColor = _tlStatusColor(l.status);
+                  final hasAnyDetail =
+                      l.reason?.isNotEmpty == true ||
+                      l.rejectionReason?.isNotEmpty == true ||
+                      l.cancelReason?.isNotEmpty == true ||
+                      l.approvedBy?.isNotEmpty == true;
+
+                  return Column(
+                    children: [
+                      InkWell(
+                        onTap: hasAnyDetail
+                            ? () => setState(
+                                () => isOpen
+                                    ? _expanded.remove(i)
+                                    : _expanded.add(i),
+                              )
+                            : null,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isOpen
+                                ? accentColor.withOpacity(0.04)
+                                : (i.isEven ? _card : const Color(0xFFF8FAFF)),
+                            border: Border(
+                              bottom: BorderSide(
+                                color: isOpen
+                                    ? accentColor.withOpacity(0.2)
+                                    : _border,
+                                width: 1,
+                              ),
+                              left: BorderSide(
+                                color: isOpen
+                                    ? accentColor
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                            horizontal: 20,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 28,
+                                child: hasAnyDetail
+                                    ? AnimatedRotation(
+                                        turns: isOpen ? 0.5 : 0,
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        child: Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          size: 18,
+                                          color: isOpen
+                                              ? accentColor
+                                              : _textLight,
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                              // Employee
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[0],
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEEF2FF),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          (l.employeeName ?? '?')
+                                              .substring(0, 1)
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            color: _primary,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        l.employeeName ?? 'Emp #${l.empId}',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: _textDark,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[1],
+                                child: Text(
+                                  l.leaveType,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: _textDark,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[2],
+                                child: Text(
+                                  '${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _textMid,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[3],
+                                child: Text(
+                                  '${l.numberOfDays}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: _textDark,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[4],
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: _TLStatusBadge(l.status),
+                                ),
+                              ),
+                              Expanded(
+                                flex: _TLDesktopHistory._flex[5],
+                                child: Text(
+                                  l.approvedBy ?? '—',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: _textMid,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 220),
+                        sizeCurve: Curves.easeInOut,
+                        crossFadeState: isOpen
+                            ? CrossFadeState.showSecond
+                            : CrossFadeState.showFirst,
+                        firstChild: const SizedBox.shrink(),
+                        secondChild: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: accentColor.withOpacity(0.03),
+                            border: Border(
+                              bottom: const BorderSide(color: _border),
+                              left: BorderSide(color: accentColor, width: 3),
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(52, 12, 20, 16),
+                          child: _TLReasonSection(leave: l),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Micro-components
+// ═══════════════════════════════════════════════════════════════════════════════
+class _TLStatusBadge extends StatelessWidget {
+  final String status;
+  const _TLStatusBadge(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _tlStatusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
           Text(
-            value,
+            _tlStatusLabel(status),
             style: TextStyle(
-              fontSize: 13,
+              color: c,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: valueColor ?? Colors.black87,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _tlStatusLabel(String s) {
+  switch (s) {
+    case 'Pending_TL':
+      return 'Awaiting TL';
+    case 'Pending_Manager':
+      return 'TL Recommended';
+    case 'Pending_HR':
+      return 'TL Recommended';
+    case 'Approved':
+      return 'Approved';
+    case 'Not_Recommended_By_TL':
+      return 'Not Recommended';
+    case 'Rejected_By_TL':
+      return 'Rejected by TL';
+    case 'Rejected_By_Manager':
+      return 'Rejected by Mgr';
+    case 'Rejected_By_HR':
+      return 'Rejected by Mgr';
+    case 'Cancelled':
+      return 'Cancelled';
+    default:
+      return s;
+  }
+}
+
+Color _tlStatusColor(String s) {
+  switch (s) {
+    case 'Approved':
+      return _accent;
+    case 'Rejected_By_Manager':
+    case 'Rejected_By_HR':
+    case 'Rejected_By_TL':
+    case 'Not_Recommended_By_TL':
+      return _red;
+    case 'Cancelled':
+      return _amber;
+    case 'Pending_Manager':
+    case 'Pending_HR':
+      return _purple;
+    case 'Pending_TL':
+    default:
+      return _primary;
+  }
+}
+
+class _InfoCell extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _InfoCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: _textMid),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: _textMid,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: valueColor ?? _textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  final Color color, bg, borderColor;
+
+  const _Banner({
+    required this.icon,
+    required this.message,
+    required this.color,
+    required this.bg,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: color,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TL Reason Section
+// ═══════════════════════════════════════════════════════════════════════════════
+class _TLReasonSection extends StatelessWidget {
+  final LeaveModel leave;
+  const _TLReasonSection({required this.leave});
+
+  @override
+  Widget build(BuildContext context) {
+    final tiles = <Widget>[];
+
+    if (leave.reason?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.person_outline_rounded,
+          label: 'Employee Reason',
+          text: leave.reason!,
+          iconColor: _primary,
+          iconBg: const Color(0xFFEEF2FF),
+          textColor: _textDark,
+        ),
+      );
+    }
+
+    if ((leave.status == 'Not_Recommended_By_TL' ||
+            leave.status == 'Rejected_By_TL') &&
+        leave.rejectionReason?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.thumb_down_alt_outlined,
+          label: 'Not Recommended — TL Remark',
+          text: leave.rejectionReason!,
+          iconColor: _red,
+          iconBg: const Color(0xFFFEE2E2),
+          textColor: _red,
+        ),
+      );
+    }
+
+    if (leave.status == 'Pending_Manager' || leave.status == 'Pending_HR') {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.schedule_outlined,
+          label: 'Recommended — Awaiting Manager',
+          text:
+              'You have recommended this leave. It is pending final approval by the manager.',
+          iconColor: _purple,
+          iconBg: const Color(0xFFF3E8FF),
+          textColor: _textDark,
+        ),
+      );
+    }
+
+    if ((leave.status == 'Rejected_By_Manager' ||
+            leave.status == 'Rejected_By_HR') &&
+        leave.rejectionReason?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.business_center_outlined,
+          label: 'Rejected by Manager',
+          text: leave.rejectionReason!,
+          iconColor: _red,
+          iconBg: const Color(0xFFFEE2E2),
+          textColor: _red,
+        ),
+      );
+    }
+
+    if (leave.status == 'Approved' && leave.approvedBy?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.verified_outlined,
+          label: 'Approved by',
+          text: leave.approvedBy!,
+          iconColor: _accent,
+          iconBg: const Color(0xFFD1FAE5),
+          textColor: _textDark,
+        ),
+      );
+    }
+
+    if (leave.cancelReason?.isNotEmpty == true) {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.cancel_outlined,
+          label: 'Cancelled — Reason',
+          text: leave.cancelReason!,
+          iconColor: _amber,
+          iconBg: const Color(0xFFFFF8E1),
+          textColor: const Color(0xFF92400E),
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: LayoutBuilder(
+        builder: (ctx, cs) {
+          final isDesktop = cs.maxWidth > 500;
+          if (isDesktop) {
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: tiles
+                  .map(
+                    (t) => SizedBox(
+                      width:
+                          (cs.maxWidth - (tiles.length > 1 ? 10 : 0)) /
+                          (tiles.length > 2
+                              ? 3
+                              : tiles.length > 1
+                              ? 2
+                              : 1),
+                      child: t,
+                    ),
+                  )
+                  .toList(),
+            );
+          }
+          return Column(
+            children: [
+              for (int i = 0; i < tiles.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                tiles[i],
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ReasonTile extends StatelessWidget {
+  final IconData icon;
+  final String label, text;
+  final Color iconColor, iconBg, textColor;
+
+  const _ReasonTile({
+    required this.icon,
+    required this.label,
+    required this.text,
+    required this.iconColor,
+    required this.iconBg,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: iconBg.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: iconColor.withOpacity(0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 14, color: iconColor),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: iconColor,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: textColor,
+                    height: 1.45,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

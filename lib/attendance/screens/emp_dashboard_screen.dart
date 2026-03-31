@@ -9,6 +9,7 @@ import 'emp_profile_screen.dart';
 import 'login_screen.dart';
 import '../services/location_services.dart';
 import 'emp_work_location.dart';
+import 'session_guard_mixin.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int loginId;
@@ -28,7 +29,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SessionGuardMixin {
   // ── Design tokens (identical to AdminDashboardScreen) ──────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _surface = Color(0xFFF0F4FF);
@@ -43,13 +45,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isExpanded = false;
   late LocationService locationService;
 
-  static const int notificationIndex = 9;
-
+  // static const int notificationIndex = 9;
+  // Replace initState
   @override
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex;
     locationService = LocationService();
+    startSessionGuard();
   }
 
   @override
@@ -63,17 +66,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     AttendanceScreen(employeeId: widget.empId), // 1
     LeaveScreen(employeeId: widget.empId.toString()), // 2
     // TasksScreen(), // 3
-    EmployeeAssignmentsScreen(empId: widget.empId), // 4
+    EmployeeAssignmentsScreen(), // 4
     // TravelOnsiteScreen(), // 5
     // ExpenseScreen(), // 6
     // ReportsScreen(), // 7
     EmployeeProfileScreen(employeeId: widget.empId.toString()), // 8
-    const Center(
-      child: Text(
-        'Notifications',
-        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-      ),
-    ), // 9
+    // const Center(
+    //   child: Text(
+    //     'Notifications',
+    //     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    //   ),
+    // ), // 9
   ];
 
   // ── Titles ─────────────────────────────────────────────────────────────────
@@ -87,7 +90,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // 'Expenses',
     // 'Reports',
     'Profile',
-    'Notifications',
+    // 'Notifications',
   ];
 
   // ── Rail items ─────────────────────────────────────────────────────────────
@@ -159,14 +162,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-            onPressed: () => setState(() => selectedIndex = notificationIndex),
-          ),
-          const SizedBox(width: 4),
-        ],
+        // actions: [
+        //   IconButton(
+        //     tooltip: 'Notifications',
+        //     icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+        //     onPressed: () => setState(() => selectedIndex = notificationIndex),
+        //   ),
+        //   const SizedBox(width: 4),
+        // ],
       ),
       drawer: isDesktop ? null : _mobileDrawer(),
       body: Row(
@@ -407,147 +410,153 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _mobileDrawer() {
     return Drawer(
       backgroundColor: Colors.white,
-      child: Column(
-        children: [
-          // Header gradient — matches Admin dashboard style
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 20,
-              left: 20,
-              right: 20,
-              bottom: 20,
-            ),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1A56DB),
-                  Color(0xFF1E3A8A),
-                  Color(0xFF1e1b4b),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      child: SafeArea(
+        top: false, // We handle top padding manually in the header
+        child: Column(
+          children: [
+            // ── Header gradient ────────────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 20,
+                left: 20,
+                right: 20,
+                bottom: 20,
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.25),
-                      width: 1.5,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1A56DB),
+                    Color(0xFF1E3A8A),
+                    Color(0xFF1e1b4b),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.25),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.badge_rounded,
+                      color: Colors.white,
+                      size: 26,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.badge_rounded,
-                    color: Colors.white,
-                    size: 26,
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Employee',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Employee',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
+                  const SizedBox(height: 3),
+                  Text(
+                    'Employee Attendance System',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Employee Attendance System',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // Nav items
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: railItems.length,
-              itemBuilder: (context, index) {
-                final selected = selectedIndex == index;
-                final label = (railItems[index].label as Text).data!;
-                return ListTile(
-                  dense: true,
+            // ── Nav items (Expanded absorbs all available space) ───────────
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: railItems.length,
+                itemBuilder: (context, index) {
+                  final selected = selectedIndex == index;
+                  final label = (railItems[index].label as Text).data!;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 1,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    leading: IconTheme(
+                      data: IconThemeData(
+                        color: selected ? _primary : _textMid,
+                        size: 20,
+                      ),
+                      child: selected
+                          ? railItems[index].selectedIcon
+                          : railItems[index].icon,
+                    ),
+                    title: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: selected ? _primary : _textDark,
+                      ),
+                    ),
+                    selected: selected,
+                    selectedTileColor: _selectedBg,
+                    onTap: () {
+                      setState(() => selectedIndex = index);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+
+            // ── Footer logout (always pinned to bottom) ────────────────────
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: _border, width: 1)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 1,
+                    vertical: 4,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFEF4444),
+                    size: 20,
                   ),
-                  leading: IconTheme(
-                    data: IconThemeData(
-                      color: selected ? _primary : _textMid,
-                      size: 20,
-                    ),
-                    child: selected
-                        ? railItems[index].selectedIcon
-                        : railItems[index].icon,
-                  ),
-                  title: Text(
-                    label,
+                  title: const Text(
+                    'Logout',
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? _primary : _textDark,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFEF4444),
                     ),
                   ),
-                  selected: selected,
-                  selectedTileColor: _selectedBg,
                   onTap: () {
-                    setState(() => selectedIndex = index);
                     Navigator.pop(context);
+                    _logout();
                   },
-                );
-              },
-            ),
-          ),
-
-          // Footer logout
-          Container(
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: _border, width: 1)),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 4,
-              ),
-              leading: const Icon(
-                Icons.logout_rounded,
-                color: Color(0xFFEF4444),
-                size: 20,
-              ),
-              title: const Text(
-                'Logout',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFEF4444),
                 ),
               ),
-              onTap: () {
-                Navigator.pop(context);
-                _logout();
-              },
             ),
-          ),
-
-          const SizedBox(height: 8),
-        ],
+          ],
+        ),
       ),
     );
   }

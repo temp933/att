@@ -7,10 +7,12 @@ import 'login_screen.dart';
 import 'hr_home_screen.dart';
 import 'emp_attendance_screen.dart';
 import 'emp_leave_screen.dart';
+import 'tl_hr_leave_screen.dart';
 import '../services/location_services.dart';
 import 'emp_profile_screen.dart';
-
+import 'emp_work_location.dart';
 import 'admin_manage_user.dart';
+import 'session_guard_mixin.dart';
 
 class HRDashboardScreen extends StatefulWidget {
   final int initialIndex;
@@ -30,7 +32,8 @@ class HRDashboardScreen extends StatefulWidget {
   State<HRDashboardScreen> createState() => _HRDashboardScreenScreenState();
 }
 
-class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
+class _HRDashboardScreenScreenState extends State<HRDashboardScreen>
+    with SessionGuardMixin {
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _surface = Color(0xFFF0F4FF);
@@ -50,6 +53,7 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex;
+    startSessionGuard();
   }
 
   // ── Pages ──────────────────────────────────────────────────────────────────
@@ -67,7 +71,8 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
       ), // 0
       AttendanceScreen(employeeId: int.parse(widget.employeeId)), // 1
       AdminHrAttendanceScreen(), // 2
-      LeaveScreen(employeeId: widget.employeeId), // 3
+      TL_HR_LeaveScreen(employeeId: widget.employeeId), // 3
+      EmployeeAssignmentsScreen(),
       // ExpenseApprovalScreen(), // 4
       // AssignTaskScreen(), // 5
       // ManageTaskScreen(), // 6
@@ -95,6 +100,7 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
     'Attendance',
     'Manage Attendance',
     'Apply Leave',
+    'Location',
     // 'Manage Expenses',
     // 'Assign Task',
     // 'Manage Tasks',
@@ -132,11 +138,11 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen> {
       selectedIcon: Icon(Icons.event_busy),
       label: Text('Apply Leave'),
     ),
-    // NavigationRailDestination(
-    //   icon: Icon(Icons.payments_outlined),
-    //   selectedIcon: Icon(Icons.payments),
-    //   label: Text('Manage Expenses'),
-    // ),
+    NavigationRailDestination(
+      icon: Icon(Icons.place_outlined),
+      selectedIcon: Icon(Icons.place),
+      label: Text('Location '),
+    ),
     // NavigationRailDestination(
     //   icon: Icon(Icons.assignment_add),
     //   selectedIcon: Icon(Icons.assignment_add),

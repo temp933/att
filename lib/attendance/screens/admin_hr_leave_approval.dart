@@ -59,7 +59,14 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
     });
     try {
       final data = await _leaveService.getAllPendingLeaves();
-      if (mounted) setState(() => _pendingLeaves = data);
+      if (mounted) {
+        setState(() {
+          // Only show leaves that reached the manager — not still waiting for TL
+          _pendingLeaves = data
+              .where((l) => l.status == 'Pending_Manager')
+              .toList();
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _pendingError = '$e');
     } finally {
@@ -715,7 +722,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen>
 
 // Pending Card
 
-class _PendingCard extends StatelessWidget {
+class _PendingCard extends StatefulWidget {
   final LeaveModel leave;
   final String Function(DateTime) fmt;
   final void Function(LeaveModel) onApprove;
@@ -729,23 +736,62 @@ class _PendingCard extends StatelessWidget {
   });
 
   @override
+  State<_PendingCard> createState() => _PendingCardState();
+}
+
+class _PendingCardState extends State<_PendingCard>
+    with SingleTickerProviderStateMixin {
+  bool _expanded = false;
+
+  late final AnimationController _ctrl;
+  late final Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _expandAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    _expanded ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final leave = widget.leave;
     final isPendingManager = leave.status == 'Pending_Manager';
-    final isPendingTL = leave.status == 'Pending_TL';
     final insufficient =
         leave.remainingDays != null &&
         leave.remainingDays! < leave.numberOfDays;
+    final accentColor = _statusColor(leave.status);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
+        border: Border.all(
+          color: _expanded ? accentColor.withOpacity(0.4) : _border,
+          width: _expanded ? 1.5 : 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
+            color: _expanded
+                ? accentColor.withOpacity(0.08)
+                : Colors.black.withOpacity(0.05),
+            blurRadius: _expanded ? 16 : 12,
             offset: const Offset(0, 3),
           ),
         ],
@@ -753,250 +799,261 @@ class _PendingCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // ── Header ───────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      (leave.employeeName ?? '?').substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
+          // ── Tappable Header ───────────────────────────────────────────
+          InkWell(
+            onTap: _toggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        leave.employeeName ?? 'Employee #${leave.empId}',
+                    child: Center(
+                      child: Text(
+                        (leave.employeeName ?? '?')
+                            .substring(0, 1)
+                            .toUpperCase(),
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: _textDark,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        [
-                          leave.departmentName,
-                          leave.roleName,
-                        ].where((e) => e != null && e.isNotEmpty).join('  ·  '),
-                        style: const TextStyle(fontSize: 12, color: _textMid),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                _StatusBadge(leave.status),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1, thickness: 1, color: _border),
-
-          // ── Info grid ─────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    _InfoCell(
-                      icon: Icons.badge_outlined,
-                      label: 'Emp ID',
-                      value: leave.empId.toString(),
-                    ),
-                    const SizedBox(width: 10),
-                    _InfoCell(
-                      icon: Icons.category_outlined,
-                      label: 'Leave Type',
-                      value: leave.leaveType,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _InfoCell(
-                      icon: Icons.calendar_today_outlined,
-                      label: 'From',
-                      value: fmt(leave.fromDate),
-                    ),
-                    const SizedBox(width: 10),
-                    _InfoCell(
-                      icon: Icons.event_outlined,
-                      label: 'To',
-                      value: fmt(leave.toDate),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _InfoCell(
-                      icon: Icons.today_outlined,
-                      label: 'Total Days',
-                      value: '${leave.numberOfDays} day(s)',
-                    ),
-                    const SizedBox(width: 10),
-                    _InfoCell(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: 'Balance',
-                      value: '${leave.remainingDays ?? 0} remaining',
-                      valueColor: insufficient ? _red : null,
-                    ),
-                  ],
-                ),
-                if (leave.reason != null && leave.reason!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _border),
-                    ),
-                    child: Row(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.notes_rounded,
-                          size: 14,
-                          color: _textMid,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            leave.reason!,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              color: _textDark,
-                            ),
+                        Text(
+                          leave.employeeName ?? 'Employee #${leave.empId}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _textDark,
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [leave.departmentName, leave.roleName]
+                              .where((e) => e != null && e.isNotEmpty)
+                              .join('  ·  '),
+                          style: const TextStyle(fontSize: 12, color: _textMid),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
-
-          // ── Banners & actions ─────────────────────────────────────────
-          if (isPendingTL || isPendingManager) ...[
-            const Divider(height: 1, thickness: 1, color: _border),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-              child: Column(
-                children: [
-                  if (leave.status == 'Pending_Manager ')
-                    _Banner(
-                      icon: Icons.people_alt_rounded,
-                      message: 'Awaiting HR review',
-                      color: _purple,
-                      bg: Color(0xFFF3E8FF),
-                      borderColor: Color(0xFFD8B4FE),
+                  const SizedBox(width: 8),
+                  _StatusBadge(leave.status),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: _expanded ? accentColor : _textLight,
                     ),
-                  if (isPendingManager && insufficient) ...[
-                    _Banner(
-                      icon: Icons.warning_amber_rounded,
-                      message:
-                          'Insufficient balance — only ${leave.remainingDays} day(s) remaining',
-                      color: const Color(0xFF92400E),
-                      bg: const Color(0xFFFFFBEB),
-                      borderColor: const Color(0xFFFCD34D),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (isPendingManager) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _red,
-                            side: BorderSide(color: _red.withOpacity(0.5)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 9,
-                            ),
-                          ),
-                          icon: const Icon(Icons.close_rounded, size: 15),
-                          label: const Text(
-                            'Reject',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onPressed: () => onReject(leave),
-                        ),
-                        const SizedBox(width: 10),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: insufficient
-                                ? _textLight
-                                : _accent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 9,
-                            ),
-                          ),
-                          icon: const Icon(Icons.check_rounded, size: 15),
-                          label: const Text(
-                            'Approve',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onPressed: insufficient
-                              ? null
-                              : () => onApprove(leave),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
+
+          // ── Expandable Body ───────────────────────────────────────────
+          SizeTransition(
+            sizeFactor: _expandAnim,
+            axisAlignment: -1,
+            child: Column(
+              children: [
+                const Divider(height: 1, thickness: 1, color: _border),
+
+                // Info grid
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.badge_outlined,
+                            label: 'Emp ID',
+                            value: leave.empId.toString(),
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.category_outlined,
+                            label: 'Leave Type',
+                            value: leave.leaveType,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.calendar_today_outlined,
+                            label: 'From',
+                            value: widget.fmt(leave.fromDate),
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.event_outlined,
+                            label: 'To',
+                            value: widget.fmt(leave.toDate),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _InfoCell(
+                            icon: Icons.today_outlined,
+                            label: 'Total Days',
+                            value: '${leave.numberOfDays} day(s)',
+                          ),
+                          const SizedBox(width: 10),
+                          _InfoCell(
+                            icon: Icons.account_balance_wallet_outlined,
+                            label: 'Balance',
+                            value: '${leave.remainingDays ?? 0} remaining',
+                            valueColor: insufficient ? _red : null,
+                          ),
+                        ],
+                      ),
+                      if (leave.reason != null && leave.reason!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _border),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.notes_rounded,
+                                size: 14,
+                                color: _textMid,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  leave.reason!,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: _textDark,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Actions — only for Pending_Manager
+                if (isPendingManager) ...[
+                  const Divider(height: 1, thickness: 1, color: _border),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                    child: Column(
+                      children: [
+                        if (insufficient) ...[
+                          _Banner(
+                            icon: Icons.warning_amber_rounded,
+                            message:
+                                'Insufficient balance — only ${leave.remainingDays} day(s) remaining',
+                            color: const Color(0xFF92400E),
+                            bg: const Color(0xFFFFFBEB),
+                            borderColor: const Color(0xFFFCD34D),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _red,
+                                side: BorderSide(color: _red.withOpacity(0.5)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 9,
+                                ),
+                              ),
+                              icon: const Icon(Icons.close_rounded, size: 15),
+                              label: const Text(
+                                'Reject',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onPressed: () => widget.onReject(leave),
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: insufficient
+                                    ? _textLight
+                                    : _accent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 9,
+                                ),
+                              ),
+                              icon: const Icon(Icons.check_rounded, size: 15),
+                              label: const Text(
+                                'Approve',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onPressed: insufficient
+                                  ? null
+                                  : () => widget.onApprove(leave),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
-
 // Mobile History
 
 class _MobileHistory extends StatefulWidget {
@@ -1619,13 +1676,10 @@ String _statusLabel(String s) {
       return 'Awaiting TL';
 
     case 'Pending_Manager':
-      return 'Awaiting Manager'; // ✅ ADD
+      return 'Awaiting Manager';
 
     case 'Approved':
       return 'Approved';
-
-    case 'Rejected_By_HR':
-      return 'Rejected by HR'; // ✅ ADD
 
     case 'Rejected_By_Manager':
       return 'Rejected by Manager';
@@ -1790,7 +1844,7 @@ class _ReasonSection extends StatelessWidget {
       tiles.add(
         _ReasonTile(
           icon: Icons.supervisor_account_outlined,
-          label: 'Rejected by Team Lead',
+          label: 'Not Recommended by Team Lead',
           text: leave.rejectionReason!,
           iconColor: _red,
           iconBg: const Color(0xFFFEE2E2),

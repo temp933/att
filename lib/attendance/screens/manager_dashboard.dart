@@ -10,6 +10,7 @@ import 'login_screen.dart';
 import '../services/location_services.dart';
 import 'emp_profile_screen.dart';
 import 'manager_leave.dart';
+import 'session_guard_mixin.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
   final String employeeId;
@@ -29,7 +30,8 @@ class ManagerDashboardScreen extends StatefulWidget {
   State<ManagerDashboardScreen> createState() => _ManagerDashboardScreenState();
 }
 
-class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
+class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
+    with SessionGuardMixin {
   // ── Design tokens (identical to AdminDashboardScreen) ──────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _surface = Color(0xFFF0F4FF);
@@ -51,6 +53,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
     super.initState();
     selectedIndex = widget.initialIndex;
     locationService = LocationService();
+    startSessionGuard();
   }
 
   // ── Pages ──────────────────────────────────────────────────────────────────

@@ -31,10 +31,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   List<Map<String, dynamic>> _logs = [];
 
-  // ── Timers ────────────────────────────────────────────────────────────────
-  Timer? _statusTimer; // every 1 min: re-poll server DB for status
-  Timer? _logsTimer; // every 1 min: refresh today's log list
-  Timer? _clockTimer; // every 1 min: repaint elapsed time
+  Timer? _statusTimer;
+  Timer? _logsTimer;
+  Timer? _clockTimer;
 
   StreamSubscription? _statusSub;
   StreamSubscription? _locationSub;
@@ -70,40 +69,28 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   Future<void> _init() async {
     setState(() => _isLoading = true);
-
-    // Server DB is the single source of truth
     await _state.checkStatus(widget.employeeId);
-
     if (_state.dayStatus == DayStatus.inProgress) {
       _attachListeners();
       _startTimers();
     }
-
-    _fetchLogs(); // fire-and-forget
+    _fetchLogs();
     if (mounted) setState(() => _isLoading = false);
   }
 
   void _startTimers() {
-    // 1-min server status poll — detects if another device ended the day
     _statusTimer?.cancel();
     _statusTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
       if (!mounted) return;
       await _state.checkStatus(widget.employeeId);
       if (mounted) setState(() {});
-
-      // If the server now says completed (ended on another device), stop
-      if (_state.dayStatus == DayStatus.completed) {
-        _stopTimers();
-      }
+      if (_state.dayStatus == DayStatus.completed) _stopTimers();
     });
-
-    // 1-min log refresh
     _logsTimer?.cancel();
-    _logsTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      _fetchLogs();
-    });
-
-    // 1-min clock repaint (shows elapsed time ticking)
+    _logsTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _fetchLogs(),
+    );
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
@@ -118,8 +105,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     _clockTimer?.cancel();
     _clockTimer = null;
   }
-
-  // ── BACKGROUND SERVICE LISTENERS ──────────────────────────────────────────
 
   void _attachListeners() {
     if (_listenersAttached) return;
@@ -193,23 +178,17 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     });
   }
 
-  // ── FETCH LOGS (background, never blocks UI) ──────────────────────────────
-
   Future<void> _fetchLogs() async {
     try {
       final logs = await ApiService.getTodayLogs(widget.employeeId);
       if (mounted) setState(() => _logs = logs.cast<Map<String, dynamic>>());
-    } catch (_) {
-      // Network unavailable — keep showing cached list silently
-    }
+    } catch (_) {}
   }
 
   Future<void> _startWork() async {
     if (_isLoading) return;
-
     setState(() => _isLoading = true);
 
-    // Always re-check server DB before starting
     await _state.checkStatus(widget.employeeId);
 
     if (_state.dayStatus == DayStatus.completed) {
@@ -229,11 +208,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       return;
     }
 
-    // ── Location permissions (Android / iOS only) ──────────────────────────
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
-      // Fine location
       if (!await Permission.locationWhenInUse.isGranted) {
         final s = await Permission.locationWhenInUse.request();
         if (!s.isGranted) {
@@ -243,7 +220,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         }
       }
 
-      // Background location
       if (!await Permission.locationAlways.isGranted) {
         if (!mounted) return;
         final proceed = await showDialog<bool>(
@@ -292,14 +268,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       }
     }
 
-    // ── Start tracking ─────────────────────────────────────────────────────
     try {
-      // Save local state (offline fallback)
       await _state.start(widget.employeeId);
-
-      // Fetch site polygons from server → SQLite → start service
       await startBackgroundTracking(widget.employeeId);
-
       _attachListeners();
       _startTimers();
       if (mounted) setState(() => _isLoading = false);
@@ -345,13 +316,11 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
     setState(() => _isLoading = true);
 
-    // Signal background service → waits for end_day_done (10 s timeout)
     final serviceConfirmed = await sendEndDay();
 
     if (!serviceConfirmed) {
       try {
         final data = await ApiService.getTodayStatus(widget.employeeId);
-        // Server returns 'completed' when DB has ended_manually
         if ((data['status'] as String?) != 'completed') {
           if (mounted) setState(() => _isLoading = false);
           _showSnack(
@@ -360,18 +329,12 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           );
           return;
         }
-      } catch (_) {
-        // Server unreachable — trust the local end() call below.
-      }
+      } catch (_) {}
     }
 
-    // Lock local state for the rest of the day
     await _state.end();
     _stopTimers();
-
     if (mounted) setState(() => _isLoading = false);
-
-    // Final log refresh so the UI shows the closed-out visit
     _fetchLogs();
   }
 
@@ -429,8 +392,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     final min = (m % 60).toString().padLeft(2, '0');
     return h > 0 ? '${h}h ${min}m' : '${min}m';
   }
-
-  // ── STATUS CARD CONFIG ────────────────────────────────────────────────────
 
   _StatusConfig get _statusConfig {
     switch (_state.dayStatus) {
@@ -494,56 +455,100 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ── Responsive helpers ──────────────────────────────────────────────────
+    final mq = MediaQuery.of(context);
+    final sw = mq.size.width;
+    final sh = mq.size.height;
+    final isSmall = sw < 360; // very small phones (SE 1st gen)
+    final isCompact = sh < 680; // short screens (landscape / SE)
+    final safeBottom = mq.padding.bottom; // home-bar height (notch phones)
+
     final isRunning = _state.dayStatus == DayStatus.inProgress;
     final notStarted = _state.dayStatus == DayStatus.notStarted;
 
+    // ── Adaptive sizing ─────────────────────────────────────────────────────
+    final hPad = isSmall ? 12.0 : 16.0; // horizontal screen padding
+    final cardPad = isSmall ? 14.0 : 20.0; // status card inner padding
+    final gap = isCompact ? 10.0 : 16.0; // spacing between sections
+    final btnHeight = isSmall ? 48.0 : 54.0; // START / END button height
+    final btnRadius = isSmall ? 12.0 : 16.0; // button corner radius
+    final btnFontSize = isSmall ? 13.0 : 15.0; // button label size
+    final btnIconSize = isSmall ? 19.0 : 22.0; // button icon size
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
+      body: SafeArea(
+        // SafeArea handles top notch; we handle bottom manually so the
+        // home-bar gap isn't swallowed by an extra blank area.
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(hPad, hPad, hPad, 0),
+          child: Column(
+            children: [
+              // ── Status card ───────────────────────────────────────────────
+              _buildStatusCard(cardPad: cardPad, isCompact: isCompact),
 
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Column(
-          children: [
-            _buildStatusCard(),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Icon(
-                  Icons.list_alt_rounded,
-                  size: 17,
-                  color: Colors.indigo,
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  "Today's Site Visits",
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey[800],
-                    letterSpacing: 0.2,
+              SizedBox(height: gap),
+
+              // ── Section header ────────────────────────────────────────────
+              Row(
+                children: [
+                  Icon(
+                    Icons.list_alt_rounded,
+                    size: isSmall ? 15 : 17,
+                    color: Colors.indigo,
                   ),
-                ),
-                const Spacer(),
-                // Manual refresh button (available any time, not just in-progress)
-                InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: _fetchLogs,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      Icons.refresh_rounded,
-                      size: 18,
-                      color: Colors.indigo.shade300,
+                  SizedBox(width: isSmall ? 5 : 7),
+                  Text(
+                    "Today's Site Visits",
+                    style: TextStyle(
+                      fontSize: isSmall ? 12 : 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey[800],
+                      letterSpacing: 0.2,
                     ),
                   ),
+                  const Spacer(),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: _fetchLogs,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.refresh_rounded,
+                        size: 18,
+                        color: Colors.indigo.shade300,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: isSmall ? 6 : 8),
+
+              // ── Log list (fills remaining space) ──────────────────────────
+              Expanded(child: _buildLogList(isRunning, isSmall: isSmall)),
+
+              // ── START / END buttons ───────────────────────────────────────
+              // Uses intrinsic height so it never overflows, even on SE.
+              Padding(
+                padding: EdgeInsets.only(
+                  top: gap,
+                  // Leave room for home-bar + a little breathing space
+                  bottom: safeBottom + (isSmall ? 8 : 12),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Expanded(child: _buildLogList(isRunning)),
-            const SizedBox(height: 12),
-            _buildButtons(isRunning, notStarted),
-          ],
+                child: _buildButtons(
+                  isRunning: isRunning,
+                  notStarted: notStarted,
+                  height: btnHeight,
+                  radius: btnRadius,
+                  fontSize: btnFontSize,
+                  iconSize: btnIconSize,
+                  isSmall: isSmall,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -551,10 +556,10 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   // ── STATUS CARD ───────────────────────────────────────────────────────────
 
-  Widget _buildStatusCard() {
+  Widget _buildStatusCard({required double cardPad, required bool isCompact}) {
     if (_isLoading) {
       return Container(
-        height: 170,
+        height: isCompact ? 130 : 170,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -586,33 +591,37 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(cardPad),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Top row: icon + label + pulse dot ───────────────────────────
+            // ── Top row ──────────────────────────────────────────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
+                  width: isCompact ? 38 : 46,
+                  height: isCompact ? 38 : 46,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(cfg.icon, color: Colors.white, size: 26),
+                  child: Icon(
+                    cfg.icon,
+                    color: Colors.white,
+                    size: isCompact ? 22 : 26,
+                  ),
                 ),
-                const SizedBox(width: 14),
+                SizedBox(width: isCompact ? 10 : 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         cfg.label,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 17,
+                          fontSize: isCompact ? 15 : 17,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.1,
                         ),
@@ -622,7 +631,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                         cfg.sublabel,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.82),
-                          fontSize: 12.5,
+                          fontSize: isCompact ? 11 : 12.5,
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 1,
@@ -665,139 +674,123 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               ],
             ),
 
-            const SizedBox(height: 16),
-            Container(height: 1, color: Colors.white.withValues(alpha: 0.15)),
-            const SizedBox(height: 14),
-
-            // ── Bottom row: totals + GPS ─────────────────────────────────────
-            Row(
-              children: [
-                if (_state.dayStatus != DayStatus.notStarted) ...[
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total On-Site',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.timelapse_rounded,
-                            size: 14,
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _totalWorkedLabel,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                          if (_logs.length > 1) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '${_logs.length} visits',
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  color: Colors.white.withValues(alpha: 0.8),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 16),
-                  Container(
-                    width: 1,
-                    height: 32,
-                    color: Colors.white.withValues(alpha: 0.2),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-                if (isRunning)
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'GPS Signal',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        _position == null
-                            ? _infoChip(
-                                icon: Icons.gps_not_fixed,
-                                label: 'Acquiring...',
-                                spinning: true,
-                              )
-                            : _infoChipColor(
-                                icon: _goodAccuracy
-                                    ? Icons.gps_fixed
-                                    : Icons.gps_not_fixed,
-                                label: _accuracyLabel(),
-                                color: _accuracyColor(),
-                              ),
-                      ],
-                    ),
-                  )
-                else
-                  const Spacer(),
-              ],
-            ),
-
-            if (isRunning && _position != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.location_pin,
-                    size: 11,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${_position!.latitude.toStringAsFixed(6)}, '
-                    '${_position!.longitude.toStringAsFixed(6)}',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontFamily: 'monospace',
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
-              ),
+            // Hide the divider + bottom row on very short screens to save space
+            if (!isCompact) ...[
+              const SizedBox(height: 16),
+              Container(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+              const SizedBox(height: 14),
+              _buildCardBottom(isRunning: isRunning, isCompact: false),
+            ] else ...[
+              const SizedBox(height: 10),
+              _buildCardBottom(isRunning: isRunning, isCompact: true),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCardBottom({required bool isRunning, required bool isCompact}) {
+    return Row(
+      children: [
+        if (_state.dayStatus != DayStatus.notStarted) ...[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Total On-Site',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Icon(
+                    Icons.timelapse_rounded,
+                    size: 14,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _totalWorkedLabel,
+                    style: TextStyle(
+                      fontSize: isCompact ? 13 : 15,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  if (_logs.length > 1) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${_logs.length} visits',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Container(
+            width: 1,
+            height: 32,
+            color: Colors.white.withValues(alpha: 0.2),
+          ),
+          const SizedBox(width: 16),
+        ],
+        if (isRunning)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'GPS Signal',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                _position == null
+                    ? _infoChip(
+                        icon: Icons.gps_not_fixed,
+                        label: 'Acquiring...',
+                        spinning: true,
+                      )
+                    : _infoChipColor(
+                        icon: _goodAccuracy
+                            ? Icons.gps_fixed
+                            : Icons.gps_not_fixed,
+                        label: _accuracyLabel(),
+                        color: _accuracyColor(),
+                      ),
+              ],
+            ),
+          )
+        else
+          const Spacer(),
+      ],
     );
   }
 
@@ -856,7 +849,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   // ── LOG LIST ──────────────────────────────────────────────────────────────
 
-  Widget _buildLogList(bool isRunning) {
+  Widget _buildLogList(bool isRunning, {required bool isSmall}) {
     if (_logs.isEmpty) {
       return Center(
         child: Column(
@@ -878,15 +871,20 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     }
 
     return ListView.separated(
+      // Prevent the list's own bottom padding from hiding behind the buttons
+      padding: EdgeInsets.zero,
       itemCount: _logs.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => SizedBox(height: isSmall ? 6 : 8),
       itemBuilder: (_, i) {
         final log = _logs[i];
         final isOpen = log['out_time'] == null;
         final duration = log['duration_minutes'] as int?;
 
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: isSmall ? 10 : 14,
+            vertical: isSmall ? 9 : 12,
+          ),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
@@ -905,8 +903,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: isSmall ? 30 : 36,
+                height: isSmall ? 30 : 36,
                 decoration: BoxDecoration(
                   color: isOpen ? Colors.green.shade50 : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(10),
@@ -915,25 +913,30 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   isOpen
                       ? Icons.radio_button_on_rounded
                       : Icons.check_circle_outline_rounded,
-                  size: 18,
+                  size: isSmall ? 15 : 18,
                   color: isOpen ? Colors.green : Colors.grey,
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: isSmall ? 8 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       log['site_name'] as String? ?? 'Unknown',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                        color: Color(0xFF1A1A2E),
+                        fontSize: isSmall ? 12 : 13.5,
+                        color: const Color(0xFF1A1A2E),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    Row(
+                    // Wrap prevents time tags from overflowing on narrow screens
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
                         _timeTag(
                           icon: Icons.login_rounded,
@@ -941,7 +944,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                           color: Colors.green.shade700,
                           bg: Colors.green.shade50,
                         ),
-                        const SizedBox(width: 6),
                         _timeTag(
                           icon: Icons.logout_rounded,
                           time: isOpen
@@ -959,10 +961,12 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              // Duration badge — shrinks text on small screens
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmall ? 7 : 10,
+                  vertical: isSmall ? 4 : 6,
                 ),
                 decoration: BoxDecoration(
                   gradient: isOpen
@@ -980,7 +984,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 child: Text(
                   _fmtDuration(duration),
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: isSmall ? 10 : 11.5,
                     fontWeight: FontWeight.w700,
                     color: isOpen ? Colors.white : Colors.grey.shade700,
                   ),
@@ -1025,7 +1029,15 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   // ── BUTTONS ───────────────────────────────────────────────────────────────
 
-  Widget _buildButtons(bool isRunning, bool notStarted) {
+  Widget _buildButtons({
+    required bool isRunning,
+    required bool notStarted,
+    required double height,
+    required double radius,
+    required double fontSize,
+    required double iconSize,
+    required bool isSmall,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -1036,9 +1048,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
             ),
             onPressed: (notStarted && !_isLoading) ? _startWork : null,
+            height: height,
+            radius: radius,
+            fontSize: fontSize,
+            iconSize: iconSize,
           ),
         ),
-        const SizedBox(width: 14),
+        SizedBox(width: isSmall ? 10 : 14),
         Expanded(
           child: _ActionButton(
             label: 'END',
@@ -1047,6 +1063,10 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               colors: [Color(0xFFC62828), Color(0xFFE53935)],
             ),
             onPressed: (isRunning && !_isLoading) ? _endWork : null,
+            height: height,
+            radius: radius,
+            fontSize: fontSize,
+            iconSize: iconSize,
           ),
         ),
       ],
@@ -1081,12 +1101,20 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final LinearGradient gradient;
   final VoidCallback? onPressed;
+  final double height;
+  final double radius;
+  final double fontSize;
+  final double iconSize;
 
   const _ActionButton({
     required this.label,
     required this.icon,
     required this.gradient,
     required this.onPressed,
+    required this.height,
+    required this.radius,
+    required this.fontSize,
+    required this.iconSize,
   });
 
   @override
@@ -1096,11 +1124,11 @@ class _ActionButton extends StatelessWidget {
       onTap: onPressed,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        height: 56,
+        height: height,
         decoration: BoxDecoration(
           gradient: enabled ? gradient : null,
           color: enabled ? null : Colors.grey.shade300,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(radius),
           boxShadow: enabled
               ? [
                   BoxShadow(
@@ -1117,14 +1145,14 @@ class _ActionButton extends StatelessWidget {
             Icon(
               icon,
               color: enabled ? Colors.white : Colors.grey.shade500,
-              size: 22,
+              size: iconSize,
             ),
             const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
                 color: enabled ? Colors.white : Colors.grey.shade500,
-                fontSize: 15,
+                fontSize: fontSize,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1,
               ),

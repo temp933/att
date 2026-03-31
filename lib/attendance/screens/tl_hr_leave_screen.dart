@@ -30,20 +30,13 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
 
   final Map<String, String> _personNames = {};
 
-  // ─── Design Tokens ───────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _accent = Color(0xFF0E9F6E);
-  // ignore: unused_field
-  static const Color _amber = Color(0xFFF59E0B);
-  // ignore: unused_field
   static const Color _red = Color(0xFFEF4444);
   static const Color _surface = Color(0xFFF0F4FF);
-  // ignore: unused_field
-  static const Color _card = Colors.white;
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMid = Color(0xFF64748B);
   static const Color _textLight = Color(0xFF94A3B8);
-  static const Color _border = Color(0xFFE2E8F0);
   static const int _totalAllowed = 12;
 
   @override
@@ -63,7 +56,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     super.dispose();
   }
 
-  // ─── Data ─────────────────────────────────────────────────────────────────────
+  // ─── Data ──────────────────────────────────────────────────────────────────
   Future<void> fetchLeaves() async {
     setState(() {
       loading = true;
@@ -80,7 +73,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
           setState(() => leaves = list);
           _animCtrl.forward(from: 0);
 
-          // Collect all login_ids that need name resolution
+          // Resolve names for TL (recommended_by) and Manager (approved_by)
           final ids = <String>{};
           for (final l in list) {
             if (l['recommended_by'] != null) {
@@ -109,7 +102,6 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
   Future<void> _fetchPersonName(String id) async {
     if (_personNames.containsKey(id)) return;
     try {
-      // /employee-user/:loginId — queries by login_id (fixed in server.js)
       final res = await http.get(Uri.parse('$baseUrl/employee-user/$id'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -222,25 +214,25 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     );
   }
 
-  // ─── Summary ──────────────────────────────────────────────────────────────────
+  // ─── Summary computations ──────────────────────────────────────────────────
   int get _approvedDays => leaves
       .where((e) => e['status'] == 'Approved')
       .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
+
   int get _remainingDays =>
       (_totalAllowed - _approvedDays).clamp(0, _totalAllowed);
-  int get _rejectedDays => leaves
+
+  // Pending = any status still awaiting action (TL or Manager queue)
+  int get _pendingCount => leaves
       .where(
         (e) =>
-            e['status'] == 'Rejected_By_TL' ||
-            e['status'] == 'Rejected_By_HR' ||
-            e['status'] == 'Not_Recommended_By_TL',
+            e['status'] == 'Pending_TL' ||
+            e['status'] == 'Pending_Manager' ||
+            e['status'] == 'Pending_HR', // legacy records
       )
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
-  int get _pendingCount => leaves
-      .where((e) => e['status'] == 'Pending_TL' || e['status'] == 'Pending_HR')
       .length;
 
-  // ─── Root ─────────────────────────────────────────────────────────────────────
+  // ─── Root ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final r = Responsive.of(context);
@@ -342,7 +334,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     _showApplySheet(context);
   }
 
-  // ─── Sliver AppBar ────────────────────────────────────────────────────────────
+  // ─── Sliver AppBar ─────────────────────────────────────────────────────────
   Widget _buildSliverAppBar(Responsive r) => SliverToBoxAdapter(
     child: Container(
       color: _primary,
@@ -379,7 +371,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     ),
   );
 
-  // ─── Summary Bar ─────────────────────────────────────────────────────────────
+  // ─── Summary Bar ───────────────────────────────────────────────────────────
   Widget _buildSummaryBar(Responsive r) => Container(
     color: _primary,
     padding: EdgeInsets.fromLTRB(r.hPad, 0, r.hPad, 20),
@@ -646,12 +638,16 @@ class _LeaveCardState extends State<_LeaveCard> {
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _accent = Color(0xFF0E9F6E);
   static const Color _red = Color(0xFFEF4444);
-  static const Color _orange = Color(0xFFF97316); // for Not_Recommended
+  static const Color _orange = Color(0xFFF97316);
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMid = Color(0xFF64748B);
   static const Color _textLight = Color(0xFF94A3B8);
 
-  // ── Status config — extended with Not_Recommended_By_TL ───────────────────
+  // ── Status config ──────────────────────────────────────────────────────────
+  // Flow: Employee → Pending_TL → Pending_Manager → Approved/Rejected_By_Manager
+  //       TL/HR   → Pending_Manager → Approved/Rejected_By_Manager
+  //       Manager → Approved (self)
+  // No HR approval role exists. Pending_HR and Rejected_By_HR are legacy only.
   static const _statusCfg = <String, Map<String, dynamic>>{
     'Approved': {
       'label': 'Approved',
@@ -659,37 +655,49 @@ class _LeaveCardState extends State<_LeaveCard> {
       'bg': Color(0xFFECFDF5),
       'icon': Icons.check_circle_rounded,
     },
-    'Rejected_By_TL': {
-      'label': 'Rejected by TL',
-      'color': Color(0xFFEF4444),
-      'bg': Color(0xFFFFF1F2),
-      'icon': Icons.cancel_rounded,
-    },
-    'Rejected_By_HR': {
-      'label': 'Rejected by HR',
-      'color': Color(0xFFEF4444),
-      'bg': Color(0xFFFFF1F2),
-      'icon': Icons.cancel_rounded,
-    },
-    // ── NEW ────────────────────────────────────────────────────────────────
-    'Not_Recommended_By_TL': {
-      'label': 'Not Recommended',
-      'color': Color(0xFFF97316),
-      'bg': Color(0xFFFFF7ED),
-      'icon': Icons.thumb_down_alt_rounded,
-    },
-    // ───────────────────────────────────────────────────────────────────────
     'Pending_TL': {
       'label': 'Pending TL',
       'color': Color(0xFFF59E0B),
       'bg': Color(0xFFFFFBEB),
       'icon': Icons.schedule_rounded,
     },
-    'Pending_HR': {
-      'label': 'Pending HR',
+    'Pending_Manager': {
+      'label': 'Pending Manager',
       'color': Color(0xFFF59E0B),
       'bg': Color(0xFFFFFBEB),
       'icon': Icons.schedule_rounded,
+    },
+    // legacy — old DB records only
+    'Pending_HR': {
+      'label': 'Pending Manager',
+      'color': Color(0xFFF59E0B),
+      'bg': Color(0xFFFFFBEB),
+      'icon': Icons.schedule_rounded,
+    },
+    'Rejected_By_TL': {
+      'label': 'Not Recommended by TL',
+      'color': Color(0xFFEF4444),
+      'bg': Color(0xFFFFF1F2),
+      'icon': Icons.cancel_rounded,
+    },
+    'Not_Recommended_By_TL': {
+      'label': 'Not Recommended',
+      'color': Color(0xFFF97316),
+      'bg': Color(0xFFFFF7ED),
+      'icon': Icons.thumb_down_alt_rounded,
+    },
+    'Rejected_By_Manager': {
+      'label': 'Rejected by Manager',
+      'color': Color(0xFFEF4444),
+      'bg': Color(0xFFFFF1F2),
+      'icon': Icons.cancel_rounded,
+    },
+    // legacy — map to same as Rejected_By_Manager
+    'Rejected_By_HR': {
+      'label': 'Rejected by Manager',
+      'color': Color(0xFFEF4444),
+      'bg': Color(0xFFFFF1F2),
+      'icon': Icons.cancel_rounded,
     },
     'Cancelled': {
       'label': 'Cancelled',
@@ -926,15 +934,18 @@ class _LeaveCardState extends State<_LeaveCard> {
 
   Widget _buildDetails(Map<String, dynamic> leave, Color statusColor) {
     final status = leave['status'] as String? ?? '';
-    final hasTLAction = leave['recommended_by'] != null; // TL stored their ID
-    final hasHRAction = leave['approved_by'] != null;
+    final hasTLAction = leave['recommended_by'] != null;
+    final hasManagerAction = leave['approved_by'] != null;
     final hasRejection = (leave['rejection_reason'] ?? '')
         .toString()
         .isNotEmpty;
     final hasCancelNote = (leave['cancel_reason'] ?? '').toString().isNotEmpty;
 
-    // ── Whether TL did NOT recommend (new status) ──────────────────────────
     final tlNotRecommended = status == 'Not_Recommended_By_TL';
+    final tlRejected = status == 'Rejected_By_TL';
+
+    // TL/HR applied directly — no TL review step exists for this leave
+    final skippedTLStep = !hasTLAction && !tlNotRecommended && !tlRejected;
 
     return Column(
       children: [
@@ -955,62 +966,58 @@ class _LeaveCardState extends State<_LeaveCard> {
               ),
               const SizedBox(height: 10),
 
-              // Employee reason
+              // Reason
               _infoBlock(
                 icon: Icons.person_outline_rounded,
                 iconColor: _primary,
-                title: 'Employee Reason',
-                content: leave['reason'] ?? '-',
+                title: 'Reason',
+                content: (leave['reason'] ?? '').toString().isEmpty
+                    ? '-'
+                    : leave['reason'],
               ),
               const SizedBox(height: 10),
 
-              // ── Team Lead block ─────────────────────────────────────────
-              // Show whenever TL has taken ANY action:
-              //   - recommended_by is set (recommend OR not_recommend)
-              //   - status is Rejected_By_TL (old path where TL id may not be stored)
-              //   - status is Not_Recommended_By_TL
-              if (hasTLAction ||
-                  status == 'Rejected_By_TL' ||
-                  tlNotRecommended) ...[
+              // ── TL Review block ─────────────────────────────────────────
+              // Only shown when TL actually acted on this leave.
+              // Hidden for TL/HR self-applies that went directly to Manager.
+              if (!skippedTLStep) ...[
                 _actionBlock(
                   icon: Icons.supervisor_account_rounded,
                   title: 'Team Lead Review',
-                  // Use recommended_by (which now always stores TL's login_id)
                   person: hasTLAction
                       ? widget.resolvePerson(leave['recommended_by'])
                       : 'Team Lead',
-                  timestamp: _fmtDateTime(leave['recommended_at']),
-                  // Label differs by outcome
+                  timestamp: _fmtDateTime(leave['recommended_at']?.toString()),
                   statusLabel: tlNotRecommended
                       ? 'Not Recommended'
-                      : status == 'Rejected_By_TL'
+                      : tlRejected
                       ? 'Rejected'
                       : 'Recommended',
                   statusColor: tlNotRecommended
                       ? _orange
-                      : status == 'Rejected_By_TL'
+                      : tlRejected
                       ? _red
                       : _accent,
-                  // Show rejection/reason for both Not_Recommended and Rejected_By_TL
-                  remark:
-                      (tlNotRecommended || status == 'Rejected_By_TL') &&
-                          hasRejection
+                  remark: (tlNotRecommended || tlRejected) && hasRejection
                       ? leave['rejection_reason']
                       : null,
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // ── Manager / Admin block ────────────────────────────────────────
-              if (hasHRAction) ...[
+              // ── Manager Action block ────────────────────────────────────
+              if (hasManagerAction) ...[
                 _actionBlock(
                   icon: Icons.admin_panel_settings_rounded,
-                  title: 'Manager / Admin Action',
+                  title: 'Manager Action',
                   person: widget.resolvePerson(leave['approved_by']),
                   timestamp: null,
                   statusLabel: status == 'Approved' ? 'Approved' : 'Rejected',
                   statusColor: status == 'Approved' ? _accent : _red,
-                  remark: status == 'Rejected_By_HR' && hasRejection
+                  remark:
+                      (status == 'Rejected_By_Manager' ||
+                              status == 'Rejected_By_HR') &&
+                          hasRejection
                       ? leave['rejection_reason']
                       : null,
                 ),
@@ -1029,19 +1036,19 @@ class _LeaveCardState extends State<_LeaveCard> {
                 const SizedBox(height: 10),
               ],
 
-              // Applied / Updated timestamps
+              // Timestamps
               Row(
                 children: [
                   Expanded(
                     child: _miniDetail(
                       'Applied',
-                      _fmtDateTime(leave['created_at']),
+                      _fmtDateTime(leave['created_at']?.toString()),
                     ),
                   ),
                   Expanded(
                     child: _miniDetail(
                       'Last Updated',
-                      _fmtDateTime(leave['updated_at']),
+                      _fmtDateTime(leave['updated_at']?.toString()),
                     ),
                   ),
                 ],
@@ -1082,7 +1089,7 @@ class _LeaveCardState extends State<_LeaveCard> {
     );
   }
 
-  // ─── Shared sub-widgets ───────────────────────────────────────────────────
+  // ─── Sub-widgets ───────────────────────────────────────────────────────────
   Widget _infoBlock({
     required IconData icon,
     required Color iconColor,
@@ -1198,7 +1205,7 @@ class _LeaveCardState extends State<_LeaveCard> {
             ),
           ],
         ),
-        if (timestamp != null) ...[
+        if (timestamp != null && timestamp != '-') ...[
           const SizedBox(height: 3),
           Row(
             children: [
@@ -1211,7 +1218,6 @@ class _LeaveCardState extends State<_LeaveCard> {
             ],
           ),
         ],
-        // ── Reason block — shown for Not_Recommended and Rejected_By_TL ──
         if (remark != null && remark.isNotEmpty) ...[
           const SizedBox(height: 10),
           Container(

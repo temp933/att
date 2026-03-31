@@ -1050,8 +1050,8 @@ class LatLng {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 class EmployeeAssignmentsScreen extends StatefulWidget {
-  final int empId;
-  const EmployeeAssignmentsScreen({super.key, required this.empId});
+   
+  const EmployeeAssignmentsScreen({super.key });
 
   @override
   State<EmployeeAssignmentsScreen> createState() =>
@@ -1518,7 +1518,7 @@ class _EmployeeAssignmentsScreenState extends State<EmployeeAssignmentsScreen>
               color: Colors.white,
               size: 20,
             ),
-            tooltip: 'Refresh',
+            tooltip: null,
             padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(),
             onPressed: _isLoading ? null : _fetchSites,

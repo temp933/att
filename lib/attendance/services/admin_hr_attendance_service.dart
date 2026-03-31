@@ -36,4 +36,20 @@ class AdminHrAttendanceService {
       throw Exception("Failed to load attendance");
     }
   }
+
+  static Future<List<AttendanceAdminModel>> fetchTLTeamAttendance(
+    String date,
+    int loginId,
+  ) async {
+    final url =
+        "$baseUrl/attendance/tl-team-by-date?date=$date&login_id=$loginId";
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final body = json.decode(response.body);
+      final List data = body['data'];
+      return data.map((e) => AttendanceAdminModel.fromJson(e)).toList();
+    } else {
+      throw Exception("Failed to load team attendance");
+    }
+  }
 }

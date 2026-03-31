@@ -71,7 +71,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
     } catch (e) {
       print("Error fetching Admin data: $e");
       setState(() {
-        hrName = "Admin";
+        // hrName = "Admin";
         isLoading = false;
       });
     }
@@ -159,7 +159,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
               isLoading
                   ? const CircularProgressIndicator()
                   : Text(
-                      "Welcome back HR, $hrName",
+                      "Welcome back, $hrName",
                       style: TextStyle(color: Colors.grey, fontSize: 16),
                     ),
 

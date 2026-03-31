@@ -20,6 +20,7 @@ import 'admin_approval.dart';
 import 'admin_assign_location.dart';
 import 'admin_manage_user.dart';
 import 'admin_session_management_screen.dart';
+import 'session_guard_mixin.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final int initialIndex;
@@ -39,7 +40,8 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with SessionGuardMixin {
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _surface = Color(0xFFF0F4FF);
@@ -59,6 +61,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex;
+    startSessionGuard();
   }
 
   // ── Pages ──────────────────────────────────────────────────────────────────
@@ -238,7 +241,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(width: 4),
           ],
         ),
-        drawer: isDesktop ? null : _mobileDrawer(),
+        drawer: isDesktop
+            ? null
+            : _mobileDrawer(MediaQuery.of(context).size.width),
         body: Row(
           children: [
             if (isDesktop) _desktopSidebar(),
@@ -481,152 +486,169 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ── Mobile drawer ──────────────────────────────────────────────────────────
-  Widget _mobileDrawer() {
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: Column(
-        children: [
-          // Header gradient
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 20,
-              left: 20,
-              right: 20,
-              bottom: 20,
-            ),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1A56DB),
-                  Color(0xFF1E3A8A),
-                  Color(0xFF1e1b4b),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+  Widget _mobileDrawer(double width) {
+    final bool isSmall = width < 360;
+    final bool isLarge = width > 500;
+    return SizedBox(
+      width: width * 0.75,
+      child: Drawer(
+        backgroundColor: Colors.white,
+        child: Column(
+          children: [
+            // Header gradient
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + (width * 0.04),
+                left: width * 0.05,
+                right: width * 0.05,
+                bottom: width * 0.04,
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.25),
-                      width: 1.5,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1A56DB),
+                    Color(0xFF1E3A8A),
+                    Color(0xFF1e1b4b),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(isSmall ? 8 : 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.25),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.admin_panel_settings_rounded,
+                      color: Colors.white,
+                      size: isSmall
+                          ? 22
+                          : isLarge
+                          ? 28
+                          : 26,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Admin Panel',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Employee Attendance System',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Nav items
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: railItems.length,
-              itemBuilder: (context, index) {
-                final selected = selectedIndex == index;
-                final label = (railItems[index].label as Text).data!;
-                return ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 1,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  leading: IconTheme(
-                    data: IconThemeData(
-                      color: selected ? _primary : _textMid,
-                      size: 20,
-                    ),
-                    child: selected
-                        ? railItems[index].selectedIcon
-                        : railItems[index].icon,
-                  ),
-                  title: Text(
-                    label,
+                  SizedBox(height: isSmall ? 10 : 14),
+                  Text(
+                    'Admin Panel',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? _primary : _textDark,
+                      color: Colors.white,
+                      fontSize: isSmall
+                          ? 16
+                          : isLarge
+                          ? 20
+                          : 18,
+
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
                     ),
                   ),
-                  selected: selected,
-                  selectedTileColor: _selectedBg,
-                  onTap: () {
-                    setState(() => selectedIndex = index);
-                    Navigator.pop(context);
-                  },
-                );
-              },
+                  const SizedBox(height: 3),
+                  Text(
+                    'Employee Attendance System',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: isSmall ? 10 : 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          // Footer logout
-          Container(
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: _border, width: 1)),
+            // Nav items
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: railItems.length,
+                itemBuilder: (context, index) {
+                  final selected = selectedIndex == index;
+                  final label = (railItems[index].label as Text).data!;
+
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: width * 0.04,
+                      vertical: width * 0.01,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    leading: IconTheme(
+                      data: IconThemeData(
+                        color: selected ? _primary : _textMid,
+                        size: 20,
+                      ),
+                      child: selected
+                          ? railItems[index].selectedIcon
+                          : railItems[index].icon,
+                    ),
+                    title: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: selected ? _primary : _textDark,
+                      ),
+                    ),
+                    selected: selected,
+                    selectedTileColor: _selectedBg,
+                    onTap: () {
+                      setState(() => selectedIndex = index);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 4,
+
+            // Footer logout
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: _border, width: 1)),
               ),
-              leading: const Icon(
-                Icons.logout_rounded,
-                color: Color(0xFFEF4444),
-                size: 20,
-              ),
-              title: const Text(
-                'Logout',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFEF4444),
+              child: ListTile(
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: width * 0.04,
+                  vertical: 4,
                 ),
+                leading: const Icon(
+                  Icons.logout_rounded,
+                  color: Color(0xFFEF4444),
+                  size: 20,
+                ),
+                title: const Text(
+                  'Logout',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _logout();
+                },
               ),
-              onTap: () {
-                Navigator.pop(context);
-                _logout();
-              },
             ),
-          ),
 
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
+            SafeArea(top: false, child: const SizedBox(height: 5)),
+          ],
+        ),
+      ), // ← closes Drawer
+    ); // ← closes SizedBox
   }
 
   // ── Logout ─────────────────────────────────────────────────────────────────

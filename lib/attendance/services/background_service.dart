@@ -523,13 +523,7 @@ const String kChannelId = 'attendance_tracking';
 const String kNotifTitle = 'Attendance Tracking';
 const int kNotifId = 888;
 
-// ─── LOCAL DB (offline event queue) ──────────────────────────────────────────
-//
-// Every mark_in / mark_out / end_day is written here first.
-// SyncWorker pushes them to the server every 1 minute.
-// If the server is unreachable the events stay here and are retried
-// on the next tick — no data is ever lost.
-
+ 
 class LocalDB {
   static Database? _db;
 
@@ -592,12 +586,7 @@ class LocalDB {
   }
 }
 
-// ─── SYNC WORKER ──────────────────────────────────────────────────────────────
-//
-// Runs every 1 minute. Attempts batch sync first, falls back to individual
-// calls if the batch endpoint fails. If ALL network calls fail (offline), the
-// events stay in LocalDB and will be retried on the next tick.
-
+ 
 class SyncWorker {
   static bool _running = false;
 
@@ -1018,26 +1007,14 @@ void _fire(Future<void> f) =>
 Stream<Map<String, dynamic>?> webOn(String event) => const Stream.empty();
 Stream<Map<String, dynamic>?> desktopOn(String event) => const Stream.empty();
 
-// ─── START BACKGROUND TRACKING ────────────────────────────────────────────────
-//
-// Called by EmployeeHome after:
-//   1. Server confirmed status = "not_started"
-//   2. Permissions granted
-//
-// Steps:
-//   a. Save employee_id to prefs (service isolate reads this).
-//   b. Fetch site polygons from server → persist to SQLite.
-//      (Service isolate will load from SQLite in its own init.)
-//   c. Start the foreground service.
-
+ 
 Future<void> startBackgroundTracking(int employeeId) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setInt('employee_id', employeeId);
 
   if (kIsWeb) return;
 
-  // Fetch and cache site polygons BEFORE starting the service,
-  // so the background isolate can load them without a network call.
+ 
   await SiteCache.init();
 
   final service = FlutterBackgroundService();
@@ -1046,13 +1023,7 @@ Future<void> startBackgroundTracking(int employeeId) async {
   }
 }
 
-// ─── SEND END DAY ─────────────────────────────────────────────────────────────
-//
-// Signals the background service to perform a clean shutdown:
-//   mark_out → end_day → flush → clear sites → stop service.
-//
-// Returns true  if service confirmed within 10 s.
-// Returns false on timeout (data is safe in LocalDB, will sync later).
+ 
 
 Future<bool> sendEndDay() async {
   if (kIsWeb) return true;

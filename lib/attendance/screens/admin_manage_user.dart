@@ -22,12 +22,6 @@ const Color _textMid = Color(0xFF64748B);
 const Color _textLight = Color(0xFF94A3B8);
 const Color _border = Color(0xFFE2E8F0);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared Validators
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Returns an error string if the date-of-birth string fails any rule,
-/// or null if valid.
 String? validateDob(String? val) {
   if (val == null || val.trim().isEmpty) {
     return 'Date of Birth is required';
@@ -83,8 +77,6 @@ String? validateDojOptional(String? val) {
   return null;
 }
 
-/// Date of relieving: only required when status == Relieved; must be
-/// after date-of-joining when both are provided.
 String? validateDor(String? val, String status, String dojText) {
   if (status == 'Relieved') {
     if (val == null || val.trim().isEmpty) {
@@ -387,12 +379,7 @@ class _DetailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final visible = tiles
-        .where(
-          (t) =>
-              t.value != null &&
-              t.value.toString().isNotEmpty &&
-              t.value.toString() != '-',
-        )
+        .where((t) => t.value != null && t.value.toString().isNotEmpty)
         .toList();
     if (visible.isEmpty) return const SizedBox.shrink();
 
@@ -1065,6 +1052,8 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   String gender = 'Male', employmentType = 'Permanent', workType = 'Full Time';
   int? selectedDeptId, selectedRoleId;
   List<Map<String, dynamic>> departments = [], roles = [];
+  List<Map<String, dynamic>> teamLeads = [];
+  int? selectedTlId;
   bool _submitting = false;
 
   @override
@@ -1076,10 +1065,12 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   Future<void> _loadDropdowns() async {
     final depts = await EmployeeService.fetchDepartments();
     final rolesList = await EmployeeService.fetchRoles();
+    final tlList = await EmployeeService.fetchTeamLeads(); // ← ADD
     if (!mounted) return;
     setState(() {
       departments = depts;
       roles = rolesList;
+      teamLeads = tlList; // ← ADD
     });
   }
 
@@ -1247,7 +1238,6 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                     children: [
                       _row2(
                         context,
-                        // ── Department required ────────────────────────────────
                         FormDropdownMap(
                           'Department',
                           departments,
@@ -1255,7 +1245,6 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                           (v) => setState(() => selectedDeptId = v),
                           padding: EdgeInsets.zero,
                         ),
-                        // ── Role required ──────────────────────────────────────
                         FormDropdownMap(
                           'Role / Designation',
                           roles,
@@ -1264,6 +1253,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                           padding: EdgeInsets.zero,
                         ),
                         sp: sp,
+                      ),
+                      SizedBox(height: sp),
+                      // ── TL Name ──────────────────────────────────────────────────────
+                      FormDropdownMap(
+                        'Team Lead (TL)',
+                        teamLeads,
+                        selectedTlId,
+                        (v) => setState(() => selectedTlId = v),
+                        padding: EdgeInsets.zero,
                       ),
                       SizedBox(height: sp),
                       // ── DOJ — cannot be in future ──────────────────────────
@@ -1483,6 +1481,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       'password': passwordCtrl.text,
       'request_type': 'NEW',
       'education': _eduKey.currentState?.getEntries() ?? [],
+      'tl_id': selectedTlId,
     };
     try {
       final res = await http.post(
@@ -2123,6 +2122,13 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
       ),
       _Tile(Icons.badge_outlined, 'Designation', employeeData!['role_name']),
       _Tile(
+        Icons.supervisor_account_outlined,
+        'Team Lead',
+        (employeeData!['tl_name']?.toString() ?? '').trim().isNotEmpty
+            ? employeeData!['tl_name']
+            : 'Not assigned',
+      ),
+      _Tile(
         Icons.calendar_today_outlined,
         'Date of Joining',
         _fmtDate(employeeData!['date_of_joining']),
@@ -2161,13 +2167,23 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
       _Tile(
         Icons.credit_card_outlined,
         'Aadhar',
-        _maskAadhar(employeeData!['aadhar_number']),
+        employeeData!['aadhar_number']?.toString().isNotEmpty == true
+            ? _maskAadhar(employeeData!['aadhar_number'])
+            : 'Not provided',
       ),
-      _Tile(Icons.assignment_outlined, 'PAN', employeeData!['pan_number']),
+      _Tile(
+        Icons.assignment_outlined,
+        'PAN',
+        employeeData!['pan_number']?.toString().isNotEmpty == true
+            ? employeeData!['pan_number']
+            : 'Not provided',
+      ),
       _Tile(
         Icons.flight_outlined,
         'Passport',
-        employeeData!['passport_number'],
+        employeeData!['passport_number']?.toString().isNotEmpty == true
+            ? employeeData!['passport_number']
+            : 'Not provided',
       ),
       _Tile(
         Icons.account_balance_outlined,
@@ -2496,6 +2512,8 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
   String gender = 'Male', employmentType = 'Permanent', workType = 'Full Time';
   int? selectedDeptId, selectedRoleId;
   List<Map<String, dynamic>> departments = [], roles = [];
+  List<Map<String, dynamic>> teamLeads = [];
+  int? selectedTlId;
   bool _submitting = false;
   List<Map<String, dynamic>> _initialEdu = [];
 
@@ -2537,6 +2555,10 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
     selectedRoleId = d['role_id'] != null
         ? int.tryParse(d['role_id'].toString())
         : null;
+
+    selectedTlId = d['tl_id'] != null
+        ? int.tryParse(d['tl_id'].toString())
+        : null;
     if (d['education'] is List) {
       _initialEdu = (d['education'] as List)
           .map((e) => Map<String, dynamic>.from(e))
@@ -2557,10 +2579,12 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
   Future<void> _loadDropdowns() async {
     final depts = await EmployeeService.fetchDepartments();
     final rolesList = await EmployeeService.fetchRoles();
+    final tlList = await EmployeeService.fetchTeamLeads();
     if (!mounted) return;
     setState(() {
       departments = depts;
       roles = rolesList;
+      teamLeads = tlList;
     });
   }
 
@@ -2982,6 +3006,7 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       'esic_number': esicCtrl.text,
       'years_experience': int.tryParse(yearsExpCtrl.text),
       'education': _eduKey.currentState?.getEntries() ?? [],
+      'tl_id': selectedTlId,
     };
     try {
       final res = await http.put(
@@ -3038,7 +3063,7 @@ class EmployeeEditPage extends StatefulWidget {
 class _EmployeeEditPageState extends State<EmployeeEditPage> {
   final _formKey = GlobalKey<FormState>();
   final _eduKey = GlobalKey<EducationFormSectionState>();
-
+  late Employee original;
   late TextEditingController firstNameCtrl,
       midNameCtrl,
       lastNameCtrl,
@@ -3055,7 +3080,10 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       emergencyCtrl,
       pfCtrl,
       esicCtrl,
-      yearsExpCtrl;
+      yearsExpCtrl,
+      aadharCtrl,
+      panCtrl,
+      passportCtrl;
 
   String workType = 'Full Time',
       gender = 'Male',
@@ -3063,6 +3091,8 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       status = 'Active';
   int? selectedDeptId, selectedRoleId;
   List<Map<String, dynamic>> departments = [], roles = [];
+  List<Map<String, dynamic>> teamLeads = [];
+  int? selectedTlId;
   bool _submitting = false, _loadingEdu = true;
   List<Map<String, dynamic>> _initialEdu = [];
 
@@ -3070,6 +3100,7 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
   void initState() {
     super.initState();
     final e = widget.employee;
+    original = widget.employee;
     String fmt(DateTime? dt) =>
         dt == null ? '' : dt.toIso8601String().split('T').first;
 
@@ -3111,7 +3142,10 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
     status = e.status ?? 'Active';
     selectedDeptId = e.departmentId;
     selectedRoleId = e.roleId;
-
+    aadharCtrl = TextEditingController(text: e.aadharNumber ?? '');
+    panCtrl = TextEditingController(text: e.panNumber ?? '');
+    passportCtrl = TextEditingController(text: e.passportNumber ?? '');
+    selectedTlId = e.tlId;
     _loadDropdowns();
     _loadExistingEducation();
   }
@@ -3119,10 +3153,12 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
   Future<void> _loadDropdowns() async {
     final depts = await EmployeeService.fetchDepartments();
     final rolesList = await EmployeeService.fetchRoles();
+    final tlList = await EmployeeService.fetchTeamLeads(); // ← ADD
     if (!mounted) return;
     setState(() {
       departments = depts;
       roles = rolesList;
+      teamLeads = tlList; // ← ADD
     });
   }
 
@@ -3171,6 +3207,9 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       pfCtrl,
       esicCtrl,
       yearsExpCtrl,
+      aadharCtrl,
+      panCtrl,
+      passportCtrl,
     ]) {
       c.dispose();
     }
@@ -3327,6 +3366,15 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                         sp: sp,
                       ),
                       SizedBox(height: sp),
+                      FormDropdownMap(
+                        'Team Lead (TL)',
+                        teamLeads,
+                        selectedTlId,
+                        (v) => setState(() => selectedTlId = v),
+                        padding: EdgeInsets.zero,
+                      ),
+
+                      SizedBox(height: sp),
                       // ── DOJ optional on edit but validated if filled ──────────
                       FormDateField(
                         dojCtrl,
@@ -3398,20 +3446,45 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                       _row2(
                         context,
                         FormTextField(
-                          pfCtrl,
-                          'PF Number',
+                          aadharCtrl,
+                          'Aadhar Number',
+                          required: true,
+                          fieldType: 'aadhar',
                           padding: EdgeInsets.zero,
                         ),
                         FormTextField(
-                          esicCtrl,
-                          'ESIC Number',
+                          panCtrl,
+                          'PAN Number',
+                          required: true,
+                          fieldType: 'pan',
                           padding: EdgeInsets.zero,
                         ),
                         sp: sp,
                       ),
+                      SizedBox(height: sp),
+                      _row2(
+                        context,
+                        FormTextField(
+                          passportCtrl,
+                          'Passport Number',
+                          fieldType: 'passport',
+                          padding: EdgeInsets.zero,
+                        ),
+                        FormTextField(
+                          pfCtrl,
+                          'PF Number',
+                          padding: EdgeInsets.zero,
+                        ),
+                        sp: sp,
+                      ),
+                      SizedBox(height: sp),
+                      FormTextField(
+                        esicCtrl,
+                        'ESIC Number',
+                        padding: EdgeInsets.zero,
+                      ),
                     ],
                   ),
-
                   SizedBox(height: s.sectionSpacing),
                   _SectionCard(
                     icon: Icons.toggle_on_outlined,
@@ -3579,6 +3652,10 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       'esic_number': esicCtrl.text,
       'years_experience': int.tryParse(yearsExpCtrl.text),
       'education': _eduKey.currentState?.getEntries() ?? [],
+      'aadhar_number': aadharCtrl.text,
+      'pan_number': panCtrl.text,
+      'passport_number': passportCtrl.text,
+      'tl_id': selectedTlId,
     };
     try {
       final res = await http.post(

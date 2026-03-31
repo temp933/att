@@ -293,6 +293,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
   List<_Row> _workRows() => [
     _Row('Department', _fmt(employeeData!['department_name'])),
     _Row('Role', _fmt(employeeData!['role_name'])),
+    _Row('TL Name', _fmt(employeeData!['tl_name'])),
     _Row(
       'Employment Type',
       _fmt(employeeData!['employment_type']),

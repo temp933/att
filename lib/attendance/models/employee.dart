@@ -248,6 +248,7 @@ class Employee {
   final String? esicNumber;
   final int? yearsExperience;
   final List<Education>? educationList;
+  final int? tlId;
 
   Employee({
     required this.empId,
@@ -288,6 +289,7 @@ class Employee {
     this.esicNumber,
     this.yearsExperience,
     this.educationList,
+    this.tlId,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
@@ -349,6 +351,9 @@ class Employee {
           ? null
           : int.tryParse(json['years_experience'].toString()),
       educationList: eduList,
+      tlId: json['tl_id'] == null
+          ? null
+          : int.tryParse(json['tl_id'].toString()),
     );
   }
 }

@@ -1,9 +1,8 @@
-import 'admin_attendance_report.dart';
 import 'package:flutter/material.dart';
 import '../models/admin_hr_attendance_model.dart';
 import '../services/admin_hr_attendance_service.dart';
 
-// ── Design Tokens ─────────────────────────────────────────────────────────────
+// ── Design Tokens (same as admin screen) ─────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
 const Color _accent = Color(0xFF0E9F6E);
 const Color _purple = Color(0xFF7C3AED);
@@ -33,18 +32,17 @@ class _Screen {
   double get captionFont => isMobile ? 11 : 12;
 }
 
-// ── Main Screen ───────────────────────────────────────────────────────────────
-class AdminHrAttendanceScreen extends StatefulWidget {
-  const AdminHrAttendanceScreen({super.key});
+// ── TL Attendance Screen ──────────────────────────────────────────────────────
+class TLAttendanceScreen extends StatefulWidget {
+  final int loginId;
+
+  const TLAttendanceScreen({super.key, required this.loginId});
+
   @override
-  State<AdminHrAttendanceScreen> createState() =>
-      _AdminHrAttendanceScreenState();
+  State<TLAttendanceScreen> createState() => _TLAttendanceScreenState();
 }
 
-class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
+class _TLAttendanceScreenState extends State<TLAttendanceScreen> {
   String _selectedStatus = 'All';
   String _selectedDateFilter = 'Today';
   DateTime _selectedDate = DateTime.now();
@@ -58,13 +56,11 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 1, vsync: this);
     _loadAttendance();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -97,8 +93,9 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
       _error = null;
     });
     try {
-      final data = await AdminHrAttendanceService.fetchAttendance(
+      final data = await AdminHrAttendanceService.fetchTLTeamAttendance(
         _fmtApi(_selectedDate),
+        widget.loginId,
       );
       if (!mounted) return;
       _allRecords = data;
@@ -156,18 +153,10 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     preferredSize: const Size.fromHeight(70),
     child: Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color.fromARGB(255, 255, 255, 255),
-            Color.fromARGB(255, 255, 255, 255),
-            Color.fromARGB(255, 255, 255, 255),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Color(0x401A56DB),
+            color: Color(0x201A56DB),
             blurRadius: 14,
             offset: Offset(0, 4),
           ),
@@ -184,29 +173,26 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    const Text(
+                      'My Team Attendance',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: _textDark,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
-                      "Date: ${_displayDate(_selectedDate)}",
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color.fromARGB(255, 0, 0, 0),
-                      ),
+                      'Date: ${_displayDate(_selectedDate)}',
+                      style: const TextStyle(fontSize: 11, color: _textMid),
                     ),
                   ],
                 ),
               ),
               IconButton(
-                tooltip: 'Download Report',
-                icon: const Icon(
-                  Icons.download_rounded,
-                  color: Color.fromARGB(255, 0, 0, 0),
-                ),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AdminAttendanceReportScreen(),
-                  ),
-                ),
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh_rounded, color: _textDark),
+                onPressed: _loadAttendance,
               ),
             ],
           ),
@@ -236,7 +222,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    // ── Summary cards
+                    // ── Summary cards ────────────────────────────────
                     SliverToBoxAdapter(
                       child: Container(
                         color: _card,
@@ -244,14 +230,43 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                           horizontal: s.pagePadding,
                           vertical: 14,
                         ),
-                        child: s.isMobile ? _mobileSummary(s) : _wideSummary(s),
+                        child: Row(
+                          children: [
+                            _SummaryCard(
+                              label: 'Total',
+                              value: _total,
+                              color: _primary,
+                              bgColor: const Color(0xFFEEF2FF),
+                              icon: Icons.people_alt_rounded,
+                              s: s,
+                            ),
+                            const SizedBox(width: 8),
+                            _SummaryCard(
+                              label: 'Present',
+                              value: _present,
+                              color: _accent,
+                              bgColor: const Color(0xFFECFDF5),
+                              icon: Icons.check_circle_outline_rounded,
+                              s: s,
+                            ),
+                            const SizedBox(width: 8),
+                            _SummaryCard(
+                              label: 'Absent',
+                              value: _absent,
+                              color: _red,
+                              bgColor: const Color(0xFFFFF1F2),
+                              icon: Icons.cancel_outlined,
+                              s: s,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SliverToBoxAdapter(
                       child: Divider(height: 1, thickness: 1, color: _border),
                     ),
 
-                    // ── Filter bar
+                    // ── Filter bar ───────────────────────────────────
                     SliverToBoxAdapter(
                       child: Container(
                         color: _card,
@@ -259,14 +274,14 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                           horizontal: s.pagePadding,
                           vertical: 10,
                         ),
-                        child: s.isMobile ? _mobileFilters() : _wideFilters(),
+                        child: s.isMobile ? _mobileFilters() : _wideFilters(s),
                       ),
                     ),
                     const SliverToBoxAdapter(
                       child: Divider(height: 1, thickness: 1, color: _border),
                     ),
 
-                    // ── Record count label
+                    // ── Record count ─────────────────────────────────
                     if (_filteredRecords.isNotEmpty)
                       SliverToBoxAdapter(
                         child: Padding(
@@ -277,7 +292,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                             4,
                           ),
                           child: Text(
-                            '${_filteredRecords.length} employee${_filteredRecords.length == 1 ? '' : 's'} found',
+                            '${_filteredRecords.length} team member${_filteredRecords.length == 1 ? '' : 's'} found',
                             style: const TextStyle(
                               fontSize: 12,
                               color: _textMid,
@@ -287,21 +302,18 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                         ),
                       ),
 
-                    // ── Empty state
+                    // ── Empty state ──────────────────────────────────
                     if (_filteredRecords.isEmpty)
                       SliverFillRemaining(child: _emptyState()),
 
-                    // ── Employee cards
+                    // ── Employee cards ───────────────────────────────
                     if (_filteredRecords.isNotEmpty)
                       SliverPadding(
                         padding: EdgeInsets.fromLTRB(
                           s.pagePadding,
                           8,
                           s.pagePadding,
-                          32 +
-                              MediaQuery.of(
-                                context,
-                              ).padding.bottom, // ← accounts for home bar
+                          32 + mq.padding.bottom,
                         ),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
@@ -320,69 +332,6 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     );
   }
 
-  // ── Summary Cards ─────────────────────────────────────────────────────────
-  Widget _mobileSummary(_Screen s) => Row(
-    children: [
-      _SummaryCard(
-        label: 'Total',
-        value: _total,
-        color: _primary,
-        bgColor: const Color(0xFFEEF2FF),
-        icon: Icons.people_alt_rounded,
-        s: s,
-      ),
-      const SizedBox(width: 8),
-      _SummaryCard(
-        label: 'Present',
-        value: _present,
-        color: _accent,
-        bgColor: const Color(0xFFECFDF5),
-        icon: Icons.check_circle_outline_rounded,
-        s: s,
-      ),
-      const SizedBox(width: 8),
-      _SummaryCard(
-        label: 'Absent',
-        value: _absent,
-        color: _red,
-        bgColor: const Color(0xFFFFF1F2),
-        icon: Icons.cancel_outlined,
-        s: s,
-      ),
-    ],
-  );
-
-  Widget _wideSummary(_Screen s) => Row(
-    children: [
-      _SummaryCard(
-        label: 'Total',
-        value: _total,
-        color: _primary,
-        bgColor: const Color(0xFFEEF2FF),
-        icon: Icons.people_alt_rounded,
-        s: s,
-      ),
-      const SizedBox(width: 10),
-      _SummaryCard(
-        label: 'Present',
-        value: _present,
-        color: _accent,
-        bgColor: const Color(0xFFECFDF5),
-        icon: Icons.check_circle_outline_rounded,
-        s: s,
-      ),
-      const SizedBox(width: 10),
-      _SummaryCard(
-        label: 'Absent',
-        value: _absent,
-        color: _red,
-        bgColor: const Color(0xFFFFF1F2),
-        icon: Icons.cancel_outlined,
-        s: s,
-      ),
-    ],
-  );
-
   // ── Filters ───────────────────────────────────────────────────────────────
   Widget _mobileFilters() => Column(
     children: [
@@ -398,7 +347,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     ],
   );
 
-  Widget _wideFilters() => Row(
+  Widget _wideFilters(_Screen s) => Row(
     children: [
       Expanded(flex: 3, child: _searchField()),
       const SizedBox(width: 10),
@@ -454,7 +403,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
   );
 
   Widget _statusDrop() => DropdownButtonFormField<String>(
-    initialValue: _selectedStatus,
+    value: _selectedStatus,
     isExpanded: true,
     style: const TextStyle(color: _textDark, fontSize: 13),
     decoration: _dropDec('Status'),
@@ -473,7 +422,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
   );
 
   Widget _dateDrop() => DropdownButtonFormField<String>(
-    initialValue: _selectedDateFilter,
+    value: _selectedDateFilter,
     isExpanded: true,
     style: const TextStyle(color: _textDark, fontSize: 13),
     decoration: _dropDec('Date'),
@@ -516,15 +465,11 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
             color: _primary.withOpacity(0.08),
             shape: BoxShape.circle,
           ),
-          child: const Icon(
-            Icons.fingerprint_rounded,
-            size: 36,
-            color: _primary,
-          ),
+          child: const Icon(Icons.group_outlined, size: 36, color: _primary),
         ),
         const SizedBox(height: 16),
         const Text(
-          'No records found',
+          'No team members found',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w600,
@@ -591,7 +536,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
   );
 }
 
-// ── Summary Stat Card ─────────────────────────────────────────────────────────
+// ── Summary Stat Card (reused exactly from admin screen) ──────────────────────
 class _SummaryCard extends StatelessWidget {
   final String label;
   final int value;
@@ -764,7 +709,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // ── Header row (always visible) ───────────────────────────────────
+          // ── Header row ────────────────────────────────────────────────
           InkWell(
             onTap: hasVisits ? _toggle : null,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
@@ -832,7 +777,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   ),
                   const SizedBox(width: 10),
 
-                  // Visit count pill (only for present)
+                  // Visit count pill
                   if (hasVisits)
                     Container(
                       margin: const EdgeInsets.only(right: 8),
@@ -906,13 +851,12 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
             ),
           ),
 
-          // ── Expandable visits section ─────────────────────────────────────
+          // ── Expandable visits ─────────────────────────────────────────
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1,
             child: Column(
               children: [
-                // thin gradient divider
                 Container(
                   height: 1,
                   decoration: BoxDecoration(
@@ -925,8 +869,6 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                     ),
                   ),
                 ),
-
-                // Summary strip inside expanded area
                 if (hasVisits)
                   Container(
                     color: sc.withOpacity(0.04),
@@ -962,8 +904,6 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                       ],
                     ),
                   ),
-
-                // Visit rows
                 Padding(
                   padding: EdgeInsets.fromLTRB(
                     s.pagePadding,
@@ -987,7 +927,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
             ),
           ),
 
-          // ── Absent placeholder (no expand) ───────────────────────────────
+          // ── Absent placeholder ────────────────────────────────────────
           if (!hasVisits && e.status.toUpperCase() == 'ABSENT')
             Container(
               width: double.infinity,
@@ -995,9 +935,9 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                 horizontal: s.pagePadding,
                 vertical: 10,
               ),
-              decoration: BoxDecoration(
-                color: _red.withOpacity(0.03),
-                border: const Border(top: BorderSide(color: _border)),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF8F8),
+                border: Border(top: BorderSide(color: _border)),
               ),
               child: Row(
                 children: [
@@ -1088,7 +1028,6 @@ class _VisitRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Alternate subtle background for readability
     final bg = index.isEven ? _primary.withOpacity(0.025) : Colors.transparent;
 
     return Container(
@@ -1101,7 +1040,6 @@ class _VisitRow extends StatelessWidget {
       child: IntrinsicHeight(
         child: Row(
           children: [
-            // Index stripe
             Container(
               width: 3,
               decoration: BoxDecoration(
@@ -1112,7 +1050,6 @@ class _VisitRow extends StatelessWidget {
                 ),
               ),
             ),
-
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -1173,10 +1110,10 @@ class _VisitRow extends StatelessWidget {
       ),
     ),
   );
+
   Widget _mobileLayout() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      // Location name + visit number
       Row(
         children: [
           Container(
@@ -1214,8 +1151,6 @@ class _VisitRow extends StatelessWidget {
         ],
       ),
       const SizedBox(height: 8),
-      // Time chips
-      // AFTER
       Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -1245,7 +1180,6 @@ class _VisitRow extends StatelessWidget {
 
   Widget _desktopLayout() => Row(
     children: [
-      // Visit number
       Container(
         width: 24,
         height: 24,
@@ -1267,7 +1201,6 @@ class _VisitRow extends StatelessWidget {
       const SizedBox(width: 10),
       const Icon(Icons.location_on_rounded, size: 14, color: _primary),
       const SizedBox(width: 6),
-      // Location name
       SizedBox(
         width: 160,
         child: Text(
@@ -1281,10 +1214,8 @@ class _VisitRow extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 16),
-      // Divider
       Container(width: 1, height: 28, color: _border),
       const SizedBox(width: 16),
-      // Time cells
       _desktopCell(
         Icons.login_rounded,
         'Check In',
@@ -1307,47 +1238,6 @@ class _VisitRow extends StatelessWidget {
       ),
     ],
   );
-
-  // Widget _timeChip(IconData icon, String label, String value, Color color) =>
-  //     Expanded(
-  //       child: Container(
-  //         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-  //         decoration: BoxDecoration(
-  //           color: color.withOpacity(0.07),
-  //           borderRadius: BorderRadius.circular(8),
-  //           border: Border.all(color: color.withOpacity(0.18)),
-  //         ),
-  //         child: Column(
-  //           crossAxisAlignment: CrossAxisAlignment.start,
-  //           children: [
-  //             Row(
-  //               children: [
-  //                 Icon(icon, size: 10, color: color.withOpacity(0.7)),
-  //                 const SizedBox(width: 3),
-  //                 Text(
-  //                   label,
-  //                   style: TextStyle(
-  //                     fontSize: 9,
-  //                     color: color.withOpacity(0.7),
-  //                     fontWeight: FontWeight.w500,
-  //                   ),
-  //                 ),
-  //               ],
-  //             ),
-  //             const SizedBox(height: 2),
-  //             Text(
-  //               value,
-  //               style: TextStyle(
-  //                 fontSize: 12,
-  //                 fontWeight: FontWeight.w700,
-  //                 color: color,
-  //               ),
-  //               overflow: TextOverflow.ellipsis,
-  //             ),
-  //           ],
-  //         ),
-  //       ),
-  //     );
 
   Widget _desktopCell(IconData icon, String label, String value, Color color) =>
       Row(

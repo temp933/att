@@ -838,7 +838,7 @@ class _AdminSessionManagementScreenState
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '@${user.username}',
+                        '${user.username}',
                         style: const TextStyle(color: _textMid, fontSize: 12),
                       ),
                     ],
@@ -875,58 +875,60 @@ class _AdminSessionManagementScreenState
           ),
 
           // ── Action area ────────────────────────────────────────────────────
-          if (isActive)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
+          // ── Action area ────────────────────────────────────────────────────
+          // ── Action area ────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // ✅ ALWAYS AVAILABLE
+                OutlinedButton.icon(
+                  onPressed: () => _handleResetPassword(user),
+                  icon: const Icon(Icons.lock_reset, size: 14),
+                  label: const Text('Reset Pass'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _primary,
+                    side: BorderSide(color: _primary),
+                  ),
+                ),
+
+                // ✅ ONLY IF LOGGED IN
+                if (isActive) ...[
                   const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: () => _handleForceLogout(user),
                     icon: const Icon(Icons.logout_rounded, size: 14),
                     label: const Text('Force Logout'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _red,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
+                    style: FilledButton.styleFrom(backgroundColor: _red),
                   ),
                 ],
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 14,
-                    color: _textLight,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'No active session',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _textLight,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
+          ),
+          // else
+          //   Padding(
+          //     padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+          //     child: Row(
+          //       mainAxisAlignment: MainAxisAlignment.end,
+          //       children: [
+          //         Icon(
+          //           Icons.check_circle_outline_rounded,
+          //           size: 14,
+          //           color: _textLight,
+          //         ),
+          //         const SizedBox(width: 5),
+          //         Text(
+          //           'No active session',
+          //           style: TextStyle(
+          //             fontSize: 12,
+          //             color: _textLight,
+          //             fontStyle: FontStyle.italic,
+          //           ),
+          //         ),
+          //       ],
+          //     ),
+          //   ),
         ],
       ),
     );
@@ -994,6 +996,193 @@ class _AdminSessionManagementScreenState
         ],
       ),
     );
+  }
+
+  Future<void> _handleResetPassword(SessionUser user) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    bool _obscureNew = true;
+    bool _obscureConfirm = true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Reset Password',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                user.fullName,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: _textMid,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Info banner ─────────────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _amber.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _amber.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 15, color: _amber),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'User will be logged out from all devices and must change this password on next login.',
+                        style: TextStyle(fontSize: 12, color: _textMid),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── New password ────────────────────────────────────────────
+              TextField(
+                controller: passwordController,
+                obscureText: _obscureNew,
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'New Password',
+                  labelStyle: const TextStyle(fontSize: 13),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureNew
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 18,
+                    ),
+                    onPressed: () => setDlg(() => _obscureNew = !_obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Confirm password ────────────────────────────────────────
+              TextField(
+                controller: confirmController,
+                obscureText: _obscureConfirm,
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Confirm Password',
+                  labelStyle: const TextStyle(fontSize: 13),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirm
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 18,
+                    ),
+                    onPressed: () =>
+                        setDlg(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: _textMid)),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.lock_reset, size: 16),
+              label: const Text('Reset'),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true) return;
+
+    // ── Client-side validation ────────────────────────────────────────────────
+    final newPass = passwordController.text.trim();
+    final confirmPass = confirmController.text.trim();
+
+    if (newPass.isEmpty || confirmPass.isEmpty) {
+      _snack('Please fill in both password fields', _amber);
+      return;
+    }
+    if (newPass != confirmPass) {
+      _snack('Passwords do not match', _red);
+      return;
+    }
+    if (newPass.length < 8) {
+      _snack('Password must be at least 8 characters', _red);
+      return;
+    }
+    if (!RegExp(r'[a-zA-Z]').hasMatch(newPass)) {
+      _snack('Password must contain at least one letter', _red);
+      return;
+    }
+    if (!RegExp(r'[0-9]').hasMatch(newPass)) {
+      _snack('Password must contain at least one number', _red);
+      return;
+    }
+
+    setState(() => _actionLoading = true);
+
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/reset-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emp_id': user.empId,
+          'new_password': newPass,
+          'confirm_password': confirmPass,
+        }),
+      );
+
+      final body = jsonDecode(res.body);
+
+      if (res.statusCode == 200 && body['success'] == true) {
+        _snack(
+          '✓ Password reset for ${user.fullName}. They are now logged out from all devices.',
+          _accent,
+        );
+        // ── Refresh list so session card updates to "Logged Out" ─────────────
+        await _loadSessions();
+      } else {
+        _snack(body['message'] ?? 'Reset failed', _red);
+      }
+    } catch (e) {
+      _snack('Network error. Please try again.', _red);
+    } finally {
+      setState(() => _actionLoading = false);
+    }
   }
 
   // ── Status badge — same pill style as profile _statusBadge ──────────────────

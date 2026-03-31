@@ -425,6 +425,17 @@ class EmployeeService {
       throw Exception(body['message'] ?? 'Failed to perform TL action');
     }
   }
+
+  // ================= GET TEAM LEADS =================
+  static Future<List<Map<String, dynamic>>> fetchTeamLeads() async {
+    final response = await http.get(Uri.parse('$baseUrl/team-leads'));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return List<Map<String, dynamic>>.from(data['data']);
+    } else {
+      throw Exception("Failed to load team leads");
+    }
+  }
 }
 
 class LeaveData {

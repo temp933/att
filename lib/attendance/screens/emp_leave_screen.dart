@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'responsive_utils.dart';
+import '../models/leavemodel.dart';
 
 const String baseUrl = 'http://192.168.29.103:3000';
 
@@ -15,7 +16,7 @@ class LeaveScreen extends StatefulWidget {
 
 class _LeaveScreenState extends State<LeaveScreen>
     with SingleTickerProviderStateMixin {
-  List<dynamic> leaves = [];
+  List<LeaveModel> leaves = [];
   bool loading = true;
   String? errorMessage;
 
@@ -71,13 +72,15 @@ class _LeaveScreenState extends State<LeaveScreen>
     });
     try {
       final res = await http.get(
-        Uri.parse('$baseUrl/employees/${widget.employeeId}  '),
+        Uri.parse('$baseUrl/employees/${widget.employeeId}/leaves'),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data['success'] == true) {
           final list = data['data'] as List;
-          setState(() => leaves = list);
+          setState(() {
+            leaves = list.map((e) => LeaveModel.fromPendingJson(e)).toList();
+          });
           _animCtrl.forward(from: 0);
 
           // Collect all login_ids that need name resolution
@@ -224,20 +227,20 @@ class _LeaveScreenState extends State<LeaveScreen>
 
   // ─── Summary ──────────────────────────────────────────────────────────────────
   int get _approvedDays => leaves
-      .where((e) => e['status'] == 'Approved')
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
+      .where((e) => e.status == 'Approved')
+      .fold<int>(0, (s, e) => s + (e.numberOfDays as int));
   int get _remainingDays =>
       (_totalAllowed - _approvedDays).clamp(0, _totalAllowed);
   int get _rejectedDays => leaves
       .where(
         (e) =>
-            e['status'] == 'Rejected_By_TL' ||
-            e['status'] == 'Rejected_By_HR' ||
-            e['status'] == 'Not_Recommended_By_TL',
+            e.status == 'Rejected_By_TL' ||
+            e.status == 'Rejected_By_HR' ||
+            e.status == 'Not_Recommended_By_TL',
       )
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
+      .fold<int>(0, (s, e) => s + (e.numberOfDays as int));
   int get _pendingCount => leaves
-      .where((e) => e['status'] == 'Pending_TL' || e['status'] == 'Pending_HR')
+      .where((e) => e.status == 'Pending_TL' || e.status == 'Pending_HR')
       .length;
 
   // ─── Root ─────────────────────────────────────────────────────────────────────
@@ -303,11 +306,11 @@ class _LeaveScreenState extends State<LeaveScreen>
               child: _LeaveCard(
                 leave: leaves[i],
                 resolvePerson: _resolvePerson,
-                onEdit: leaves[i]['status'] == 'Pending_TL'
+                onEdit: leaves[i].status == 'Pending_TL'
                     ? () => _openEdit(leaves[i])
                     : null,
-                onCancel: leaves[i]['status'] == 'Pending_TL'
-                    ? (r) => cancelLeave(leaves[i]['leave_id'], r)
+                onCancel: leaves[i].status == 'Pending_TL'
+                    ? (r) => cancelLeave(leaves[i].leaveId!, r)
                     : null,
               ),
             ),
@@ -323,22 +326,22 @@ class _LeaveScreenState extends State<LeaveScreen>
       (i) => _LeaveCard(
         leave: leaves[i],
         resolvePerson: _resolvePerson,
-        onEdit: leaves[i]['status'] == 'Pending_TL'
+        onEdit: leaves[i].status == 'Pending_TL'
             ? () => _openEdit(leaves[i])
             : null,
-        onCancel: leaves[i]['status'] == 'Pending_TL'
-            ? (r) => cancelLeave(leaves[i]['leave_id'], r)
+        onCancel: leaves[i].status == 'Pending_TL'
+            ? (r) => cancelLeave(leaves[i].leaveId!, r)
             : null,
       ),
     ),
   );
 
-  void _openEdit(dynamic leave) {
-    editingLeaveId = leave['leave_id'];
-    leaveType = leave['leave_type'];
-    reason = leave['reason'];
-    fromDate = DateTime.parse(leave['leave_start_date']);
-    toDate = DateTime.parse(leave['leave_end_date']);
+  void _openEdit(LeaveModel leave) {
+    editingLeaveId = leave.leaveId;
+    leaveType = leave.leaveType;
+    reason = leave.reason;
+    fromDate = leave.fromDate;
+    toDate = leave.toDate;
     _showApplySheet(context);
   }
 
@@ -624,7 +627,8 @@ class _LeaveScreenState extends State<LeaveScreen>
 // Leave Card
 // ═══════════════════════════════════════════════════════════════════════════════
 class _LeaveCard extends StatefulWidget {
-  final Map<String, dynamic> leave;
+  final LeaveModel leave;
+  // final Map<String, dynamic> leave;
   final String Function(dynamic) resolvePerson;
   final VoidCallback? onEdit;
   final Function(String)? onCancel;
@@ -699,28 +703,24 @@ class _LeaveCardState extends State<_LeaveCard> {
     },
   };
 
-  String _fmtDate(String s) {
-    try {
-      final d = DateTime.parse(s);
-      const m = [
-        '',
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
-      return '${d.day} ${m[d.month]} ${d.year}';
-    } catch (_) {
-      return s;
-    }
+  String _fmtDate(DateTime d) {
+    const m = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return '${d.day} ${m[d.month]} ${d.year}';
   }
 
   String _fmtDateTime(String? s) {
@@ -753,7 +753,7 @@ class _LeaveCardState extends State<_LeaveCard> {
   @override
   Widget build(BuildContext context) {
     final leave = widget.leave;
-    final status = leave['status'] as String? ?? 'Pending_TL';
+    final status = leave.status as String? ?? 'Pending_TL';
     final cfg =
         _statusCfg[status] ??
         {
@@ -766,7 +766,7 @@ class _LeaveCardState extends State<_LeaveCard> {
     final statusBg = cfg['bg'] as Color;
     final statusLabel = cfg['label'] as String;
     final statusIcon = cfg['icon'] as IconData;
-    final sameDay = leave['leave_start_date'] == leave['leave_end_date'];
+    final sameDay = leave.fromDate == leave.toDate;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -818,7 +818,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${leave['leave_type']} Leave',
+                            '${leave.leaveType} Leave',
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
@@ -838,8 +838,8 @@ class _LeaveCardState extends State<_LeaveCard> {
                               Flexible(
                                 child: Text(
                                   sameDay
-                                      ? _fmtDate(leave['leave_start_date'])
-                                      : '${_fmtDate(leave['leave_start_date'])}  →  ${_fmtDate(leave['leave_end_date'])}',
+                                      ? _fmtDate(leave.fromDate)
+                                      : '${_fmtDate(leave.fromDate)}  →  ${_fmtDate(leave.toDate)}',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: _textMid,
@@ -858,7 +858,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                                   borderRadius: BorderRadius.circular(5),
                                 ),
                                 child: Text(
-                                  '${leave['number_of_days']}d',
+                                  '${leave.numberOfDays}d',
                                   style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
@@ -924,16 +924,19 @@ class _LeaveCardState extends State<_LeaveCard> {
     );
   }
 
-  Widget _buildDetails(Map<String, dynamic> leave, Color statusColor) {
-    final status = leave['status'] as String? ?? '';
-    final hasTLAction = leave['recommended_by'] != null; // TL stored their ID
-    final hasHRAction = leave['approved_by'] != null;
-    final hasRejection = (leave['rejection_reason'] ?? '')
-        .toString()
-        .isNotEmpty;
-    final hasCancelNote = (leave['cancel_reason'] ?? '').toString().isNotEmpty;
+  Widget _buildDetails(LeaveModel leave, Color statusColor) {
+    final status = leave.status;
 
-    // ── Whether TL did NOT recommend (new status) ──────────────────────────
+    final hasTLAction = leave.recommendedBy != null;
+    final hasManagerAction =
+        leave.approvedBy != null &&
+        leave.status != 'Not_Recommended_By_TL' &&
+        leave.status != 'Rejected_By_TL';
+
+    final hasRejection = (leave.rejectionReason ?? '').toString().isNotEmpty;
+
+    final hasCancelNote = (leave.cancelReason ?? '').toString().isNotEmpty;
+
     final tlNotRecommended = status == 'Not_Recommended_By_TL';
 
     return Column(
@@ -950,8 +953,8 @@ class _LeaveCardState extends State<_LeaveCard> {
                 iconColor: _primary,
                 title: 'Duration',
                 content:
-                    '${leave['number_of_days']} day${leave['number_of_days'] == 1 ? '' : 's'}'
-                    '  ·  ${_fmtDate(leave['leave_start_date'])}  →  ${_fmtDate(leave['leave_end_date'])}',
+                    '${leave.numberOfDays} day${leave.numberOfDays == 1 ? '' : 's'}'
+                    '  ·  ${_fmtDate(leave.fromDate)}  →  ${_fmtDate(leave.toDate)}',
               ),
               const SizedBox(height: 10),
 
@@ -960,7 +963,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                 icon: Icons.person_outline_rounded,
                 iconColor: _primary,
                 title: 'Employee Reason',
-                content: leave['reason'] ?? '-',
+                content: leave.reason ?? '-',
               ),
               const SizedBox(height: 10),
 
@@ -970,12 +973,10 @@ class _LeaveCardState extends State<_LeaveCard> {
                 _actionBlock(
                   icon: Icons.supervisor_account_rounded,
                   title: 'Team Lead Review',
-                  // Use recommended_by (which now always stores TL's login_id)
                   person: hasTLAction
-                      ? widget.resolvePerson(leave['recommended_by'])
+                      ? widget.resolvePerson(leave.recommendedBy)
                       : 'Team Lead',
-                  timestamp: _fmtDateTime(leave['recommended_at']),
-                  // Label differs by outcome
+                  timestamp: _fmtDateTime(leave.recommendedAt),
                   statusLabel: tlNotRecommended
                       ? 'Not Recommended'
                       : status == 'Rejected_By_TL'
@@ -986,63 +987,62 @@ class _LeaveCardState extends State<_LeaveCard> {
                       : status == 'Rejected_By_TL'
                       ? _red
                       : _accent,
-                  // Show rejection/reason for both Not_Recommended and Rejected_By_TL
                   remark:
                       (tlNotRecommended || status == 'Rejected_By_TL') &&
                           hasRejection
-                      ? leave['rejection_reason']
+                      ? leave.rejectionReason
                       : null,
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // ── Manager / Admin block ────────────────────────────────────────
-              if (hasHRAction) ...[
+              // Manager / Admin
+              if (hasManagerAction) ...[
                 _actionBlock(
                   icon: Icons.admin_panel_settings_rounded,
                   title: 'Manager / Admin Action',
-                  person: widget.resolvePerson(leave['approved_by']),
+                  person: widget.resolvePerson(leave.approvedBy),
                   timestamp: null,
                   statusLabel: status == 'Approved' ? 'Approved' : 'Rejected',
                   statusColor: status == 'Approved' ? _accent : _red,
-                  remark: status == 'Rejected_By_HR' && hasRejection
-                      ? leave['rejection_reason']
+                  remark: status == 'Rejected_By_Manager' && hasRejection
+                      ? leave.rejectionReason
                       : null,
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // Cancellation note
+              // Cancel reason
               if (hasCancelNote) ...[
                 _infoBlock(
                   icon: Icons.block_rounded,
                   iconColor: _textLight,
                   title: 'Cancellation Reason',
-                  content: leave['cancel_reason'],
+                  content: leave.cancelReason!,
                   contentColor: _textMid,
                 ),
                 const SizedBox(height: 10),
               ],
 
-              // Applied / Updated timestamps
+              // Dates
               Row(
                 children: [
                   Expanded(
                     child: _miniDetail(
                       'Applied',
-                      _fmtDateTime(leave['created_at']),
+                      _fmtDateTime(leave.createdAt),
                     ),
                   ),
                   Expanded(
                     child: _miniDetail(
                       'Last Updated',
-                      _fmtDateTime(leave['updated_at']),
+                      _fmtDateTime(leave.updatedAt),
                     ),
                   ),
                 ],
               ),
 
-              // Edit / Cancel buttons (only while Pending_TL)
+              // Buttons
               if (widget.onEdit != null || widget.onCancel != null) ...[
                 const SizedBox(height: 12),
                 Divider(height: 1, color: Colors.grey.shade100),
