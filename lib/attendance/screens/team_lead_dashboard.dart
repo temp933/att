@@ -841,15 +841,19 @@ import '../services/auth_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/attendance_provider.dart';
 import 'package:flutter/material.dart';
-import 'hr_home_screen.dart';
+import 'tl_home_screen.dart';
 import 'emp_attendance_screen.dart';
 import 'tl_att_screen.dart';
-import 'tl_leave_screen.dart';
+import 'tl_leave_approval_screen.dart';
 import 'login_screen.dart';
 import '../services/location_services.dart';
 import 'emp_profile_screen.dart';
 import 'tl_hr_leave_screen.dart';
 import 'session_guard_mixin.dart';
+import 'emp_work_location.dart';
+import '../services/attendance_state.dart';
+import '../services/api_service.dart';
+import '../services/site_cache.dart';
 
 class TLDashboardScreen extends StatefulWidget {
   final String employeeId;
@@ -885,7 +889,7 @@ class _TLDashboardScreenState extends State<TLDashboardScreen>
   bool isExpanded = false;
   late LocationService locationService;
 
-  static const int notificationIndex = 12;
+  // static const int notificationIndex = 12;
 
   @override
   void initState() {
@@ -897,11 +901,16 @@ class _TLDashboardScreenState extends State<TLDashboardScreen>
 
   // ── Pages ──────────────────────────────────────────────────────────────────
   List<Widget> get pages => [
-    HrHomeScreen(employeeId: widget.employeeId), // 0
+    TlHomeScreen(
+      employeeId: widget.employeeId.toString(),
+      loginId: widget.loginId.toString(), // ← add this
+      onNavigate: (index) => setState(() => selectedIndex = index),
+    ), // 0
     AttendanceScreen(employeeId: int.parse(widget.employeeId)), // 1
     TLAttendanceScreen(loginId: widget.loginId), // 2
     TLLeaveScreen(loginId: widget.loginId), // 3
     TL_HR_LeaveScreen(employeeId: widget.employeeId), // 4
+    EmployeeAssignmentsScreen(),
     EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 5
   ];
 
@@ -912,6 +921,7 @@ class _TLDashboardScreenState extends State<TLDashboardScreen>
     'Manage Attendance',
     'Leave Approval',
     'Apply Leave',
+    "Sites",
     'Profile',
   ];
 
@@ -941,6 +951,11 @@ class _TLDashboardScreenState extends State<TLDashboardScreen>
       icon: Icon(Icons.beach_access_outlined),
       selectedIcon: Icon(Icons.beach_access),
       label: Text('Apply Leave'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.place_outlined),
+      selectedIcon: Icon(Icons.place),
+      label: Text('Site'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.person_outline),
@@ -1479,14 +1494,52 @@ class _TLDashboardScreenState extends State<TLDashboardScreen>
   }
 
   // ── Logout ─────────────────────────────────────────────────────────────────
+  // Future<void> _logout() async {
+  //   try {
+  //     await AuthService.clearSession();
+  //   } catch (_) {}
+  //   if (!mounted) return;
+  //   Navigator.of(context).pushAndRemoveUntil(
+  //     MaterialPageRoute(builder: (_) => const LoginScreen()),
+  //     (route) => false,
+  //   );
+  // }
+
   Future<void> _logout() async {
+    // 1. End active tracking session on server (closes open site visits too)
     try {
-      await AuthService.clearSession();
+      final state = AttendanceState.instance;
+      if (state.dayStatus == DayStatus.inProgress) {
+        await ApiService.endSession(
+          int.parse(widget.employeeId),
+          state.currentSessionId, // ← correct field name
+          reason: 'logout',
+        );
+      }
+    } catch (_) {
+      // best-effort — don't block logout on API failure
+    }
+
+    // 2. forceStop handles: background service, SharedPrefs,
+    //    and all AttendanceState fields in one call
+    try {
+      await AttendanceState.instance.forceStop();
     } catch (_) {}
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+
+    // 3. Stop site cache auto-sync timer
+    try {
+      SiteCache.dispose();
+    } catch (_) {}
+
+    // 4. Call server logout + clear SharedPreferences
+    await AuthService.clearSession();
+
+    // 5. Navigate to login
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 }

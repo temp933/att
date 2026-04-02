@@ -3,22 +3,24 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../common/utils/greeting_util.dart';
 import '../services/employee_service.dart';
 
-class HrHomeScreen extends StatefulWidget {
+class TlHomeScreen extends StatefulWidget {
   final String employeeId;
+  final String loginId;
   final void Function(int index)? onNavigate; // ✅ ADD THIS
 
-  const HrHomeScreen({
+  const TlHomeScreen({
     super.key,
     required this.employeeId,
+    required this.loginId,
     this.onNavigate, // ✅ ADD THIS
   });
 
   @override
-  State<HrHomeScreen> createState() => _HrHomeScreenState();
+  State<TlHomeScreen> createState() => _TlHomeScreenState();
 }
 
-class _HrHomeScreenState extends State<HrHomeScreen> {
-  String hrName = ""; // HR's name to display
+class _TlHomeScreenState extends State<TlHomeScreen> {
+  String tlName = ""; // HR's name to display
   bool isLoading = true; // Loading state
   int totalEmployees = 0;
   List<LeaveData> leaveChartData = [];
@@ -42,38 +44,30 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
         int.parse(widget.employeeId),
       );
 
-      final dashboard =
-          await EmployeeService.fetchDashboardData(); // ✅ CALL API
+      // ← use TL-scoped dashboard instead of global
+      final dashboard = await EmployeeService.fetchTlDashboardData(
+        widget.loginId,
+      );
 
       String fullName = employee.firstName ?? "";
-
-      if ((employee.midName ?? "").isNotEmpty) {
+      if ((employee.midName ?? "").isNotEmpty)
         fullName += " ${employee.midName}";
-      }
-
-      if ((employee.lastName ?? "").isNotEmpty) {
+      if ((employee.lastName ?? "").isNotEmpty)
         fullName += " ${employee.lastName}";
-      }
 
       setState(() {
-        hrName = fullName;
-
-        // ✅ SET DASHBOARD VALUES FROM API
+        tlName = fullName;
         totalEmployees = dashboard['totalEmployees'];
         presentCount = dashboard['present'];
         absentCount = dashboard['absent'];
         lateEntryCount = dashboard['lateEntry'];
         onSiteCount = dashboard['onSiteToday'];
         pendingCount = dashboard['pendingRequests'];
-
         isLoading = false;
       });
     } catch (e) {
-      print("Error fetching Admin data: $e");
-      setState(() {
-        // hrName = "Admin";
-        isLoading = false;
-      });
+      print("Error fetching TL data: $e");
+      setState(() => isLoading = false);
     }
   }
 
@@ -159,7 +153,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
               isLoading
                   ? const CircularProgressIndicator()
                   : Text(
-                      "Welcome back, $hrName",
+                      "Welcome back, $tlName",
                       style: TextStyle(color: Colors.grey, fontSize: 16),
                     ),
 
@@ -197,7 +191,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
                         icon: Icons.people_outline,
                         gradient: const [Colors.blue, Colors.lightBlueAccent],
                         onTap: () => widget.onNavigate?.call(
-                          5,
+                          0,
                         ), // ✅ index 9 = Manage Users
                       ),
 
@@ -236,7 +230,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
                         value: onSiteCount.toString(),
                         icon: Icons.work_outline,
                         gradient: [Colors.indigo, Colors.indigoAccent],
-                        onTap: () => widget.onNavigate?.call(4),
+                        onTap: () => widget.onNavigate?.call(5),
                       ),
 
                       _DashboardCard(
@@ -244,7 +238,7 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
                         value: pendingCount.toString(),
                         icon: Icons.beach_access_outlined,
                         gradient: [Colors.purple, Colors.purpleAccent],
-                        // no onTap — keep as is
+                        onTap: () => widget.onNavigate?.call(3),
                       ),
                     ],
                   );

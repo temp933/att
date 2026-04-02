@@ -55,6 +55,19 @@ class EmployeeService {
     }
   }
 
+  static Future<Map<String, dynamic>> fetchTlDashboardData(
+    String loginId,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/dashboard/tl/$loginId'),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to fetch TL dashboard data');
+    }
+  }
+
   // ================= LEAVE STATUS SUMMARY =================
   static Future<List<LeaveData>> fetchLeaveStatusSummary() async {
     final response = await http.get(Uri.parse('$baseUrl/leave-status-summary'));
@@ -435,6 +448,20 @@ class EmployeeService {
     } else {
       throw Exception("Failed to load team leads");
     }
+  }
+
+  static Future<Map<String, dynamic>> fetchTodayAttendanceSummary(
+    int empId,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/attendance/today-summary/$empId'),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true) return data;
+      throw Exception(data['message'] ?? 'Failed to fetch attendance summary');
+    }
+    throw Exception('Failed to fetch attendance summary');
   }
 }
 

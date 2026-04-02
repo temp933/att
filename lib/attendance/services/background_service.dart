@@ -11,29 +11,44 @@
 // import 'api_service.dart';
 // import 'site_cache.dart';
 
-// const String kChannelId = "attendance_tracking";
-// const String kNotifTitle = "Attendance Tracking";
+// const String kChannelId = 'attendance_tracking';
+// const String kNotifTitle = 'Attendance Tracking';
 // const int kNotifId = 888;
 
-// // ─── LOCAL SQLITE ─────────────────────────────────────────────────────────────
-
+// // ─────────────────────────────────────────────────────────────────────────────
+// // LocalDB — SQLite event queue
+// //
+// // Every geofence transition is written here first, then flushed to server.
+// // Survives network outages and process kills.
+// // ─────────────────────────────────────────────────────────────────────────────
 // class LocalDB {
 //   static Database? _db;
 
 //   static Future<Database> get db async {
 //     _db ??= await openDatabase(
 //       p.join(await getDatabasesPath(), 'attendance_local.db'),
-//       version: 1,
-//       onCreate: (db, _) => db.execute('''
-//         CREATE TABLE attendance_events (
-//           id          INTEGER PRIMARY KEY AUTOINCREMENT,
-//           type        TEXT    NOT NULL,
-//           employee_id INTEGER NOT NULL,
-//           site_id     INTEGER,
-//           timestamp   TEXT    NOT NULL,
-//           synced      INTEGER NOT NULL DEFAULT 0
-//         )
-//       '''),
+//       version: 2,
+//       onCreate: (db, _) async {
+//         await db.execute('''
+//           CREATE TABLE attendance_events (
+//             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+//             type        TEXT    NOT NULL,
+//             employee_id INTEGER NOT NULL,
+//             site_id     INTEGER,
+//             session_id  INTEGER,
+//             timestamp   TEXT    NOT NULL,
+//             synced      INTEGER NOT NULL DEFAULT 0
+//           )
+//         ''');
+//       },
+//       onUpgrade: (db, oldV, newV) async {
+//         if (oldV < 2) {
+//           // Add session_id column if upgrading from v1
+//           await db.execute(
+//             'ALTER TABLE attendance_events ADD COLUMN session_id INTEGER',
+//           );
+//         }
+//       },
 //     );
 //     return _db!;
 //   }
@@ -42,15 +57,18 @@
 //     required String type,
 //     required int employeeId,
 //     int? siteId,
+//     int? sessionId,
 //   }) async {
+//     final ts = DateTime.now().toIso8601String();
 //     await (await db).insert('attendance_events', {
 //       'type': type,
 //       'employee_id': employeeId,
 //       'site_id': siteId,
-//       'timestamp': DateTime.now().toIso8601String(),
+//       'session_id': sessionId,
+//       'timestamp': ts,
 //       'synced': 0,
 //     });
-//     print('[LocalDB] $type emp=$employeeId site=$siteId');
+//     print('[LocalDB] ✍ $type emp=$employeeId site=$siteId session=$sessionId');
 //   }
 
 //   static Future<List<Map<String, dynamic>>> pendingEvents() async => (await db)
@@ -76,10 +94,16 @@
 //       whereArgs: [cutoff],
 //     );
 //   }
+
+//   static Future<void> clearAll() async {
+//     await (await db).delete('attendance_events');
+//     print('[LocalDB] 🗑 Cleared all events');
+//   }
 // }
 
-// // ─── SYNC WORKER ──────────────────────────────────────────────────────────────
-
+// // ─────────────────────────────────────────────────────────────────────────────
+// // SyncWorker — flush pending events to server
+// // ─────────────────────────────────────────────────────────────────────────────
 // class SyncWorker {
 //   static bool _running = false;
 
@@ -89,16 +113,15 @@
 //     try {
 //       final events = await LocalDB.pendingEvents();
 //       if (events.isEmpty) return;
-
 //       print('[Sync] flushing ${events.length} event(s)');
 
-//       // Use batch endpoint for efficiency
 //       final payload = events
 //           .map(
 //             (e) => {
 //               'type': e['type'],
 //               'employee_id': e['employee_id'],
 //               'site_id': e['site_id'],
+//               'session_id': e['session_id'],
 //               'timestamp': e['timestamp'],
 //             },
 //           )
@@ -108,9 +131,9 @@
 //         await ApiService.batchSync(payload);
 //         await LocalDB.markSynced(events.map((e) => e['id'] as int).toList());
 //         await LocalDB.cleanup();
-//         print('[Sync] done — ${events.length} synced via batch');
+//         print('[Sync] ✅ batch synced ${events.length}');
 //       } catch (_) {
-//         // Batch failed — fall back to individual calls
+//         // Fallback: one by one
 //         final synced = <int>[];
 //         for (final e in events) {
 //           try {
@@ -119,25 +142,34 @@
 //                 await ApiService.markIn(
 //                   e['employee_id'] as int,
 //                   e['site_id'] as int,
+//                   sessionId: e['session_id'] as int?,
 //                 );
 //                 break;
 //               case 'mark_out':
-//                 await ApiService.markOut(e['employee_id'] as int);
+//                 await ApiService.markOut(
+//                   e['employee_id'] as int,
+//                   sessionId: e['session_id'] as int?,
+//                 );
 //                 break;
-//               case 'end_day':
-//                 await ApiService.endDay(e['employee_id'] as int);
+//               case 'end_session':
+//               case 'force_end_session':
+//                 await ApiService.endSession(
+//                   e['employee_id'] as int,
+//                   e['session_id'] as int?,
+//                   reason: e['type'] == 'force_end_session'
+//                       ? 'logout'
+//                       : 'manual_end',
+//                 );
 //                 break;
 //             }
 //             synced.add(e['id'] as int);
 //           } catch (err) {
-//             print('[Sync] event ${e['id']} failed: $err — will retry');
+//             print('[Sync] ⚠ event ${e['id']} failed: $err');
 //           }
 //         }
 //         await LocalDB.markSynced(synced);
 //         if (synced.isNotEmpty) await LocalDB.cleanup();
-//         print(
-//           '[Sync] fallback done — ${synced.length}/${events.length} synced',
-//         );
+//         print('[Sync] fallback: ${synced.length}/${events.length}');
 //       }
 //     } finally {
 //       _running = false;
@@ -145,12 +177,13 @@
 //   }
 // }
 
-// // ─── SERVICE INIT ─────────────────────────────────────────────────────────────
-
+// // ─────────────────────────────────────────────────────────────────────────────
+// // initBackgroundService
+// // ─────────────────────────────────────────────────────────────────────────────
 // Future<void> initBackgroundService() async {
 //   final service = FlutterBackgroundService();
-
 //   final notifPlugin = FlutterLocalNotificationsPlugin();
+
 //   await notifPlugin
 //       .resolvePlatformSpecificImplementation<
 //         AndroidFlutterLocalNotificationsPlugin
@@ -158,8 +191,8 @@
 //       ?.createNotificationChannel(
 //         const AndroidNotificationChannel(
 //           kChannelId,
-//           "Attendance Tracking",
-//           description: "Keeps tracking running even when app is closed",
+//           'Attendance Tracking',
+//           description: 'Keeps GPS tracking running in the background',
 //           importance: Importance.low,
 //         ),
 //       );
@@ -171,7 +204,7 @@
 //       autoStartOnBoot: false,
 //       notificationChannelId: kChannelId,
 //       initialNotificationTitle: kNotifTitle,
-//       initialNotificationContent: "Tracking active — tap to open",
+//       initialNotificationContent: 'Tracking active — tap to open',
 //       foregroundServiceNotificationId: kNotifId,
 //       foregroundServiceTypes: [AndroidForegroundType.location],
 //     ),
@@ -183,29 +216,40 @@
 //   );
 // }
 
+// // ── iOS background handler ────────────────────────────────────────────────────
+// // iOS calls this periodically (~15 min). We use it to flush any pending syncs.
 // @pragma('vm:entry-point')
-// Future<bool> onIosBackground(ServiceInstance service) async => true;
+// Future<bool> onIosBackground(ServiceInstance service) async {
+//   DartPluginRegistrant.ensureInitialized();
+//   try {
+//     await SyncWorker.flush();
+//   } catch (_) {}
+//   return true;
+// }
 
-// // ─── SERVICE ENTRY POINT ──────────────────────────────────────────────────────
-
+// // ─────────────────────────────────────────────────────────────────────────────
+// // onServiceStart — main service entry point (Android foreground + iOS foreground)
+// // ─────────────────────────────────────────────────────────────────────────────
 // @pragma('vm:entry-point')
 // void onServiceStart(ServiceInstance service) async {
 //   DartPluginRegistrant.ensureInitialized();
 
+//   // ── Notification helper (Android only) ───────────────────────────────────
 //   final notifPlugin = FlutterLocalNotificationsPlugin();
-//   await notifPlugin.initialize(
-//     const InitializationSettings(
-//       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-//     ),
-//   );
+//   if (defaultTargetPlatform == TargetPlatform.android) {
+//     await notifPlugin.initialize(
+//       const InitializationSettings(
+//         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+//       ),
+//     );
+//   }
 
-//   print('[Service] STARTED');
-
-//   void updateNotif(String text) {
+//   void updateNotif(String body) {
+//     if (defaultTargetPlatform != TargetPlatform.android) return;
 //     notifPlugin.show(
 //       kNotifId,
 //       kNotifTitle,
-//       text,
+//       body,
 //       const NotificationDetails(
 //         android: AndroidNotificationDetails(
 //           kChannelId,
@@ -219,65 +263,172 @@
 //     );
 //   }
 
-//   // Load site polygons
-//   _fire(SiteCache.init());
+//   print('[Service] ▶ STARTED');
 
 //   final prefs = await SharedPreferences.getInstance();
-//   final int? empId = prefs.getInt("employee_id");
+//   final int? empId = prefs.getInt('employee_id');
+//   int? sessionId = prefs.getInt('session_id_$empId');
+//   bool _forceNextCheck = true; // force geofence check on fresh service start
+//   print('[Service] BOOT empId=$empId sessionId=$sessionId');
+
 //   if (empId == null) {
 //     print('[Service] No employee_id — stopping');
 //     service.stopSelf();
 //     return;
 //   }
 
-//   // FIX: Check background location permission before starting GPS stream.
-//   final bgPerm = await Permission.locationAlways.status;
-//   if (!bgPerm.isGranted) {
-//     print('[Service] ⚠️  ACCESS_BACKGROUND_LOCATION not granted — stopping');
-//     updateNotif("Location permission required");
-//     service.invoke("service_error", {"reason": "no_background_location"});
-//     service.stopSelf();
-//     return;
+//   // ── Background location guard (Android only) ──────────────────────────────
+//   if (defaultTargetPlatform == TargetPlatform.android) {
+//     if (!await Permission.locationAlways.isGranted) {
+//       updateNotif('Background location permission required');
+//       service.invoke('service_error', {'reason': 'no_background_location'});
+//       service.stopSelf();
+//       return;
+//     }
 //   }
 
-//   int? currentSiteId = prefs.getInt("current_site_id_$empId");
-//   String _currentWorkDate = _todayStr();
-
-//   // Flush leftover events from previous session
+//   await SiteCache.init();
+//   int? currentSiteId = prefs.getInt('current_site_id_$empId');
+//   String _workDate = _todayStr();
 //   _fire(SyncWorker.flush());
 
-//   final syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-//     _fire(SyncWorker.flush());
-//   });
+//   // ── Timers ─────────────────────────────────────────────────────────────────
+//   final syncTimer = Timer.periodic(
+//     const Duration(minutes: 1),
+//     (_) => _fire(SyncWorker.flush()),
+//   );
+//   final siteRefreshTimer = Timer.periodic(
+//     const Duration(minutes: 30),
+//     (_) => _fire(SiteCache.sync()),
+//   );
 
-//   // ── END DAY ────────────────────────────────────────────────────────────────
-//   service.on("end_day").listen((_) async {
-//     print('[Service] END DAY — user initiated');
-
-//     await LocalDB.writeEvent(type: 'end_day', employeeId: empId);
-
-//     if (currentSiteId != null) {
-//       await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
+//   // ── Clean shutdown helper ─────────────────────────────────────────────────
+//   service.on('set_session').listen((e) async {
+//     if (e == null) return;
+//     final newId = e['session_id'] as int?;
+//     if (newId != null) {
+//       sessionId = newId;
 //       currentSiteId = null;
-//       await prefs.remove("current_site_id_$empId");
+//       _forceNextCheck = true;
+//       await prefs.setInt('session_id_$empId', newId);
+//       await prefs.remove('current_site_id_$empId');
+//       print('[Service] 🔑 session_id updated → $newId, forceNextCheck=true');
+//     }
+//   });
+//   Future<void> shutdown({
+//     required bool writeEndSession,
+//     required String endReason, // 'manual_end' | 'logout'
+//     required bool clearAllData,
+//     required String doneEvent,
+//   }) async {
+//     print('[Service] 🛑 shutdown: $endReason clearAll=$clearAllData');
+
+//     // 1. Close open site visit
+//     if (currentSiteId != null) {
+//       await LocalDB.writeEvent(
+//         type: 'mark_out',
+//         employeeId: empId,
+//         siteId: currentSiteId,
+//         sessionId: sessionId,
+//       );
+//       currentSiteId = null;
+//       await prefs.remove('current_site_id_$empId');
 //     }
 
-//     await SyncWorker.flush();
-//     syncTimer.cancel();
-//     SiteCache.dispose();
+//     // 2. Close the tracking session on server
+//     if (writeEndSession) {
+//       await LocalDB.writeEvent(
+//         type: endReason == 'logout' ? 'force_end_session' : 'end_session',
+//         employeeId: empId,
+//         sessionId: sessionId,
+//       );
+//     }
 
-//     await prefs.setBool("is_done_for_day_$empId", true);
-//     await prefs.setString("done_for_day_date_$empId", _currentWorkDate);
-//     service.invoke("end_day_done", {});
+//     // 3. Final sync attempt
+//     await SyncWorker.flush();
+
+//     // 4. Optionally wipe all local data (on logout)
+//     if (clearAllData) {
+//       await SiteCache.clear();
+//       await LocalDB.clearAll();
+//       await prefs.remove('employee_id');
+//       await prefs.remove('current_site_id_$empId');
+//       await prefs.remove('tracking_active_$empId');
+//       await prefs.remove('session_id_$empId');
+//       await prefs.remove('session_start_$empId');
+//       await prefs.remove('session_count_$empId');
+//     } else {
+//       await prefs.setBool('tracking_active_$empId', false);
+//     }
+
+//     syncTimer.cancel();
+//     siteRefreshTimer.cancel();
+//     SiteCache.dispose();
 //     await notifPlugin.cancel(kNotifId);
+//     service.invoke(doneEvent, {});
 //     service.stopSelf();
-//     print('[Service] STOPPED');
+//     print('[Service] ■ STOPPED ($endReason)');
+//   }
+
+//   // ── END SESSION event (employee pressed END) ──────────────────────────────
+//   // Includes the "still on site?" answer from the UI dialog
+//   service.on('end_session').listen((e) async {
+//     final stillOnSite = e?['still_on_site'] as bool? ?? false;
+
+//     if (stillOnSite && currentSiteId != null) {
+//       // Employee said they're still physically on site.
+//       // Don't mark_out yet — the row stays open.
+//       // It will be closed by the next START's first GPS fix or by a future mark_out.
+//       print('[Service] Still on site — keeping row open, stopping GPS only');
+//       await LocalDB.writeEvent(
+//         type: 'end_session',
+//         employeeId: empId,
+//         sessionId: sessionId,
+//       );
+//       await SyncWorker.flush();
+//       await prefs.setBool('tracking_active_$empId', false);
+//       // Keep current_site_id so next session knows it was open
+//       syncTimer.cancel();
+//       siteRefreshTimer.cancel();
+//       SiteCache.dispose();
+//       await notifPlugin.cancel(kNotifId);
+//       service.invoke('end_session_done', {});
+//       service.stopSelf();
+//     } else {
+//       // Employee left the site (or wasn't on one) — mark OUT before stopping
+//       await shutdown(
+//         writeEndSession: true,
+//         endReason: 'manual_end',
+//         clearAllData: false,
+//         doneEvent: 'end_session_done',
+//       );
+//     }
 //   });
 
-//   // ── GPS SMOOTHING ──────────────────────────────────────────────────────────
+//   // ── FORCE STOP event (logout — admin or user) ─────────────────────────────
+//   service.on('force_stop').listen((_) async {
+//     await shutdown(
+//       writeEndSession: true,
+//       endReason: 'logout',
+//       clearAllData: true, // full wipe on logout
+//       doneEvent: 'force_stop_done',
+//     );
+//   });
+
+//   // ── Legacy stop_service ───────────────────────────────────────────────────
+//   service.on('stop_service').listen((_) async {
+//     await shutdown(
+//       writeEndSession: false,
+//       endReason: 'manual_end',
+//       clearAllData: false,
+//       doneEvent: 'stop_service_done',
+//     );
+//   });
+
+//   // ── GPS smoothing (weighted moving average, window = 3) ───────────────────
 //   final List<({double lat, double lng})> _hist = [];
 
-//   ({double lat, double lng}) smooth(Position pos) {
+//   ({double lat, double lng}) _smooth(Position pos) {
 //     _hist.add((lat: pos.latitude, lng: pos.longitude));
 //     if (_hist.length > 3) _hist.removeAt(0);
 //     double ls = 0, ns = 0, ws = 0;
@@ -291,221 +442,282 @@
 //   }
 
 //   double? _lastLat, _lastLng;
-//   bool movedEnough(double lat, double lng) {
+//   bool _movedEnough(double lat, double lng) {
 //     if (_lastLat == null) return true;
 //     return Geolocator.distanceBetween(_lastLat!, _lastLng!, lat, lng) > 8;
 //   }
 
-//   // Instant first position from cache
+//   // Warm-up with last known position
 //   try {
 //     final last = await Geolocator.getLastKnownPosition();
 //     if (last != null) {
-//       service.invoke("location_update", {
-//         "lat": last.latitude,
-//         "lng": last.longitude,
-//         "accuracy": last.accuracy,
-//         "good": last.accuracy <= 80,
+//       service.invoke('location_update', {
+//         'lat': last.latitude,
+//         'lng': last.longitude,
+//         'accuracy': last.accuracy,
+//         'good': last.accuracy <= 80,
 //       });
 //     }
 //   } catch (_) {}
 
-//   // ── GPS STREAM ──────────────────────────────────────────────────────────────
-//   StreamSubscription<Position>? gpsSub;
+//   // On resume — if there was an open site row from previous session,
+//   // check if we're still inside. If not, mark_out immediately.
+//   if (currentSiteId != null) {
+//     print('[Service] Resuming — checking if still inside site $currentSiteId');
+//     // Will be resolved on first GPS fix below
+//   }
 
-//   gpsSub =
-//       Geolocator.getPositionStream(
-//         locationSettings: AndroidSettings(
-//           accuracy: LocationAccuracy.bestForNavigation,
-//           distanceFilter: 0,
-//           intervalDuration: const Duration(seconds: 3),
-//           foregroundNotificationConfig: const ForegroundNotificationConfig(
-//             notificationChannelName: "Attendance Tracking",
-//             notificationText: "Location tracking active",
-//             notificationTitle: kNotifTitle,
-//             enableWakeLock: true,
-//             setOngoing: true,
-//           ),
-//         ),
-//       ).listen(
-//         (Position pos) async {
-//           if (pos.accuracy > 150) return;
+//   // ── Location settings (platform-specific) ─────────────────────────────────
+//   LocationSettings locationSettings;
+//   if (defaultTargetPlatform == TargetPlatform.iOS) {
+//     locationSettings = AppleSettings(
+//       accuracy: LocationAccuracy.bestForNavigation,
+//       activityType: ActivityType.otherNavigation,
+//       distanceFilter: 0,
+//       pauseLocationUpdatesAutomatically: false,
+//       showBackgroundLocationIndicator: true,
+//       allowBackgroundLocationUpdates: true,
+//     );
+//   } else {
+//     locationSettings = AndroidSettings(
+//       accuracy: LocationAccuracy.bestForNavigation,
+//       distanceFilter: 0,
+//       intervalDuration: const Duration(seconds: 3),
+//       foregroundNotificationConfig: const ForegroundNotificationConfig(
+//         notificationChannelName: 'Attendance Tracking',
+//         notificationText: 'Location tracking active',
+//         notificationTitle: kNotifTitle,
+//         enableWakeLock: true,
+//         setOngoing: true,
+//       ),
+//     );
+//   }
 
-//           final s = smooth(pos);
+//   // ── GPS stream ────────────────────────────────────────────────────────────
+//   Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+//     (Position pos) async {
+//       if (pos.accuracy > 150) return; // discard very noisy fixes
 
-//           // FIX: Midnight rollover — if the calendar date changed, reset site state
-//           final todayStr = _todayStr();
-//           if (todayStr != _currentWorkDate) {
-//             print(
-//               '[Service] 🕛 Midnight rollover detected — resetting site state',
+//       final s = _smooth(pos);
+
+//       // ── Midnight rollover ─────────────────────────────────────────────────
+//       final today = _todayStr();
+//       if (today != _workDate) {
+//         print('[Service] 🕛 Midnight rollover');
+//         if (currentSiteId != null) {
+//           await LocalDB.writeEvent(
+//             type: 'mark_out',
+//             employeeId: empId,
+//             siteId: currentSiteId,
+//             sessionId: sessionId,
+//           );
+//           currentSiteId = null;
+//           await prefs.remove('current_site_id_$empId');
+//         }
+//         await LocalDB.writeEvent(
+//           type: 'end_session',
+//           employeeId: empId,
+//           sessionId: sessionId,
+//         );
+//         _hist.clear();
+//         _lastLat = null;
+//         _lastLng = null;
+//         _workDate = today;
+//         _fire(SiteCache.sync());
+//         _fire(SyncWorker.flush());
+//       }
+
+//       // Always push UI update
+//       service.invoke('location_update', {
+//         'lat': s.lat,
+//         'lng': s.lng,
+//         'accuracy': pos.accuracy,
+//         'good': pos.accuracy <= 50,
+//       });
+
+//       if (!_movedEnough(s.lat, s.lng) && !_forceNextCheck) return;
+//       _lastLat = s.lat;
+//       _lastLng = s.lng;
+//       _forceNextCheck = false;
+
+//       // Check if session was killed externally (admin force-logout)
+//       final stillActive = prefs.getBool('tracking_active_$empId') ?? true;
+//       if (!stillActive) {
+//         print('[Service] Prefs say inactive — shutting down');
+//         await shutdown(
+//           writeEndSession: false,
+//           endReason: 'logout',
+//           clearAllData: false,
+//           doneEvent: 'force_stop_done',
+//         );
+//         return;
+//       }
+
+//       // ── Geofence check ───────────────────────────────────────────────────
+//       final result = SiteCache.checkLocation(s.lat, s.lng);
+
+//       if (result.inside) {
+//         final siteId = result.siteId!;
+//         final siteName = result.siteName!;
+
+//         if (currentSiteId != siteId) {
+//           // Transition: left previous site or entering for first time this session
+//           if (currentSiteId != null) {
+//             await LocalDB.writeEvent(
+//               type: 'mark_out',
+//               employeeId: empId,
+//               siteId: currentSiteId,
+//               sessionId: sessionId,
 //             );
-//             if (currentSiteId != null) {
-//               await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-//               currentSiteId = null;
-//               await prefs.remove("current_site_id_$empId");
-//             }
-//             _hist.clear();
-//             _lastLat = null;
-//             _lastLng = null;
-//             _currentWorkDate = todayStr;
-//             // Re-sync sites for the new day
-//             _fire(SiteCache.sync());
 //           }
+//           await LocalDB.writeEvent(
+//             type: 'mark_in',
+//             employeeId: empId,
+//             siteId: siteId,
+//             sessionId: sessionId,
+//           );
+//           currentSiteId = siteId;
+//           await prefs.setInt('current_site_id_$empId', siteId);
+//           updateNotif('IN: $siteName');
+//           _fire(SyncWorker.flush()); // eager flush on transitions
+//         }
 
-//           // Path 1: UI update — every tick
-//           service.invoke("location_update", {
-//             "lat": s.lat,
-//             "lng": s.lng,
-//             "accuracy": pos.accuracy,
-//             "good": pos.accuracy <= 50,
-//           });
+//         service.invoke('status_update', {
+//           'status': 'IN',
+//           'site_name': siteName,
+//           'lat': s.lat,
+//           'lng': s.lng,
+//           'accuracy': pos.accuracy,
+//         });
+//       } else {
+//         if (currentSiteId != null) {
+//           await LocalDB.writeEvent(
+//             type: 'mark_out',
+//             employeeId: empId,
+//             siteId: currentSiteId,
+//             sessionId: sessionId,
+//           );
+//           currentSiteId = null;
+//           await prefs.remove('current_site_id_$empId');
+//           updateNotif('Tracking — outside all sites');
+//           _fire(SyncWorker.flush());
+//         }
+//         service.invoke('status_update', {
+//           'status': 'OUTSIDE',
+//           'lat': s.lat,
+//           'lng': s.lng,
+//           'accuracy': pos.accuracy,
+//         });
+//       }
+//     },
+//     onError: (Object err) {
+//       print('[Service] GPS error: $err');
+//       updateNotif('GPS unavailable — check permissions');
+//       service.invoke('service_error', {
+//         'reason': 'gps_error',
+//         'detail': err.toString(),
+//       });
+//     },
+//     onDone: () {
+//       print('[Service] GPS stream closed');
+//       updateNotif('GPS stopped — please restart the app');
+//       service.invoke('service_error', {'reason': 'gps_stream_closed'});
+//     },
+//   );
 
-//           // Path 2: Site detection — only when position changed enough
-//           if (!movedEnough(s.lat, s.lng)) return;
-//           _lastLat = s.lat;
-//           _lastLng = s.lng;
-
-//           final result = SiteCache.checkLocation(s.lat, s.lng);
-
-//           if (result.inside) {
-//             final siteId = result.siteId!;
-//             final siteName = result.siteName!;
-
-//             // GUARD: If day is already done, stop the service instead of tracking
-//             final isDone = prefs.getBool("is_done_for_day_$empId") ?? false;
-//             final isDoneDate =
-//                 prefs.getString("done_for_day_date_$empId") ?? "";
-//             if (isDone && isDoneDate == _currentWorkDate) {
-//               print('[Service] Day already ended — stopping service');
-//               gpsSub?.cancel();
-//               syncTimer.cancel();
-//               SiteCache.dispose();
-//               await notifPlugin.cancel(kNotifId);
-//               service.stopSelf();
-//               return;
-//             }
-
-//             if (currentSiteId != siteId) {
-//               if (currentSiteId != null) {
-//                 await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-//               }
-//               await LocalDB.writeEvent(
-//                 type: 'mark_in',
-//                 employeeId: empId,
-//                 siteId: siteId,
-//               );
-//               currentSiteId = siteId;
-//               await prefs.setInt("current_site_id_$empId", siteId);
-//               updateNotif("IN: $siteName");
-//             }
-
-//             service.invoke("status_update", {
-//               "status": "IN",
-//               "site_name": siteName,
-//               "lat": s.lat,
-//               "lng": s.lng,
-//               "accuracy": pos.accuracy,
-//             });
-//           } else {
-//             if (currentSiteId != null) {
-//               await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-//               currentSiteId = null;
-//               await prefs.remove("current_site_id_$empId");
-//               updateNotif("Tracking... (outside sites)");
-//             }
-//             service.invoke("status_update", {
-//               "status": "OUTSIDE",
-//               "lat": s.lat,
-//               "lng": s.lng,
-//               "accuracy": pos.accuracy,
-//             });
-//           }
-//         },
-
-//         // FIX: Handle GPS errors (e.g. permissions revoked mid-session)
-//         onError: (Object error) {
-//           print('[Service] GPS error: $error');
-//           updateNotif("GPS unavailable — check permissions");
-//           service.invoke("service_error", {
-//             "reason": "gps_error",
-//             "detail": error.toString(),
-//           });
-//         },
-
-//         // FIX: Handle stream closing (shouldn't happen, but guards against it)
-//         onDone: () {
-//           print('[Service] GPS stream closed unexpectedly');
-//           updateNotif("GPS stream ended — restart app");
-//           service.invoke("service_error", {"reason": "gps_stream_closed"});
-//         },
-//       );
-
-//   print('[Service] GPS running | ${SiteCache.siteCount} sites cached');
+//   print('[Service] ✅ GPS stream running | ${SiteCache.siteCount} site(s)');
 // }
 
-// // ─── HELPERS ─────────────────────────────────────────────────────────────────
+// // ─────────────────────────────────────────────────────────────────────────────
+// // Public API used by AttendanceScreen / AttendanceState
+// // ─────────────────────────────────────────────────────────────────────────────
 
 // String _todayStr() {
 //   final n = DateTime.now();
-//   return "${n.year}-${n.month.toString().padLeft(2, '0')}"
-//       "-${n.day.toString().padLeft(2, '0')}";
+//   return '${n.year}-${n.month.toString().padLeft(2, '0')}'
+//       '-${n.day.toString().padLeft(2, '0')}';
 // }
 
 // void _fire(Future<void> f) =>
-//     f.catchError((e) => print('[Service] async error: $e'));
+//     f.catchError((e) => print('[Service] async err: $e'));
 
-// // ─── PLATFORM BRIDGE FUNCTIONS ───────────────────────────────────────────────
+// // Platform stubs
+// Stream<Map<String, dynamic>?> webOn(String e) => const Stream.empty();
+// Stream<Map<String, dynamic>?> desktopOn(String e) => const Stream.empty();
 
-// final FlutterBackgroundService _service = FlutterBackgroundService();
-
-// /// Web listener (stub)
-// Stream<Map<String, dynamic>?> webOn(String event) {
-//   return const Stream.empty();
-// }
-
-// /// Desktop listener (stub)
-// Stream<Map<String, dynamic>?> desktopOn(String event) {
-//   return const Stream.empty();
-// }
-
-// /// Start background tracking
-// Future<void> startBackgroundTracking(int employeeId) async {
+// Future<void> startBackgroundTracking(int employeeId, {int? sessionId}) async {
 //   final prefs = await SharedPreferences.getInstance();
-//   await prefs.setInt("employee_id", employeeId);
-
+//   await prefs.setInt('employee_id', employeeId);
+//   await prefs.setBool('tracking_active_$employeeId', true);
+//   if (sessionId != null) {
+//     await prefs.setInt('session_id_$employeeId', sessionId);
+//   }
 //   if (kIsWeb) return;
-
-//   final service = FlutterBackgroundService();
-
-//   final isRunning = await service.isRunning();
-//   if (!isRunning) {
-//     await service.startService();
+//   await SiteCache.init();
+//   final svc = FlutterBackgroundService();
+//   if (!await svc.isRunning()) {
+//     await svc.startService();
+//     await Future.delayed(const Duration(milliseconds: 1500));
+//   } else {
+//     // Service already running — small delay before pushing new session
+//     await Future.delayed(const Duration(milliseconds: 300));
+//   }
+//   // Push new session_id into the running service
+//   // This handles sessions 2, 3, 4... where service is already running
+//   if (sessionId != null) {
+//     svc.invoke('set_session', {'session_id': sessionId});
+//     print('[startBackgroundTracking] 🔑 pushed session_id=$sessionId');
 //   }
 // }
 
-// /// Send END DAY signal to service
-// Future<bool> sendEndDay() async {
+// // ── sendEndSession ─────────────────────────────────────────────────────────────
+// // Called by END button. Passes 'still_on_site' so service handles mark_out correctly.
+// Future<bool> sendEndSession({required bool stillOnSite}) async {
 //   if (kIsWeb) return true;
+//   final svc = FlutterBackgroundService();
+//   if (!await svc.isRunning()) return true;
 
-//   final service = FlutterBackgroundService();
 //   final completer = Completer<bool>();
-
 //   StreamSubscription? sub;
-
-//   sub = service.on("end_day_done").listen((event) {
-//     completer.complete(true);
+//   sub = svc.on('end_session_done').listen((_) {
+//     if (!completer.isCompleted) completer.complete(true);
 //     sub?.cancel();
 //   });
-
-//   service.invoke("end_day");
-
+//   svc.invoke('end_session', {'still_on_site': stillOnSite});
 //   return completer.future.timeout(
-//     const Duration(seconds: 10),
+//     const Duration(seconds: 12),
 //     onTimeout: () {
 //       sub?.cancel();
 //       return false;
 //     },
 //   );
 // }
+
+// // ── sendForceStop ──────────────────────────────────────────────────────────────
+// // Called by LogoutService. Full wipe.
+// Future<bool> sendForceStop() async {
+//   if (kIsWeb) return true;
+//   final svc = FlutterBackgroundService();
+//   if (!await svc.isRunning()) return true;
+
+//   final completer = Completer<bool>();
+//   StreamSubscription? sub;
+//   sub = svc.on('force_stop_done').listen((_) {
+//     if (!completer.isCompleted) completer.complete(true);
+//     sub?.cancel();
+//   });
+//   svc.invoke('force_stop');
+//   return completer.future.timeout(
+//     const Duration(seconds: 15),
+//     onTimeout: () {
+//       sub?.cancel();
+//       return false;
+//     },
+//   );
+// }
+
+// // Legacy compat
+// Future<bool> sendEndDay() => sendEndSession(stillOnSite: false);
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -523,24 +735,36 @@ const String kChannelId = 'attendance_tracking';
 const String kNotifTitle = 'Attendance Tracking';
 const int kNotifId = 888;
 
- 
+// ─────────────────────────────────────────────────────────────────────────────
+// LocalDB
+// ─────────────────────────────────────────────────────────────────────────────
 class LocalDB {
   static Database? _db;
 
   static Future<Database> get db async {
     _db ??= await openDatabase(
       p.join(await getDatabasesPath(), 'attendance_local.db'),
-      version: 1,
-      onCreate: (db, _) => db.execute('''
-        CREATE TABLE attendance_events (
-          id          INTEGER PRIMARY KEY AUTOINCREMENT,
-          type        TEXT    NOT NULL,
-          employee_id INTEGER NOT NULL,
-          site_id     INTEGER,
-          timestamp   TEXT    NOT NULL,
-          synced      INTEGER NOT NULL DEFAULT 0
-        )
-      '''),
+      version: 2,
+      onCreate: (db, _) async {
+        await db.execute('''
+          CREATE TABLE attendance_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            type        TEXT    NOT NULL,
+            employee_id INTEGER NOT NULL,
+            site_id     INTEGER,
+            session_id  INTEGER,
+            timestamp   TEXT    NOT NULL,
+            synced      INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+      },
+      onUpgrade: (db, oldV, newV) async {
+        if (oldV < 2) {
+          await db.execute(
+            'ALTER TABLE attendance_events ADD COLUMN session_id INTEGER',
+          );
+        }
+      },
     );
     return _db!;
   }
@@ -549,16 +773,18 @@ class LocalDB {
     required String type,
     required int employeeId,
     int? siteId,
+    int? sessionId,
   }) async {
     final ts = DateTime.now().toIso8601String();
     await (await db).insert('attendance_events', {
       'type': type,
       'employee_id': employeeId,
       'site_id': siteId,
+      'session_id': sessionId,
       'timestamp': ts,
       'synced': 0,
     });
-    print('[LocalDB] ✍ $type emp=$employeeId site=$siteId ts=$ts');
+    print('[LocalDB] $type emp=$employeeId site=$siteId session=$sessionId');
   }
 
   static Future<List<Map<String, dynamic>>> pendingEvents() async => (await db)
@@ -584,9 +810,16 @@ class LocalDB {
       whereArgs: [cutoff],
     );
   }
+
+  static Future<void> clearAll() async {
+    await (await db).delete('attendance_events');
+    print('[LocalDB] Cleared all events');
+  }
 }
 
- 
+// ─────────────────────────────────────────────────────────────────────────────
+// SyncWorker
+// ─────────────────────────────────────────────────────────────────────────────
 class SyncWorker {
   static bool _running = false;
 
@@ -596,8 +829,7 @@ class SyncWorker {
     try {
       final events = await LocalDB.pendingEvents();
       if (events.isEmpty) return;
-
-      print('[Sync] flushing ${events.length} pending event(s)');
+      print('[Sync] flushing ${events.length} event(s)');
 
       final payload = events
           .map(
@@ -605,19 +837,18 @@ class SyncWorker {
               'type': e['type'],
               'employee_id': e['employee_id'],
               'site_id': e['site_id'],
+              'session_id': e['session_id'],
               'timestamp': e['timestamp'],
             },
           )
           .toList();
 
       try {
-        // ── Preferred: batch endpoint ──────────────────────────────────────
         await ApiService.batchSync(payload);
         await LocalDB.markSynced(events.map((e) => e['id'] as int).toList());
         await LocalDB.cleanup();
-        print('[Sync] ✅ batch OK — ${events.length} synced');
+        print('[Sync] batch synced ${events.length}');
       } catch (_) {
-        // ── Fallback: one by one ───────────────────────────────────────────
         final synced = <int>[];
         for (final e in events) {
           try {
@@ -626,23 +857,33 @@ class SyncWorker {
                 await ApiService.markIn(
                   e['employee_id'] as int,
                   e['site_id'] as int,
+                  sessionId: e['session_id'] as int?,
                 );
                 break;
               case 'mark_out':
-                await ApiService.markOut(e['employee_id'] as int);
+                await ApiService.markOut(
+                  e['employee_id'] as int,
+                  sessionId: e['session_id'] as int?,
+                );
                 break;
-              case 'end_day':
-                await ApiService.endDay(e['employee_id'] as int);
+              case 'end_session':
+              case 'force_end_session':
+                await ApiService.endSession(
+                  e['employee_id'] as int,
+                  e['session_id'] as int?,
+                  reason: e['type'] == 'force_end_session'
+                      ? 'logout'
+                      : 'manual_end',
+                );
                 break;
             }
             synced.add(e['id'] as int);
           } catch (err) {
-            print('[Sync] ⚠ event ${e['id']} failed — will retry: $err');
+            print('[Sync] event ${e['id']} failed: $err');
           }
         }
         await LocalDB.markSynced(synced);
         if (synced.isNotEmpty) await LocalDB.cleanup();
-        print('[Sync] fallback: ${synced.length}/${events.length} synced');
       }
     } finally {
       _running = false;
@@ -650,12 +891,13 @@ class SyncWorker {
   }
 }
 
-// ─── SERVICE INIT ─────────────────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// initBackgroundService
+// ─────────────────────────────────────────────────────────────────────────────
 Future<void> initBackgroundService() async {
   final service = FlutterBackgroundService();
-
   final notifPlugin = FlutterLocalNotificationsPlugin();
+
   await notifPlugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
@@ -664,7 +906,7 @@ Future<void> initBackgroundService() async {
         const AndroidNotificationChannel(
           kChannelId,
           'Attendance Tracking',
-          description: 'Keeps tracking running even when app is closed',
+          description: 'Keeps GPS tracking running in the background',
           importance: Importance.low,
         ),
       );
@@ -688,30 +930,38 @@ Future<void> initBackgroundService() async {
   );
 }
 
+// ── iOS background handler ─────────────────────────────────────────────────
 @pragma('vm:entry-point')
-Future<bool> onIosBackground(ServiceInstance service) async => true;
+Future<bool> onIosBackground(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  try {
+    await SyncWorker.flush();
+  } catch (_) {}
+  return true;
+}
 
-// ─── SERVICE ENTRY POINT ──────────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// onServiceStart
+// ─────────────────────────────────────────────────────────────────────────────
 @pragma('vm:entry-point')
 void onServiceStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
   final notifPlugin = FlutterLocalNotificationsPlugin();
-  await notifPlugin.initialize(
-    const InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    ),
-  );
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    await notifPlugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+  }
 
-  print('[Service] ▶ STARTED');
-
-  // ── Helper: update persistent notification ────────────────────────────────
-  void updateNotif(String text) {
+  void updateNotif(String body) {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
     notifPlugin.show(
       kNotifId,
       kNotifTitle,
-      text,
+      body,
       const NotificationDetails(
         android: AndroidNotificationDetails(
           kChannelId,
@@ -725,104 +975,117 @@ void onServiceStart(ServiceInstance service) async {
     );
   }
 
-  // ── Read employee_id written by startBackgroundTracking() ─────────────────
+  // ── Read everything from prefs at boot ────────────────────────────────────
+  // session_id and employee_id are always written BEFORE service starts
   final prefs = await SharedPreferences.getInstance();
   final int? empId = prefs.getInt('employee_id');
+  final int? sessionId = prefs.getInt('session_id_$empId');
+  int? currentSiteId; // always start fresh — no leftover site state
+
+  print('[Service] STARTED emp=$empId session=$sessionId');
+
   if (empId == null) {
-    print('[Service] No employee_id in prefs — stopping');
+    print('[Service] No employee_id — stopping');
     service.stopSelf();
     return;
   }
 
-  // ── Guard: background location permission ─────────────────────────────────
-  final bgPerm = await Permission.locationAlways.status;
-  if (!bgPerm.isGranted) {
-    print('[Service] ⚠ ACCESS_BACKGROUND_LOCATION not granted — stopping');
-    updateNotif('Location permission required');
-    service.invoke('service_error', {'reason': 'no_background_location'});
-    service.stopSelf();
-    return;
-  }
-
-  // ── Guard: check server DB — if day already completed, stop immediately ────
-  // This is the correct cross-device check: ask the server, not local prefs.
-  try {
-    final data = await ApiService.getTodayStatus(empId);
-    final serverStatus = data['status'] as String? ?? 'not_started';
-    if (serverStatus == 'completed') {
-      print('[Service] Server DB says day completed — stopping service');
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    if (!await Permission.locationAlways.isGranted) {
+      updateNotif('Background location permission required');
+      service.invoke('service_error', {'reason': 'no_background_location'});
       service.stopSelf();
       return;
     }
-    if (serverStatus == 'not_started') {
-      // Edge case: service was started but server has no record yet.
-      // This is fine — the first mark_in will create the DB row.
-      print('[Service] Server DB: not_started yet (first location pending)');
-    }
-  } catch (_) {
-    // Network unavailable at service start — continue anyway.
-    // SyncWorker will push events when network returns.
-    print('[Service] Could not reach server at start — continuing offline');
   }
 
-  // ── Load site polygons into memory ────────────────────────────────────────
-  // SiteCache.init() was already called by startBackgroundTracking() which
-  // fetched from server and saved to SQLite. Here we just load memory in
-  // this new isolate from the already-populated SQLite table.
-  _fire(SiteCache.init());
-
-  int? currentSiteId = prefs.getInt('current_site_id_$empId');
-  String _currentWorkDate = _todayStr();
-
-  // Flush any events left over from a previous session
+  await SiteCache.init();
+  String _workDate = _todayStr();
   _fire(SyncWorker.flush());
 
-  // ── 1-minute sync timer ───────────────────────────────────────────────────
-  // Every minute: push pending local events to the server.
-  // If network is down, events stay in LocalDB and are retried next minute.
-  final syncTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-    _fire(SyncWorker.flush());
-  });
+  final syncTimer = Timer.periodic(
+    const Duration(minutes: 1),
+    (_) => _fire(SyncWorker.flush()),
+  );
+  final siteRefreshTimer = Timer.periodic(
+    const Duration(minutes: 30),
+    (_) => _fire(SiteCache.sync()),
+  );
 
-  // ── 30-minute site refresh timer ──────────────────────────────────────────
-  final siteRefreshTimer = Timer.periodic(const Duration(minutes: 30), (_) {
-    _fire(SiteCache.sync());
-  });
+  // ── Shutdown helper ────────────────────────────────────────────────────────
+  Future<void> shutdown({
+    required bool writeEndSession,
+    required String endReason,
+    required bool clearAllData,
+    required String doneEvent,
+  }) async {
+    print('[Service] shutdown: $endReason');
 
-  // ── END DAY listener (from UI) ────────────────────────────────────────────
-  service.on('end_day').listen((_) async {
-    print('[Service] ⏹ END DAY received from UI');
-
-    // 1. Close any open site visit
+    // Close open site visit
     if (currentSiteId != null) {
-      await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
+      await LocalDB.writeEvent(
+        type: 'mark_out',
+        employeeId: empId,
+        siteId: currentSiteId,
+        sessionId: sessionId,
+      );
       currentSiteId = null;
       await prefs.remove('current_site_id_$empId');
     }
 
-    // 2. Write end_day event to local DB
-    await LocalDB.writeEvent(type: 'end_day', employeeId: empId);
+    // Close session
+    if (writeEndSession) {
+      await LocalDB.writeEvent(
+        type: endReason == 'logout' ? 'force_end_session' : 'end_session',
+        employeeId: empId,
+        sessionId: sessionId,
+      );
+    }
 
-    // 3. Final flush — attempt to push everything to server before stopping
+    // Sync before exit
     await SyncWorker.flush();
 
-    // 4. Clear site cache from SQLite — next START re-fetches fresh data
-    await SiteCache.clear();
+    // Always fully clear prefs — next START always writes fresh
+    await prefs.remove('employee_id');
+    await prefs.remove('current_site_id_$empId');
+    await prefs.remove('tracking_active_$empId');
+    await prefs.remove('session_id_$empId');
 
-    // 5. Cancel all timers
+    if (clearAllData) {
+      await SiteCache.clear();
+      await LocalDB.clearAll();
+    }
+
     syncTimer.cancel();
     siteRefreshTimer.cancel();
     SiteCache.dispose();
-
-    // 6. Notify UI
-    service.invoke('end_day_done', {});
-
     await notifPlugin.cancel(kNotifId);
+    service.invoke(doneEvent, {});
     service.stopSelf();
-    print('[Service] ■ STOPPED after END DAY');
+    print('[Service] STOPPED');
+  }
+
+  // ── END SESSION ────────────────────────────────────────────────────────────
+  service.on('end_session').listen((e) async {
+    await shutdown(
+      writeEndSession: true,
+      endReason: 'manual_end',
+      clearAllData: false,
+      doneEvent: 'end_session_done',
+    );
   });
 
-  // ── GPS smoothing (weighted moving average over last 3 positions) ─────────
+  // ── FORCE STOP (logout) ────────────────────────────────────────────────────
+  service.on('force_stop').listen((_) async {
+    await shutdown(
+      writeEndSession: true,
+      endReason: 'logout',
+      clearAllData: true,
+      doneEvent: 'force_stop_done',
+    );
+  });
+
+  // ── GPS smoothing ──────────────────────────────────────────────────────────
   final List<({double lat, double lng})> _hist = [];
 
   ({double lat, double lng}) _smooth(Position pos) {
@@ -844,154 +1107,154 @@ void onServiceStart(ServiceInstance service) async {
     return Geolocator.distanceBetween(_lastLat!, _lastLng!, lat, lng) > 8;
   }
 
-  // Warm-up: show last known position immediately
-  try {
-    final last = await Geolocator.getLastKnownPosition();
-    if (last != null) {
+  // ── Location settings ──────────────────────────────────────────────────────
+  LocationSettings locationSettings;
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    locationSettings = AppleSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      activityType: ActivityType.otherNavigation,
+      distanceFilter: 0,
+      pauseLocationUpdatesAutomatically: false,
+      showBackgroundLocationIndicator: true,
+      allowBackgroundLocationUpdates: true,
+    );
+  } else {
+    locationSettings = AndroidSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 0,
+      intervalDuration: const Duration(seconds: 3),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationChannelName: 'Attendance Tracking',
+        notificationText: 'Location tracking active',
+        notificationTitle: kNotifTitle,
+        enableWakeLock: true,
+        setOngoing: true,
+      ),
+    );
+  }
+
+  // ── GPS stream ─────────────────────────────────────────────────────────────
+  Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+    (Position pos) async {
+      if (pos.accuracy > 150) return;
+
+      final s = _smooth(pos);
+
+      // Midnight rollover
+      final today = _todayStr();
+      if (today != _workDate) {
+        print('[Service] Midnight rollover');
+        if (currentSiteId != null) {
+          await LocalDB.writeEvent(
+            type: 'mark_out',
+            employeeId: empId,
+            siteId: currentSiteId,
+            sessionId: sessionId,
+          );
+          currentSiteId = null;
+          await prefs.remove('current_site_id_$empId');
+        }
+        await LocalDB.writeEvent(
+          type: 'end_session',
+          employeeId: empId,
+          sessionId: sessionId,
+        );
+        _hist.clear();
+        _lastLat = null;
+        _lastLng = null;
+        _workDate = today;
+        _fire(SiteCache.sync());
+        _fire(SyncWorker.flush());
+      }
+
       service.invoke('location_update', {
-        'lat': last.latitude,
-        'lng': last.longitude,
-        'accuracy': last.accuracy,
-        'good': last.accuracy <= 80,
+        'lat': s.lat,
+        'lng': s.lng,
+        'accuracy': pos.accuracy,
+        'good': pos.accuracy <= 50,
       });
-    }
-  } catch (_) {}
 
-  // ── GPS stream ────────────────────────────────────────────────────────────
-  StreamSubscription<Position>? gpsSub;
+      if (!_movedEnough(s.lat, s.lng)) return;
+      _lastLat = s.lat;
+      _lastLng = s.lng;
 
-  gpsSub =
-      Geolocator.getPositionStream(
-        locationSettings: AndroidSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 0,
-          intervalDuration: const Duration(seconds: 3),
-          foregroundNotificationConfig: const ForegroundNotificationConfig(
-            notificationChannelName: 'Attendance Tracking',
-            notificationText: 'Location tracking active',
-            notificationTitle: kNotifTitle,
-            enableWakeLock: true,
-            setOngoing: true,
-          ),
-        ),
-      ).listen(
-        (Position pos) async {
-          if (pos.accuracy > 150) return; // ignore very poor fixes
+      // Geofence check
+      final result = SiteCache.checkLocation(s.lat, s.lng);
 
-          final s = _smooth(pos);
+      if (result.inside) {
+        final siteId = result.siteId!;
+        final siteName = result.siteName!;
 
-          // ── Midnight rollover ────────────────────────────────────────────────
-          final todayStr = _todayStr();
-          if (todayStr != _currentWorkDate) {
-            print('[Service] 🕛 Midnight rollover');
-            if (currentSiteId != null) {
-              await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-              currentSiteId = null;
-              await prefs.remove('current_site_id_$empId');
-            }
-            _hist.clear();
-            _lastLat = null;
-            _lastLng = null;
-            _currentWorkDate = todayStr;
-            _fire(SiteCache.sync());
+        if (currentSiteId != siteId) {
+          if (currentSiteId != null) {
+            await LocalDB.writeEvent(
+              type: 'mark_out',
+              employeeId: empId,
+              siteId: currentSiteId,
+              sessionId: sessionId,
+            );
           }
+          await LocalDB.writeEvent(
+            type: 'mark_in',
+            employeeId: empId,
+            siteId: siteId,
+            sessionId: sessionId,
+          );
+          currentSiteId = siteId;
+          await prefs.setInt('current_site_id_$empId', siteId);
+          updateNotif('IN: $siteName');
+          _fire(SyncWorker.flush());
+        }
 
-          // ── Always: push UI location update ──────────────────────────────────
-          service.invoke('location_update', {
-            'lat': s.lat,
-            'lng': s.lng,
-            'accuracy': pos.accuracy,
-            'good': pos.accuracy <= 50,
-          });
+        service.invoke('status_update', {
+          'status': 'IN',
+          'site_name': siteName,
+          'lat': s.lat,
+          'lng': s.lng,
+          'accuracy': pos.accuracy,
+        });
+      } else {
+        if (currentSiteId != null) {
+          await LocalDB.writeEvent(
+            type: 'mark_out',
+            employeeId: empId,
+            siteId: currentSiteId,
+            sessionId: sessionId,
+          );
+          currentSiteId = null;
+          await prefs.remove('current_site_id_$empId');
+          updateNotif('Tracking — outside all sites');
+          _fire(SyncWorker.flush());
+        }
+        service.invoke('status_update', {
+          'status': 'OUTSIDE',
+          'lat': s.lat,
+          'lng': s.lng,
+          'accuracy': pos.accuracy,
+        });
+      }
+    },
+    onError: (Object err) {
+      print('[Service] GPS error: $err');
+      updateNotif('GPS unavailable — check permissions');
+      service.invoke('service_error', {
+        'reason': 'gps_error',
+        'detail': err.toString(),
+      });
+    },
+    onDone: () {
+      print('[Service] GPS stream closed');
+      updateNotif('GPS stopped — please restart the app');
+      service.invoke('service_error', {'reason': 'gps_stream_closed'});
+    },
+  );
 
-          // ── Only when moved enough: check site membership ─────────────────────
-          if (!_movedEnough(s.lat, s.lng)) return;
-          _lastLat = s.lat;
-          _lastLng = s.lng;
-
-          // Re-check server DB to see if day was ended on another device.
-          // We do this lazily — only on actual movement, not every GPS tick.
-          // The 1-min sync timer is the primary cross-device protection.
-          final freshLocal = prefs.getString('day_status_$empId');
-          final freshDate = prefs.getString('day_status_date_$empId') ?? '';
-          if (freshLocal == 'completed' && freshDate == _currentWorkDate) {
-            print('[Service] Local prefs say completed — stopping');
-            gpsSub?.cancel();
-            syncTimer.cancel();
-            siteRefreshTimer.cancel();
-            SiteCache.dispose();
-            await notifPlugin.cancel(kNotifId);
-            service.stopSelf();
-            return;
-          }
-
-          final result = SiteCache.checkLocation(s.lat, s.lng);
-
-          if (result.inside) {
-            final siteId = result.siteId!;
-            final siteName = result.siteName!;
-
-            if (currentSiteId != siteId) {
-              // Left previous site → mark out
-              if (currentSiteId != null) {
-                await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-              }
-              // Entered new site → mark in
-              await LocalDB.writeEvent(
-                type: 'mark_in',
-                employeeId: empId,
-                siteId: siteId,
-              );
-              currentSiteId = siteId;
-              await prefs.setInt('current_site_id_$empId', siteId);
-              updateNotif('IN: $siteName');
-              // Eager flush on transition — don't wait for the 1-min timer
-              _fire(SyncWorker.flush());
-            }
-
-            service.invoke('status_update', {
-              'status': 'IN',
-              'site_name': siteName,
-              'lat': s.lat,
-              'lng': s.lng,
-              'accuracy': pos.accuracy,
-            });
-          } else {
-            if (currentSiteId != null) {
-              await LocalDB.writeEvent(type: 'mark_out', employeeId: empId);
-              currentSiteId = null;
-              await prefs.remove('current_site_id_$empId');
-              updateNotif('Tracking... (outside all sites)');
-              // Eager flush on site exit
-              _fire(SyncWorker.flush());
-            }
-            service.invoke('status_update', {
-              'status': 'OUTSIDE',
-              'lat': s.lat,
-              'lng': s.lng,
-              'accuracy': pos.accuracy,
-            });
-          }
-        },
-        onError: (Object error) {
-          print('[Service] GPS error: $error');
-          updateNotif('GPS unavailable — check permissions');
-          service.invoke('service_error', {
-            'reason': 'gps_error',
-            'detail': error.toString(),
-          });
-        },
-        onDone: () {
-          print('[Service] GPS stream closed unexpectedly');
-          updateNotif('GPS stream ended — restart app');
-          service.invoke('service_error', {'reason': 'gps_stream_closed'});
-        },
-      );
-
-  print('[Service] ✅ GPS running | ${SiteCache.siteCount} site(s) loaded');
+  print('[Service] GPS running | ${SiteCache.siteCount} site(s)');
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
 
 String _todayStr() {
   final n = DateTime.now();
@@ -1000,50 +1263,88 @@ String _todayStr() {
 }
 
 void _fire(Future<void> f) =>
-    f.catchError((e) => print('[Service] async error: $e'));
+    f.catchError((e) => print('[Service] async err: $e'));
 
-// ─── PLATFORM STUBS ───────────────────────────────────────────────────────────
+Stream<Map<String, dynamic>?> webOn(String e) => const Stream.empty();
+Stream<Map<String, dynamic>?> desktopOn(String e) => const Stream.empty();
 
-Stream<Map<String, dynamic>?> webOn(String event) => const Stream.empty();
-Stream<Map<String, dynamic>?> desktopOn(String event) => const Stream.empty();
-
- 
-Future<void> startBackgroundTracking(int employeeId) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setInt('employee_id', employeeId);
-
+// ── START — kill any existing, write prefs, start fresh ───────────────────
+Future<void> startBackgroundTracking(int employeeId, {int? sessionId}) async {
   if (kIsWeb) return;
 
- 
-  await SiteCache.init();
+  final svc = FlutterBackgroundService();
+  final prefs = await SharedPreferences.getInstance();
 
-  final service = FlutterBackgroundService();
-  if (!await service.isRunning()) {
-    await service.startService();
+  // Kill existing service if running
+  if (await svc.isRunning()) {
+    svc.invoke('force_stop');
+    await Future.delayed(const Duration(milliseconds: 800));
   }
+
+  // Write fresh prefs before starting — service reads these at boot
+  await prefs.setInt('employee_id', employeeId);
+  await prefs.setBool('tracking_active_$employeeId', true);
+  await prefs.remove('current_site_id_$employeeId'); // always fresh site state
+  if (sessionId != null) {
+    await prefs.setInt('session_id_$employeeId', sessionId);
+  }
+
+  await SiteCache.init();
+  await svc.startService();
+
+  print(
+    '[startBackgroundTracking] fresh start emp=$employeeId session=$sessionId',
+  );
 }
 
- 
-
-Future<bool> sendEndDay() async {
+// ── END — send signal, service handles everything and kills itself ─────────
+Future<bool> sendEndSession({required bool stillOnSite}) async {
   if (kIsWeb) return true;
 
-  final service = FlutterBackgroundService();
+  final svc = FlutterBackgroundService();
+  if (!await svc.isRunning()) return true;
+
   final completer = Completer<bool>();
   StreamSubscription? sub;
-
-  sub = service.on('end_day_done').listen((_) {
+  sub = svc.on('end_session_done').listen((_) {
     if (!completer.isCompleted) completer.complete(true);
     sub?.cancel();
   });
 
-  service.invoke('end_day');
+  svc.invoke('end_session', {'still_on_site': stillOnSite});
 
   return completer.future.timeout(
-    const Duration(seconds: 10),
+    const Duration(seconds: 12),
     onTimeout: () {
       sub?.cancel();
       return false;
     },
   );
 }
+
+// ── FORCE STOP (logout) ────────────────────────────────────────────────────
+Future<bool> sendForceStop() async {
+  if (kIsWeb) return true;
+
+  final svc = FlutterBackgroundService();
+  if (!await svc.isRunning()) return true;
+
+  final completer = Completer<bool>();
+  StreamSubscription? sub;
+  sub = svc.on('force_stop_done').listen((_) {
+    if (!completer.isCompleted) completer.complete(true);
+    sub?.cancel();
+  });
+
+  svc.invoke('force_stop');
+
+  return completer.future.timeout(
+    const Duration(seconds: 15),
+    onTimeout: () {
+      sub?.cancel();
+      return false;
+    },
+  );
+}
+
+Future<bool> sendEndDay() => sendEndSession(stillOnSite: false);

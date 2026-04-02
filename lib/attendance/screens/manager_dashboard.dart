@@ -11,6 +11,10 @@ import '../services/location_services.dart';
 import 'emp_profile_screen.dart';
 import 'manager_leave.dart';
 import 'session_guard_mixin.dart';
+import 'emp_work_location.dart';
+import '../services/attendance_state.dart';
+import '../services/api_service.dart';
+import '../services/site_cache.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
   final String employeeId;
@@ -46,7 +50,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
   bool isExpanded = false;
   late LocationService locationService;
 
-  static const int notificationIndex = 12; // kept for future use
+  // static const int notificationIndex = 12; // kept for future use
 
   @override
   void initState() {
@@ -63,7 +67,8 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
     AdminHrAttendanceScreen(), // 2
     LeaveApprovalScreen(loginId: widget.loginId), // 3
     MGLeaveScreen(employeeId: widget.employeeId), // 4
-    EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 5
+    EmployeeAssignmentsScreen(), //5
+    EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 6
   ];
 
   // ── Titles ─────────────────────────────────────────────────────────────────
@@ -73,6 +78,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
     'Manage Attendance',
     'Leave Approval',
     'Apply Leave',
+    "Site",
     'Profile',
   ];
 
@@ -104,6 +110,11 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
       label: Text('Apply Leave'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.place_outlined),
+      selectedIcon: Icon(Icons.place),
+      label: Text('Site'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.person_outline),
       selectedIcon: Icon(Icons.person),
       label: Text('Profile'),
@@ -132,18 +143,18 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              tooltip: 'Notifications',
-              icon: const Icon(
-                Icons.notifications_outlined,
-                color: Colors.white,
-              ),
-              onPressed: () =>
-                  setState(() => selectedIndex = notificationIndex),
-            ),
-            const SizedBox(width: 4),
-          ],
+          // actions: [
+          //   IconButton(
+          //     tooltip: 'Notifications',
+          //     icon: const Icon(
+          //       Icons.notifications_outlined,
+          //       color: Colors.white,
+          //     ),
+          //     onPressed: () =>
+          //         setState(() => selectedIndex = notificationIndex),
+          //   ),
+          //   const SizedBox(width: 4),
+          // ],
         ),
         drawer: isDesktop ? null : _mobileDrawer(),
         body: Row(
@@ -196,7 +207,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
                             const SizedBox(width: 10),
                             const Expanded(
                               child: Text(
-                                'TL Panel',
+                                'Manager Panel',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -431,7 +442,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'TL Panel',
+                  'Manager Panel',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -535,13 +546,40 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> _logout() async {
+    // 1. End active tracking session on server (closes open site visits too)
     try {
-      await AuthService.clearSession();
+      final state = AttendanceState.instance;
+      if (state.dayStatus == DayStatus.inProgress) {
+        await ApiService.endSession(
+          int.parse(widget.employeeId),
+          state.currentSessionId, // ← correct field name
+          reason: 'logout',
+        );
+      }
+    } catch (_) {
+      // best-effort — don't block logout on API failure
+    }
+
+    // 2. forceStop handles: background service, SharedPrefs,
+    //    and all AttendanceState fields in one call
+    try {
+      await AttendanceState.instance.forceStop();
     } catch (_) {}
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+
+    // 3. Stop site cache auto-sync timer
+    try {
+      SiteCache.dispose();
+    } catch (_) {}
+
+    // 4. Call server logout + clear SharedPreferences
+    await AuthService.clearSession();
+
+    // 5. Navigate to login
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 }

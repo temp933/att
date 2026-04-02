@@ -69,7 +69,8 @@ class _SessionService {
     throw Exception('Failed to fetch sessions');
   }
 
-  static Future<void> forceLogout(int loginId) async {
+  static Future<void> forceLogout(int loginId, {int? empId}) async {
+    // Backend now handles attendance + session close in one call
     final res = await http.post(
       Uri.parse('$_base/admin/sessions/$loginId/force-logout'),
       headers: {'Content-Type': 'application/json'},
@@ -193,15 +194,15 @@ class _AdminSessionManagementScreenState
     final ok = await _confirmDialog(
       title: 'Force Logout',
       message:
-          'This will immediately log out "${user.fullName}" from their current device.\n\nThey can log in again from any device.',
+          'This will immediately log out "${user.fullName}" from their current device and end their active attendance session.\n\nThey can log in again from any device.',
       confirmLabel: 'Force Logout',
       confirmColor: _red,
     );
     if (!ok) return;
     setState(() => _actionLoading = true);
     try {
-      await _SessionService.forceLogout(user.loginId);
-      _snack('${user.fullName} has been logged out.', _red);
+      await _SessionService.forceLogout(user.loginId, empId: user.empId);
+      _snack('${user.fullName} has been logged out and session ended.', _red);
       await _loadSessions();
     } catch (e) {
       _snack('Error: $e', _red);

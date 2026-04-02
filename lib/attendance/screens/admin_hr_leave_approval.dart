@@ -1036,9 +1036,7 @@ class _PendingCardState extends State<_PendingCard>
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              onPressed: insufficient
-                                  ? null
-                                  : () => widget.onApprove(leave),
+                              onPressed: () => widget.onApprove(leave),
                             ),
                           ],
                         ),

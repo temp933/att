@@ -621,66 +621,83 @@ class _TLPendingCardState extends State<_TLPendingCard>
             onTap: _toggle,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Row(
+              child: Stack(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        (leave.employeeName ?? '?')
-                            .substring(0, 1)
-                            .toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          leave.employeeName ?? 'Employee #${leave.empId}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: _textDark,
+                        child: Center(
+                          child: Text(
+                            (leave.employeeName ?? '?')
+                                .substring(0, 1)
+                                .toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 18,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          [leave.departmentName, leave.roleName]
-                              .where((e) => e != null && e.isNotEmpty)
-                              .join('  ·  '),
-                          style: const TextStyle(fontSize: 12, color: _textMid),
-                          overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 12),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              leave.employeeName ?? 'Employee #${leave.empId}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: _textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              [leave.departmentName, leave.roleName]
+                                  .where((e) => e != null && e.isNotEmpty)
+                                  .join('  ·  '),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: _textMid,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+
+                      const SizedBox(width: 8),
+                      _TLStatusBadge(leave.status),
+
+                      // give space so arrow doesn't overlap
+                      const SizedBox(width: 24),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _TLStatusBadge(leave.status),
-                  const SizedBox(width: 8),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 20,
-                      color: _expanded ? _amber : _textLight,
+
+                  // 🔥 Arrow in top-right corner
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 250),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: _expanded ? _amber : _textLight,
+                      ),
                     ),
                   ),
                 ],
@@ -688,7 +705,7 @@ class _TLPendingCardState extends State<_TLPendingCard>
             ),
           ),
 
-          // ── Expandable Body ──────────────────────────────────────────
+          // ── Expandable Body (UNCHANGED) ──────────────────────────
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1,
@@ -786,8 +803,9 @@ class _TLPendingCardState extends State<_TLPendingCard>
                   ),
                 ),
 
-                // Action buttons
                 const Divider(height: 1, thickness: 1, color: _border),
+
+                // buttons unchanged...
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                   child: Column(
@@ -807,51 +825,18 @@ class _TLPendingCardState extends State<_TLPendingCard>
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _red,
-                              side: BorderSide(color: _red.withOpacity(0.5)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(9),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 9,
-                              ),
-                            ),
-                            icon: const Icon(Icons.close_rounded, size: 15),
-                            label: const Text(
-                              'Not Recommend',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                             onPressed: () => widget.onNotRecommend(leave),
+                            icon: const Icon(Icons.close_rounded, size: 15),
+                            label: const Text('Not Recommend'),
                           ),
                           const SizedBox(width: 10),
                           FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _accent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(9),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 9,
-                              ),
-                            ),
+                            onPressed: () => widget.onRecommend(leave),
                             icon: const Icon(
                               Icons.thumb_up_alt_rounded,
                               size: 15,
                             ),
-                            label: const Text(
-                              'Recommend',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            onPressed: () => widget.onRecommend(leave),
+                            label: const Text('Recommend'),
                           ),
                         ],
                       ),
@@ -936,61 +921,63 @@ class _TLMobileHistoryState extends State<_TLMobileHistory> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Stack(
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    l.employeeName ?? 'Emp #${l.empId}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: _textDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${l.leaveType}  ·  ${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}  ·  ${l.numberOfDays} day(s)',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: _textMid,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  _TLStatusBadge(l.status),
-                                  if (hasAnyDetail) ...[
-                                    const SizedBox(height: 6),
-                                    AnimatedRotation(
-                                      turns: isOpen ? 0.5 : 0,
-                                      duration: const Duration(
-                                        milliseconds: 220,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        l.employeeName ?? 'Emp #${l.empId}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: _textDark,
+                                        ),
                                       ),
-                                      child: Icon(
-                                        Icons.keyboard_arrow_down_rounded,
-                                        size: 18,
-                                        color: isOpen
-                                            ? accentColor
-                                            : _textLight,
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${l.leaveType}  ·  ${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}  ·  ${l.numberOfDays} day(s)',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: _textMid,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 8),
+
+                                _TLStatusBadge(l.status),
+
+                                const SizedBox(width: 24), // space for arrow
+                              ],
                             ),
+
+                            // Arrow
+                            if (hasAnyDetail)
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: AnimatedRotation(
+                                  turns: isOpen ? 0.5 : 0,
+                                  duration: const Duration(milliseconds: 220),
+                                  child: Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 20,
+                                    color: isOpen ? accentColor : _textLight,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),

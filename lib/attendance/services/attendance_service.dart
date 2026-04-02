@@ -13,6 +13,6 @@ class AttendanceService {
 
   /// End the whole work day — locks attendance for today.
   Future<void> endDay({required int empId}) async {
-    await ApiService.endDay(empId);
+    await ApiService.endSession(empId, null, reason: 'manual_end');
   }
 }

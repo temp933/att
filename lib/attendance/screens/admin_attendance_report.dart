@@ -85,6 +85,7 @@ class _ReportService {
 
   static Future<List<_EmpDay>> fetchRange(DateTime from, DateTime to) async {
     final List<_EmpDay> result = [];
+
     for (
       DateTime d = from;
       !d.isAfter(to);
@@ -103,7 +104,6 @@ class _ReportService {
         for (final row in rows) {
           if (row is! Map) continue;
 
-          // emp_id may arrive as int OR string from some backends
           final rawId = row['emp_id'];
           final empId = rawId == null
               ? 0
@@ -111,40 +111,42 @@ class _ReportService {
               ? rawId.toInt()
               : int.tryParse(rawId.toString()) ?? 0;
 
-          final visitList = (row['visits'] as List? ?? [])
-              .map((v) {
-                if (v is! Map) return null;
-                final inRaw = v['in_time'];
-                final outRaw = v['out_time'];
-                // worked_minutes might be int, double, or string
-                final rawMins = v['worked_minutes'];
-                int mins = 0;
-                if (rawMins is num) {
-                  mins = rawMins.toInt();
-                } else if (rawMins is String) {
-                  mins = int.tryParse(rawMins) ?? 0;
-                }
-                if (mins < 0) mins = 0;
-                return _Visit(
-                  locationName: v['location_name']?.toString() ?? 'Unknown',
-                  inTime: inRaw != null
-                      ? _parseTime(inRaw.toString(), d)
-                      : null,
-                  outTime: outRaw != null
-                      ? _parseTime(outRaw.toString(), d)
-                      : null,
-                  workedMinutes: mins,
-                );
-              })
-              .whereType<_Visit>()
-              .toList();
+          final empName = row['name']?.toString().trim() ?? '';
+
+          // ── New format: sessions[] → visits[] ─────────────────────────────
+          // ── Old format: flat visits[] (TL endpoint) ───────────────────────
+          // Both are handled below so the report works for any endpoint.
+          List<_Visit> flatVisits = [];
+
+          final rawSessions = row['sessions'];
+          if (rawSessions is List && rawSessions.isNotEmpty) {
+            // New backend: flatten all sessions → all visits
+            for (final sess in rawSessions) {
+              if (sess is! Map) continue;
+              final sessionVisits = sess['visits'];
+              if (sessionVisits is! List) continue;
+              for (final v in sessionVisits) {
+                final visit = _parseVisit(v, d);
+                if (visit != null) flatVisits.add(visit);
+              }
+            }
+          } else {
+            // Legacy / TL endpoint: flat visits[]
+            final rawVisits = row['visits'];
+            if (rawVisits is List) {
+              for (final v in rawVisits) {
+                final visit = _parseVisit(v, d);
+                if (visit != null) flatVisits.add(visit);
+              }
+            }
+          }
 
           result.add(
             _EmpDay(
               empId: empId,
-              empName: row['name']?.toString().trim() ?? '',
+              empName: empName,
               date: d,
-              visits: visitList,
+              visits: flatVisits,
             ),
           );
         }
@@ -154,6 +156,34 @@ class _ReportService {
       }
     }
     return result;
+  }
+
+  /// Parses a single visit map into a [_Visit], or returns null if invalid.
+  static _Visit? _parseVisit(dynamic v, DateTime date) {
+    if (v is! Map) return null;
+
+    // New backend uses 'site_name'; legacy uses 'location_name'
+    final locationName =
+        (v['site_name'] ?? v['location_name'])?.toString() ?? 'Unknown';
+
+    final inRaw = v['in_time'];
+    final outRaw = v['out_time'];
+
+    final rawMins = v['worked_minutes'];
+    int mins = 0;
+    if (rawMins is num) {
+      mins = rawMins.toInt();
+    } else if (rawMins is String) {
+      mins = int.tryParse(rawMins) ?? 0;
+    }
+    if (mins < 0) mins = 0;
+
+    return _Visit(
+      locationName: locationName,
+      inTime: inRaw != null ? _parseTime(inRaw.toString(), date) : null,
+      outTime: outRaw != null ? _parseTime(outRaw.toString(), date) : null,
+      workedMinutes: mins,
+    );
   }
 
   static DateTime _parseTime(String t, DateTime date) {
@@ -175,7 +205,7 @@ class _ReportService {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EXCEL BUILDER
+// EXCEL BUILDER  (unchanged — operates on flat _Visit / _EmpDay models)
 // ─────────────────────────────────────────────────────────────────────────────
 class _ExcelBuilder {
   static xl.CellStyle _hdrStyle({String hex = 'FF1A56DB'}) => xl.CellStyle(
@@ -617,7 +647,6 @@ class _AdminAttendanceReportScreenState
   String _fmtKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  // ── Day single date picker ─────────────────────────────────────────────────
   Future<void> _pickDayDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -634,7 +663,6 @@ class _AdminAttendanceReportScreenState
     if (picked != null) setState(() => _dayDate = picked);
   }
 
-  // ── Monthly date pickers ───────────────────────────────────────────────────
   Future<void> _pickMonthlyDate(bool isFrom) async {
     final current = isFrom ? _mFromDate : _mToDate;
     final picked = await showDatePicker(
@@ -661,7 +689,6 @@ class _AdminAttendanceReportScreenState
     });
   }
 
-  // ── Fetch day-wise ─────────────────────────────────────────────────────────
   Future<void> _fetchDayData() async {
     setState(() {
       _loading = true;
@@ -683,7 +710,6 @@ class _AdminAttendanceReportScreenState
     }
   }
 
-  // ── Fetch monthly ──────────────────────────────────────────────────────────
   Future<void> _fetchMonthlyData() async {
     setState(() {
       _mLoading = true;
@@ -700,7 +726,6 @@ class _AdminAttendanceReportScreenState
     }
   }
 
-  // ── Downloads ─────────────────────────────────────────────────────────────
   Future<void> _downloadDayWise() async {
     if (_data.isEmpty) {
       _showSnack('No data to export', isError: true);
@@ -741,7 +766,6 @@ class _AdminAttendanceReportScreenState
     if (bytes == null) throw Exception('Failed to generate Excel');
 
     if (kIsWeb) {
-      // Web: file_saver triggers browser download directly
       await FileSaver.instance.saveFile(
         name: fileName.replaceAll('.xlsx', ''),
         bytes: Uint8List.fromList(bytes),
@@ -750,7 +774,6 @@ class _AdminAttendanceReportScreenState
       );
       _showSnack('Download started: $fileName');
     } else {
-      // Mobile / Desktop: save and open
       final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
@@ -771,7 +794,6 @@ class _AdminAttendanceReportScreenState
     );
   }
 
-  // ── Site filter list ───────────────────────────────────────────────────────
   List<String> get _allSites {
     final sites = <String>{};
     for (final d in _data) for (final v in d.visits) sites.add(v.locationName);
@@ -789,9 +811,6 @@ class _AdminAttendanceReportScreenState
     return matchName && matchSite;
   }).toList();
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // BUILD
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return ScrollConfiguration(
@@ -875,11 +894,6 @@ class _AdminAttendanceReportScreenState
                       size: 20,
                     ),
                   ),
-                  // const Icon(
-                  //   Icons.assessment_outlined,
-                  //   color: Colors.white,
-                  //   size: 22,
-                  // ),
                   const SizedBox(width: 10),
                   const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -930,7 +944,7 @@ class _AdminAttendanceReportScreenState
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB 1 — DAY WISE  (single date, responsive, expand/collapse rows)
+// TAB 1 — DAY WISE
 // ─────────────────────────────────────────────────────────────────────────────
 class _DayWiseTab extends StatelessWidget {
   final DateTime selectedDate;
@@ -983,14 +997,12 @@ class _DayWiseTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Date picker card ────────────────────────────────────────────
               _Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _SectionTitle('Select Date'),
                     const SizedBox(height: 12),
-                    // Date field + quick chips in one row on wide, stacked on narrow
                     isWide
                         ? Row(
                             children: [
@@ -1052,8 +1064,6 @@ class _DayWiseTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // ── Action row ──────────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
@@ -1078,16 +1088,12 @@ class _DayWiseTab extends StatelessWidget {
                   ),
                 ],
               ),
-
               if (error != null) ...[
                 const SizedBox(height: 12),
                 _ErrorCard(error!),
               ],
-
               if (fetched && !loading) ...[
                 const SizedBox(height: 14),
-
-                // ── Stats row ────────────────────────────────────────────────
                 Row(
                   children: [
                     _StatChip(
@@ -1113,8 +1119,6 @@ class _DayWiseTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 14),
-
-                // ── Search & Site filter ─────────────────────────────────────
                 _Card(
                   child: isWide
                       ? Row(
@@ -1157,8 +1161,6 @@ class _DayWiseTab extends StatelessWidget {
                         ),
                 ),
                 const SizedBox(height: 14),
-
-                // ── Employee list ────────────────────────────────────────────
                 _DayWiseList(data: data, isWide: isWide),
               ],
             ],
@@ -1169,7 +1171,6 @@ class _DayWiseTab extends StatelessWidget {
   }
 }
 
-// ── Search field extracted ─────────────────────────────────────────────────
 class _SearchField extends StatelessWidget {
   final String query;
   final ValueChanged<String> onChanged;
@@ -1196,7 +1197,6 @@ class _SearchField extends StatelessWidget {
   );
 }
 
-// ── Expand/collapse employee list ──────────────────────────────────────────
 class _DayWiseList extends StatelessWidget {
   final List<_EmpDay> data;
   final bool isWide;
@@ -1227,7 +1227,6 @@ class _DayWiseList extends StatelessWidget {
         ),
       );
     }
-
     return Column(
       children: [
         for (final emp in data) ...[
@@ -1239,7 +1238,6 @@ class _DayWiseList extends StatelessWidget {
   }
 }
 
-// ── Single employee expand/collapse card ──────────────────────────────────
 class _EmpExpandCard extends StatefulWidget {
   final _EmpDay emp;
   final bool isWide;
@@ -1297,7 +1295,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
       ),
       child: Column(
         children: [
-          // ── Header row ──────────────────────────────────────────────────────
           InkWell(
             onTap: _toggle,
             borderRadius: BorderRadius.circular(12),
@@ -1305,7 +1302,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  // Avatar
                   Container(
                     width: 38,
                     height: 38,
@@ -1332,7 +1328,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Name + ID
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1354,7 +1349,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Total hours badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -1375,7 +1369,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // Chevron
                   RotationTransition(
                     turns: _rotate,
                     child: const Icon(
@@ -1388,8 +1381,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
               ),
             ),
           ),
-
-          // ── Expanded detail ─────────────────────────────────────────────────
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOut,
@@ -1397,7 +1388,6 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                 ? Column(
                     children: [
                       Divider(height: 1, color: _border),
-                      // Table header
                       Container(
                         color: const Color(0xFFF1F5FF),
                         padding: const EdgeInsets.symmetric(
@@ -1408,14 +1398,12 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                             ? _VisitTableHeaderWide()
                             : _VisitTableHeaderNarrow(),
                       ),
-                      // Visit rows
                       for (int i = 0; i < emp.visits.length; i++)
-                        _VisitRow(
+                        _VisitRowWidget(
                           visit: emp.visits[i],
                           isEven: i.isEven,
                           isWide: widget.isWide,
                         ),
-                      // Total row (if multiple visits)
                       if (emp.visits.length > 1)
                         Container(
                           color: const Color(0xFFECFDF5),
@@ -1486,42 +1474,52 @@ class _VisitTableHeaderWide extends StatelessWidget {
 class _VisitTableHeaderNarrow extends StatelessWidget {
   const _VisitTableHeaderNarrow();
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: const [
-      Text(
-        'Visit Details',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: _textMid,
-        ),
-      ),
-    ],
+  Widget build(BuildContext context) => const Text(
+    'Visit Details',
+    style: TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.w700,
+      color: _textMid,
+    ),
   );
 }
 
-class _VisitRow extends StatelessWidget {
+class _VisitRowWidget extends StatelessWidget {
   final _Visit visit;
   final bool isEven, isWide;
-
-  const _VisitRow({
+  const _VisitRowWidget({
     required this.visit,
     required this.isEven,
     required this.isWide,
   });
 
+  Widget _timeCell(String t, IconData icon, Color color) => Row(
+    children: [
+      Icon(icon, size: 12, color: color),
+      const SizedBox(width: 4),
+      Flexible(
+        child: Text(
+          t,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final bg = isEven ? Colors.white : const Color(0xFFF8FAFF);
-
     if (isWide) {
       return Container(
         color: bg,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
-            /// Location
             Expanded(
               flex: 3,
               child: Row(
@@ -1546,8 +1544,6 @@ class _VisitRow extends StatelessWidget {
                 ],
               ),
             ),
-
-            /// In Time
             Expanded(
               flex: 2,
               child: _timeCell(
@@ -1556,8 +1552,6 @@ class _VisitRow extends StatelessWidget {
                 const Color(0xFF16A34A),
               ),
             ),
-
-            /// Out Time
             Expanded(
               flex: 2,
               child: _timeCell(
@@ -1566,8 +1560,6 @@ class _VisitRow extends StatelessWidget {
                 const Color(0xFFDC2626),
               ),
             ),
-
-            /// Work Time
             Expanded(
               flex: 2,
               child: Center(
@@ -1594,107 +1586,73 @@ class _VisitRow extends StatelessWidget {
           ],
         ),
       );
-    } else {
-      /// Mobile / Narrow layout
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// Location + Worked time
-            Row(
-              children: [
-                const Icon(
-                  Icons.location_on_rounded,
-                  size: 13,
-                  color: _textMid,
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    visit.locationName,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _textDark,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _primary.withOpacity(0.07),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    visit.workedFormatted,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 6),
-
-            /// In / Out time row
-            Row(
-              children: [
-                Expanded(
-                  child: _timeCell(
-                    visit.inFmt,
-                    Icons.login_rounded,
-                    const Color(0xFF16A34A),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _timeCell(
-                    visit.outFmt,
-                    Icons.logout_rounded,
-                    const Color(0xFFDC2626),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
     }
-  }
-
-  Widget _timeCell(String t, IconData icon, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            t,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-            overflow: TextOverflow.ellipsis,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_on_rounded, size: 13, color: _textMid),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  visit.locationName,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _primary.withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  visit.workedFormatted,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _primary,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _timeCell(
+                  visit.inFmt,
+                  Icons.login_rounded,
+                  const Color(0xFF16A34A),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _timeCell(
+                  visit.outFmt,
+                  Icons.logout_rounded,
+                  const Color(0xFFDC2626),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1744,7 +1702,6 @@ class _MonthlyTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Date range card
               _Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1809,8 +1766,6 @@ class _MonthlyTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // Action row
               Row(
                 children: [
                   Expanded(
@@ -1835,15 +1790,12 @@ class _MonthlyTab extends StatelessWidget {
                   ),
                 ],
               ),
-
               if (error != null) ...[
                 const SizedBox(height: 12),
                 _ErrorCard(error!),
               ],
-
               if (fetched && !loading) ...[
                 const SizedBox(height: 14),
-                // Stats
                 Row(
                   children: [
                     _StatChip(
@@ -1881,7 +1833,9 @@ class _MonthlyTab extends StatelessWidget {
   }
 }
 
-// ── Desktop/Web scroll behaviour (enables drag on non-touch devices) ──────
+// ─────────────────────────────────────────────────────────────────────────────
+// MONTHLY PREVIEW  (sticky-left + scrollable date columns) — unchanged
+// ─────────────────────────────────────────────────────────────────────────────
 class _DragScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
@@ -1892,7 +1846,6 @@ class _DragScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
-// ── Monthly preview — sticky-left + scrollable date columns ────────────────
 class _MonthlyPreview extends StatefulWidget {
   final List<_EmpDay> data;
   final DateTime from, to;
@@ -1917,7 +1870,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-
   String _dk(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -1928,10 +1880,8 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   static const double wId = 72.0;
   static const double wName = 150.0;
   static const double wDay = 32.0;
-  static const double wSummary =
-      76.0; // total working / present / absent / late / lateHrs
+  static const double wSummary = 76.0;
 
-  // ── colour helpers ─────────────────────────────────────────────────────────
   static const Color _hdr1 = Color(0xFF1E3A8A);
   static const Color _hdr2 = Color(0xFF2563EB);
   static const Color _hdr3 = Color(0xFF1D4ED8);
@@ -1942,7 +1892,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   Widget _vDiv() => Container(width: 1, color: _divCol);
   Widget _hDiv(double w) => Container(height: 1, width: w, color: _divCol);
 
-  // fixed cell (left panel)
   Widget _fixCell(
     String t,
     double w,
@@ -1974,7 +1923,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
     ),
   );
 
-  // scrollable cell
   Widget _scrollCell(
     String t,
     double w,
@@ -2027,12 +1975,10 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
       );
     }
 
-    // Build date list
     final List<DateTime> dates = [];
     for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1)))
       dates.add(d);
 
-    // Build lookup: empId → dateKey → visits
     final Map<int, String> empNames = {};
     final Map<int, Map<String, List<_Visit>>> empDateV = {};
     for (final day in data) {
@@ -2042,8 +1988,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
     }
     final sortedEmpIds = empNames.keys.toList()..sort();
 
-    // Pre-compute per-employee stats
-    // _EmpStat: dayStatuses, totalWorkDays, present, absent, lateDays, lateMins
     final empStats = <int, _EmpStat>{};
     for (final empId in sortedEmpIds) {
       final dateMap = empDateV[empId] ?? {};
@@ -2053,7 +1997,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
         final visits = dateMap[_dk(d)];
         if (visits != null && visits.isNotEmpty) {
           present++;
-          // "Late" = first check-in after 09:00
           final firstIn = visits
               .where((v) => v.inTime != null)
               .map((v) => v.inTime!)
@@ -2066,10 +2009,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
           if (firstIn != null &&
               firstIn.isAfter(threshold) &&
               firstIn.isBefore(noon)) {
-            lateDays++;
-            lateMins += firstIn.difference(threshold).inMinutes;
-          }
-          if (firstIn != null && firstIn.isAfter(threshold)) {
             lateDays++;
             lateMins += firstIn.difference(threshold).inMinutes;
           }
@@ -2092,390 +2031,304 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
       );
     }
 
-    // Scrollable right-panel width
-    final double scrollW =
-        dates.length * wDay +
-        1 // divider
-        +
-        6 * wSummary +
-        5; // 6 summary cols + 5 dividers
+    final double scrollW = dates.length * wDay + 1 + 6 * wSummary + 5;
 
-    // ── Fixed left panel ────────────────────────────────────────────────────
-    Widget leftPanel() {
-      return Container(
-        decoration: const BoxDecoration(
-          border: Border(right: BorderSide(color: _divCol, width: 2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // HDR1
-            Row(
-              children: [
-                _fixCell('S.No', wSno, _hdrH1, bg: _hdr1, isHeader: true),
-                _vDiv(),
-                _fixCell('Emp ID', wId, _hdrH1, bg: _hdr1, isHeader: true),
-                _vDiv(),
-                _fixCell('Name', wName, _hdrH1, bg: _hdr1, isHeader: true),
-              ],
-            ),
-            _hDiv(wSno + 1 + wId + 1 + wName),
-            // HDR2 (blank, same height for alignment)
-            Row(
-              children: [
-                _fixCell('', wSno, _hdrH2, bg: _hdr2),
-                _vDiv(),
-                _fixCell('', wId, _hdrH2, bg: _hdr2),
-                _vDiv(),
-                _fixCell('', wName, _hdrH2, bg: _hdr2),
-              ],
-            ),
-            _hDiv(wSno + 1 + wId + 1 + wName),
-            // Data rows
-            for (int idx = 0; idx < sortedEmpIds.length; idx++) ...[
-              Builder(
-                builder: (_) {
-                  final empId = sortedEmpIds[idx];
-                  final name = empNames[empId] ?? '';
-                  final rowBg = idx.isEven
-                      ? Colors.white
-                      : const Color(0xFFF8FAFF);
-                  return Row(
-                    children: [
-                      _fixCell(
-                        '${idx + 1}',
-                        wSno,
-                        _rowH,
-                        bg: rowBg,
-                        style: const TextStyle(fontSize: 10, color: _textMid),
-                      ),
-                      _vDiv(),
-                      _fixCell(
-                        empId.toString(),
-                        wId,
-                        _rowH,
-                        bg: rowBg,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _primary,
-                        ),
-                      ),
-                      _vDiv(),
-                      _fixCell(
-                        name,
-                        wName,
-                        _rowH,
-                        bg: rowBg,
-                        center: false,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _textDark,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              _hDiv(wSno + 1 + wId + 1 + wName),
+    Widget leftPanel() => Container(
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: _divCol, width: 2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _fixCell('S.No', wSno, _hdrH1, bg: _hdr1, isHeader: true),
+              _vDiv(),
+              _fixCell('Emp ID', wId, _hdrH1, bg: _hdr1, isHeader: true),
+              _vDiv(),
+              _fixCell('Name', wName, _hdrH1, bg: _hdr1, isHeader: true),
             ],
-          ],
-        ),
-      );
-    }
-
-    // ── Scrollable right panel ──────────────────────────────────────────────
-    Widget rightPanel() {
-      return ScrollConfiguration(
-        behavior: _DragScrollBehavior(),
-        child: Scrollbar(
-          controller: _hScroll,
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            controller: _hScroll,
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // HDR1: date span + summary span
-                Row(
+          ),
+          _hDiv(wSno + 1 + wId + 1 + wName),
+          Row(
+            children: [
+              _fixCell('', wSno, _hdrH2, bg: _hdr2),
+              _vDiv(),
+              _fixCell('', wId, _hdrH2, bg: _hdr2),
+              _vDiv(),
+              _fixCell('', wName, _hdrH2, bg: _hdr2),
+            ],
+          ),
+          _hDiv(wSno + 1 + wId + 1 + wName),
+          for (int idx = 0; idx < sortedEmpIds.length; idx++) ...[
+            Builder(
+              builder: (_) {
+                final empId = sortedEmpIds[idx];
+                final name = empNames[empId] ?? '';
+                final rowBg = idx.isEven
+                    ? Colors.white
+                    : const Color(0xFFF8FAFF);
+                return Row(
                   children: [
-                    Container(
-                      width: dates.length * wDay,
-                      height: _hdrH1,
-                      color: _hdr1,
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${_fmtDate(from)}  –  ${_fmtDate(to)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        textAlign: TextAlign.center,
+                    _fixCell(
+                      '${idx + 1}',
+                      wSno,
+                      _rowH,
+                      bg: rowBg,
+                      style: const TextStyle(fontSize: 10, color: _textMid),
+                    ),
+                    _vDiv(),
+                    _fixCell(
+                      empId.toString(),
+                      wId,
+                      _rowH,
+                      bg: rowBg,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: _primary,
                       ),
                     ),
                     _vDiv(),
-                    Container(
-                      width: 6 * wSummary + 5,
-                      height: _hdrH1,
-                      color: _hdr3,
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'Summary',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    _fixCell(
+                      name,
+                      wName,
+                      _rowH,
+                      bg: rowBg,
+                      center: false,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: _textDark,
                       ),
                     ),
                   ],
-                ),
-                _hDiv(scrollW),
-
-                // HDR2: day numbers + summary col headers
-                Row(
-                  children: [
-                    for (int i = 0; i < dates.length; i++)
-                      _scrollCell(
-                        '${dates[i].day}',
-                        wDay,
-                        _hdrH2,
-                        bg: _hdr2,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Total\nDays',
-                      wSummary,
-                      _hdrH2,
-                      bg: _hdr3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Present\nDays',
-                      wSummary,
-                      _hdrH2,
-                      bg: _hdr3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Absent\nDays',
-                      wSummary,
-                      _hdrH2,
-                      bg: _hdr3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Late\nDays',
-                      wSummary,
-                      _hdrH2,
-                      bg: _hdr3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Late\nHrs',
-                      wSummary,
-                      _hdrH2,
-                      bg: _hdr3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    _vDiv(),
-                    _scrollCell(
-                      'Total\nWork\nHrs',
-                      wSummary,
-                      _hdrH2,
-                      bg: const Color(0xFF065F46),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                _hDiv(scrollW),
-
-                // Data rows
-                for (int idx = 0; idx < sortedEmpIds.length; idx++) ...[
-                  Builder(
-                    builder: (_) {
-                      final empId = sortedEmpIds[idx];
-                      final stat = empStats[empId]!;
-                      final rowBg = idx.isEven
-                          ? Colors.white
-                          : const Color(0xFFF8FAFF);
-
-                      final lateH = stat.lateMins ~/ 60;
-                      final lateM = stat.lateMins % 60;
-                      final lateStr = stat.lateMins == 0
-                          ? '0h'
-                          : '${lateH}h ${lateM.toString().padLeft(2, '0')}m';
-
-                      return Row(
-                        children: [
-                          // Day cells
-                          for (int di = 0; di < dates.length; di++) ...[
-                            _scrollCell(
-                              stat.statuses[di],
-                              wDay,
-                              _rowH,
-                              bg: stat.statuses[di] == 'A'
-                                  ? _absentBg
-                                  : (stat.statuses[di] == 'P'
-                                        ? _presentBg
-                                        : rowBg),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: stat.statuses[di] == 'A'
-                                    ? const Color(0xFFDC2626)
-                                    : const Color(0xFF16A34A),
-                              ),
-                            ),
-                          ],
-                          _vDiv(),
-                          // ── Summary cols ─────────────────────────────────────────────
-                          // Col 1: Total Days in range (same for all, calendar days)
-                          _scrollCell(
-                            dates.length.toString(),
-                            wSummary,
-                            _rowH,
-                            bg: rowBg,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: _textDark,
-                            ),
-                          ),
-                          _vDiv(),
-                          // Col 2: Present Days
-                          _scrollCell(
-                            stat.present.toString(),
-                            wSummary,
-                            _rowH,
-                            bg: stat.present > 0
-                                ? const Color(0xFFECFDF5)
-                                : rowBg,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: stat.present > 0
-                                  ? const Color(0xFF16A34A)
-                                  : _textMid,
-                            ),
-                          ),
-                          _vDiv(),
-                          // Col 3: Absent Days
-                          _scrollCell(
-                            stat.absent.toString(),
-                            wSummary,
-                            _rowH,
-                            bg: stat.absent > 0
-                                ? const Color(0xFFFEF2F2)
-                                : rowBg,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: stat.absent > 0
-                                  ? const Color(0xFFDC2626)
-                                  : _textMid,
-                            ),
-                          ),
-                          _vDiv(),
-                          // Col 4: Late Days
-                          _scrollCell(
-                            stat.lateDays.toString(),
-                            wSummary,
-                            _rowH,
-                            bg: stat.lateDays > 0
-                                ? const Color(0xFFFFFBEB)
-                                : rowBg,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: stat.lateDays > 0
-                                  ? const Color(0xFFD97706)
-                                  : _textMid,
-                            ),
-                          ),
-                          _vDiv(),
-                          // Col 5: Late Hrs
-                          _scrollCell(
-                            lateStr,
-                            wSummary,
-                            _rowH,
-                            bg: stat.lateMins > 0
-                                ? const Color(0xFFFFFBEB)
-                                : rowBg,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: stat.lateMins > 0
-                                  ? const Color(0xFFD97706)
-                                  : _textMid,
-                            ),
-                          ),
-                          _vDiv(),
-                          // Col 6: Total Working Hrs
-                          _scrollCell(
-                            _minsToWorkedStr(stat.totalWorkedMins),
-                            wSummary,
-                            _rowH,
-                            bg: const Color(0xFFECFDF5),
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF065F46),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  _hDiv(scrollW),
-                ],
-              ],
+                );
+              },
             ),
-          ), // SingleChildScrollView
-        ), // Scrollbar
-      ); // ScrollConfiguration
-    }
+            _hDiv(wSno + 1 + wId + 1 + wName),
+          ],
+        ],
+      ),
+    );
+
+    Widget rightPanel() => ScrollConfiguration(
+      behavior: _DragScrollBehavior(),
+      child: Scrollbar(
+        controller: _hScroll,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _hScroll,
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: dates.length * wDay,
+                    height: _hdrH1,
+                    color: _hdr1,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${_fmtDate(from)}  –  ${_fmtDate(to)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  _vDiv(),
+                  Container(
+                    width: 6 * wSummary + 5,
+                    height: _hdrH1,
+                    color: _hdr3,
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'Summary',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              _hDiv(scrollW),
+              Row(
+                children: [
+                  for (int i = 0; i < dates.length; i++)
+                    _scrollCell(
+                      '${dates[i].day}',
+                      wDay,
+                      _hdrH2,
+                      bg: _hdr2,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  _vDiv(),
+                  for (final (label, bg) in [
+                    ('Total\nDays', _hdr3),
+                    ('Present\nDays', _hdr3),
+                    ('Absent\nDays', _hdr3),
+                    ('Late\nDays', _hdr3),
+                    ('Late\nHrs', _hdr3),
+                    ('Total\nWork\nHrs', const Color(0xFF065F46)),
+                  ]) ...[
+                    _scrollCell(
+                      label,
+                      wSummary,
+                      _hdrH2,
+                      bg: bg,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (label != 'Total\nWork\nHrs') _vDiv(),
+                  ],
+                ],
+              ),
+              _hDiv(scrollW),
+              for (int idx = 0; idx < sortedEmpIds.length; idx++) ...[
+                Builder(
+                  builder: (_) {
+                    final empId = sortedEmpIds[idx];
+                    final stat = empStats[empId]!;
+                    final rowBg = idx.isEven
+                        ? Colors.white
+                        : const Color(0xFFF8FAFF);
+                    final lateH = stat.lateMins ~/ 60;
+                    final lateM = stat.lateMins % 60;
+                    final lateStr = stat.lateMins == 0
+                        ? '0h'
+                        : '${lateH}h ${lateM.toString().padLeft(2, '0')}m';
+                    return Row(
+                      children: [
+                        for (int di = 0; di < dates.length; di++)
+                          _scrollCell(
+                            stat.statuses[di],
+                            wDay,
+                            _rowH,
+                            bg: stat.statuses[di] == 'A'
+                                ? _absentBg
+                                : _presentBg,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: stat.statuses[di] == 'A'
+                                  ? const Color(0xFFDC2626)
+                                  : const Color(0xFF16A34A),
+                            ),
+                          ),
+                        _vDiv(),
+                        _scrollCell(
+                          dates.length.toString(),
+                          wSummary,
+                          _rowH,
+                          bg: rowBg,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: _textDark,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
+                          stat.present.toString(),
+                          wSummary,
+                          _rowH,
+                          bg: stat.present > 0
+                              ? const Color(0xFFECFDF5)
+                              : rowBg,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: stat.present > 0
+                                ? const Color(0xFF16A34A)
+                                : _textMid,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
+                          stat.absent.toString(),
+                          wSummary,
+                          _rowH,
+                          bg: stat.absent > 0 ? const Color(0xFFFEF2F2) : rowBg,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: stat.absent > 0
+                                ? const Color(0xFFDC2626)
+                                : _textMid,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
+                          stat.lateDays.toString(),
+                          wSummary,
+                          _rowH,
+                          bg: stat.lateDays > 0
+                              ? const Color(0xFFFFFBEB)
+                              : rowBg,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: stat.lateDays > 0
+                                ? const Color(0xFFD97706)
+                                : _textMid,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
+                          lateStr,
+                          wSummary,
+                          _rowH,
+                          bg: stat.lateMins > 0
+                              ? const Color(0xFFFFFBEB)
+                              : rowBg,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: stat.lateMins > 0
+                                ? const Color(0xFFD97706)
+                                : _textMid,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
+                          _minsToWorkedStr(stat.totalWorkedMins),
+                          wSummary,
+                          _rowH,
+                          bg: const Color(0xFFECFDF5),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF065F46),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                _hDiv(scrollW),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Title
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -2500,7 +2353,6 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
             ],
           ),
         ),
-        // Table: sticky left + scrollable right
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: _divCol),
@@ -2522,9 +2374,8 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   }
 }
 
-// ── Simple stats holder ────────────────────────────────────────────────────
 class _EmpStat {
-  final List<String> statuses; // 'P' / 'A' per date index
+  final List<String> statuses;
   final int present, absent, lateDays, lateMins, totalWorkedMins;
   const _EmpStat({
     required this.statuses,
@@ -2542,98 +2393,12 @@ String _minsToWorkedStr(int mins) {
   return '${h}h ${m.toString().padLeft(2, '0')}m';
 }
 
-// keep old class stub so nothing else breaks – replaced by _MonthlyPreview above
-class _MonthlyEmpCard extends StatelessWidget {
-  final int empId, totalMins;
-  final String empName;
-  final Map<String, int> siteMins;
-  final String Function(int) minsToHrs;
-
-  const _MonthlyEmpCard({
-    required this.empId,
-    required this.empName,
-    required this.siteMins,
-    required this.totalMins,
-    required this.minsToHrs,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final sortedSites = siteMins.keys.toList()..sort();
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: _primary.withValues(alpha: 0.06),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(10),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    empName,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: _textDark,
-                    ),
-                  ),
-                ),
-                Text(
-                  minsToHrs(totalMins),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          for (final site in sortedSites)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      site,
-                      style: const TextStyle(fontSize: 11, color: _textDark),
-                    ),
-                  ),
-                  Text(
-                    minsToHrs(siteMins[site]!),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: _primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED SMALL WIDGETS
 // ─────────────────────────────────────────────────────────────────────────────
 class _Card extends StatelessWidget {
   final Widget child;
   const _Card({required this.child});
-
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
@@ -2643,7 +2408,7 @@ class _Card extends StatelessWidget {
       border: Border.all(color: _border),
       boxShadow: [
         BoxShadow(
-          color: Colors.black..withOpacity(0.04),
+          color: Colors.black.withOpacity(0.04),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
@@ -2656,7 +2421,6 @@ class _Card extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String text;
   const _SectionTitle(this.text);
-
   @override
   Widget build(BuildContext context) => Text(
     text,
@@ -2674,7 +2438,6 @@ class _DatePickerField extends StatelessWidget {
   final String Function(DateTime) fmt;
   final VoidCallback onTap;
   const _DatePickerField(this.label, this.date, this.fmt, this.onTap);
-
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
@@ -2717,7 +2480,6 @@ class _DropdownField extends StatelessWidget {
   final List<String> items;
   final ValueChanged<String?> onChanged;
   final IconData icon;
-
   const _DropdownField({
     required this.label,
     required this.value,
@@ -2725,7 +2487,6 @@ class _DropdownField extends StatelessWidget {
     required this.onChanged,
     required this.icon,
   });
-
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -2764,7 +2525,6 @@ class _QuickChip extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   const _QuickChip(this.label, this.onTap);
-
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
@@ -2793,7 +2553,6 @@ class _Button extends StatelessWidget {
   final Color color;
   final bool loading, enabled;
   final VoidCallback onTap;
-
   const _Button({
     required this.label,
     required this.icon,
@@ -2802,7 +2561,6 @@ class _Button extends StatelessWidget {
     required this.onTap,
     this.enabled = true,
   });
-
   @override
   Widget build(BuildContext context) {
     final active = enabled && !loading;
@@ -2859,14 +2617,12 @@ class _StatChip extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final Color color;
-
   const _StatChip({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
   });
-
   @override
   Widget build(BuildContext context) => Expanded(
     child: Container(
@@ -2923,7 +2679,6 @@ class _StatChip extends StatelessWidget {
 class _Badge extends StatelessWidget {
   final String text;
   const _Badge(this.text);
-
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -2945,7 +2700,6 @@ class _Badge extends StatelessWidget {
 class _ErrorCard extends StatelessWidget {
   final String message;
   const _ErrorCard(this.message);
-
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(14),

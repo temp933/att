@@ -1,3 +1,4 @@
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/attendance_state.dart';
 import '../services/site_cache.dart';
@@ -85,7 +86,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     'Attendance',
     'Leave Management',
     // 'My Tasks',
-    'Work Location',
+    'Site',
     // 'Travel / Onsite',
     // 'Expenses',
     // 'Reports',
@@ -118,7 +119,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     NavigationRailDestination(
       icon: Icon(Icons.place_outlined),
       selectedIcon: Icon(Icons.place),
-      label: Text('Work Location'),
+      label: Text('Site'),
     ),
     // NavigationRailDestination(
     //   icon: Icon(Icons.directions_car_outlined),
@@ -563,25 +564,35 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> _logout() async {
-    // 1. Stop site cache auto-sync timer
+    // 1. End active tracking session on server (closes open site visits too)
+    try {
+      final state = AttendanceState.instance;
+      if (state.dayStatus == DayStatus.inProgress) {
+        await ApiService.endSession(
+          widget.empId,
+          state.currentSessionId, // ← correct field name
+          reason: 'logout',
+        );
+      }
+    } catch (_) {
+      // best-effort — don't block logout on API failure
+    }
+
+    // 2. forceStop handles: background service, SharedPrefs,
+    //    and all AttendanceState fields in one call
+    try {
+      await AttendanceState.instance.forceStop();
+    } catch (_) {}
+
+    // 3. Stop site cache auto-sync timer
     try {
       SiteCache.dispose();
     } catch (_) {}
 
-    // 2. Reset AttendanceState singleton in memory
-    try {
-      final state = AttendanceState.instance;
-      state.dayStatus = DayStatus.notStarted;
-      state.startTime = null;
-      state.endTime = null;
-      state.isInsideSite = false;
-      state.currentSiteName = '';
-    } catch (_) {}
-
-    // 3. Call server logout + clear SharedPreferences
+    // 4. Call server logout + clear SharedPreferences
     await AuthService.clearSession();
 
-    // 4. Navigate to login
+    // 5. Navigate to login
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -589,4 +600,30 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     }
   }
+  // Future<void> _logout() async {
+  //   // 1. Stop site cache auto-sync timer
+  //   try {
+  //     SiteCache.dispose();
+  //   } catch (_) {}
+
+  //   // 2. Reset AttendanceState singleton in memory
+  //   try {
+  //     final state = AttendanceState.instance;
+  //     state.dayStatus = DayStatus.notStarted;
+
+  //     state.isInsideSite = false;
+  //     state.currentSiteName = '';
+  //   } catch (_) {}
+
+  //   // 3. Call server logout + clear SharedPreferences
+  //   await AuthService.clearSession();
+
+  //   // 4. Navigate to login
+  //   if (mounted) {
+  //     Navigator.of(context).pushAndRemoveUntil(
+  //       MaterialPageRoute(builder: (_) => const LoginScreen()),
+  //       (route) => false,
+  //     );
+  //   }
+  // }
 }

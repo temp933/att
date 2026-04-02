@@ -67,6 +67,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     super.dispose();
   }
 
+  // ── Init ──────────────────────────────────────────────────────────────────
+
   Future<void> _init() async {
     setState(() => _isLoading = true);
     await _state.checkStatus(widget.employeeId);
@@ -74,9 +76,11 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       _attachListeners();
       _startTimers();
     }
-    _fetchLogs();
+    await _fetchLogs();
     if (mounted) setState(() => _isLoading = false);
   }
+
+  // ── Timers ────────────────────────────────────────────────────────────────
 
   void _startTimers() {
     _statusTimer?.cancel();
@@ -84,7 +88,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       if (!mounted) return;
       await _state.checkStatus(widget.employeeId);
       if (mounted) setState(() {});
-      if (_state.dayStatus == DayStatus.completed) _stopTimers();
     });
     _logsTimer?.cancel();
     _logsTimer = Timer.periodic(
@@ -92,8 +95,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       (_) => _fetchLogs(),
     );
     _clockTimer?.cancel();
-    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {}); // refresh session duration display
     });
   }
 
@@ -105,6 +108,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     _clockTimer?.cancel();
     _clockTimer = null;
   }
+
+  // ── Stream listeners ─────────────────────────────────────────────────────
 
   void _attachListeners() {
     if (_listenersAttached) return;
@@ -157,26 +162,29 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     _errorSub = errorStream.listen((e) {
       if (!mounted || e == null) return;
       final reason = e['reason'] as String? ?? 'unknown';
-      final String msg;
-      switch (reason) {
-        case 'no_background_location':
-          msg = 'Background location permission required. Enable in Settings.';
-          break;
-        case 'location_permission_denied':
-          msg = 'Location permission denied. Tracking cannot work without it.';
-          break;
-        case 'gps_error':
-          msg = 'GPS error: ${e['detail'] ?? 'unknown'}';
-          break;
-        case 'gps_stream_closed':
-          msg = 'GPS stopped unexpectedly. Please restart the app.';
-          break;
-        default:
-          msg = 'Tracking error: $reason';
-      }
+      final msg = switch (reason) {
+        'no_background_location' =>
+          'Background location permission required. Enable in Settings.',
+        'location_permission_denied' => 'Location permission denied.',
+        'gps_error' => 'GPS error: ${e['detail'] ?? 'unknown'}',
+        'gps_stream_closed' => 'GPS stopped unexpectedly. Restart the app.',
+        _ => 'Tracking error: $reason',
+      };
       _showSnack(msg, isError: true);
     });
   }
+
+  void _detachListeners() {
+    _statusSub?.cancel();
+    _statusSub = null;
+    _locationSub?.cancel();
+    _locationSub = null;
+    _errorSub?.cancel();
+    _errorSub = null;
+    _listenersAttached = false;
+  }
+
+  // ── Fetch logs ────────────────────────────────────────────────────────────
 
   Future<void> _fetchLogs() async {
     try {
@@ -185,43 +193,43 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     } catch (_) {}
   }
 
+  // ── START ─────────────────────────────────────────────────────────────────
+
   Future<void> _startWork() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
     await _state.checkStatus(widget.employeeId);
 
-    if (_state.dayStatus == DayStatus.completed) {
-      if (mounted) setState(() => _isLoading = false);
-      _showSnack('Your work day is already complete for today.');
-      return;
-    }
-
     if (_state.dayStatus == DayStatus.inProgress) {
-      if (mounted) setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
       _showSnack('Tracking is already active.');
       if (!_listenersAttached) {
         _attachListeners();
         _startTimers();
-        if (mounted) setState(() {});
+        setState(() {});
       }
       return;
     }
 
+    // ── Permission flow ───────────────────────────────────────────────────
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
       if (!await Permission.locationWhenInUse.isGranted) {
         final s = await Permission.locationWhenInUse.request();
         if (!s.isGranted) {
-          if (mounted) setState(() => _isLoading = false);
-          _showSnack('Location permission is required to track attendance.');
+          setState(() => _isLoading = false);
+          _showSnack('Location permission is required.');
           return;
         }
       }
 
       if (!await Permission.locationAlways.isGranted) {
         if (!mounted) return;
+        final label = defaultTargetPlatform == TargetPlatform.iOS
+            ? "'Always'"
+            : "'Allow all the time'";
         final proceed = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -236,10 +244,10 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 Text('Background Location Required'),
               ],
             ),
-            content: const Text(
-              "This app needs 'Allow all the time' location permission to "
-              "track your attendance when the app is in the background.\n\n"
-              "Please select 'Allow all the time' on the next screen.",
+            content: Text(
+              'This app needs $label location permission to track '
+              'attendance when the app is in the background.\n\n'
+              'Please select $label on the next screen.',
             ),
             actions: [
               TextButton(
@@ -254,35 +262,88 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
         );
         if (proceed != true) {
-          if (mounted) setState(() => _isLoading = false);
+          setState(() => _isLoading = false);
           return;
         }
         final bgStatus = await Permission.locationAlways.request();
         if (!bgStatus.isGranted) {
-          if (mounted) setState(() => _isLoading = false);
-          _showSnack(
-            'Background location denied. Tracking cannot work without it.',
-          );
+          setState(() => _isLoading = false);
+          _showSnack('Background location denied. Tracking requires it.');
           return;
         }
       }
     }
 
+    // ── Start ─────────────────────────────────────────────────────────────
     try {
       await _state.start(widget.employeeId);
-      await startBackgroundTracking(widget.employeeId);
+      await startBackgroundTracking(
+        widget.employeeId,
+        sessionId: _state.currentSessionId,
+      );
       _attachListeners();
       _startTimers();
-      if (mounted) setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
       _showSnack('Failed to start tracking: $e', isError: true);
     }
   }
 
+  // ── END ───────────────────────────────────────────────────────────────────
+
   Future<void> _endWork() async {
     if (_state.dayStatus != DayStatus.inProgress || _isLoading) return;
 
+    // ── Step 1: Are you still on site? ───────────────────────────────────
+    bool? stillOnSite;
+
+    if (_state.isInsideSite) {
+      stillOnSite = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.location_on_rounded, color: Colors.green.shade700),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Still on site?', style: TextStyle(fontSize: 17)),
+              ),
+            ],
+          ),
+          content: Text(
+            'You are currently at ${_state.currentSiteName}.\n\n'
+            'Are you still physically at this location?',
+          ),
+          actions: [
+            // "No — I've left"
+            OutlinedButton.icon(
+              icon: const Icon(Icons.directions_walk_rounded, size: 16),
+              label: const Text("No, I've left"),
+              onPressed: () => Navigator.pop(ctx, false),
+            ),
+            // "Yes — still here"
+            ElevatedButton.icon(
+              icon: const Icon(Icons.home_work_rounded, size: 16),
+              label: const Text('Yes, still here'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      );
+      if (stillOnSite == null) return; // dialog dismissed
+    } else {
+      stillOnSite = false; // not on site — no need to ask
+    }
+
+    // ── Step 2: Confirm end session ───────────────────────────────────────
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -290,14 +351,19 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.stop_circle_outlined, color: Colors.red),
+            Icon(Icons.pause_circle_rounded, color: Colors.orange),
             SizedBox(width: 8),
-            Text('End Work Day?'),
+            Text('End Session?'),
           ],
         ),
-        content: const Text(
-          'This stops location tracking for today.\n\n'
-          'You cannot start again until tomorrow.',
+        content: Text(
+          stillOnSite == true
+              ? 'GPS tracking will stop.\n\n'
+                    'Your site visit will continue being recorded '
+                    'until you start a new session.'
+              : 'GPS tracking will stop and your site visit '
+                    'will be marked complete.\n\n'
+                    'You can start a new session anytime.',
         ),
         actions: [
           TextButton(
@@ -305,9 +371,14 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+            ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('End Day', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'End Session',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -316,17 +387,15 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
     setState(() => _isLoading = true);
 
-    final serviceConfirmed = await sendEndDay();
+    final ok = await sendEndSession(stillOnSite: stillOnSite!);
 
-    if (!serviceConfirmed) {
+    if (!ok) {
+      // Service timed out — verify with server
       try {
         final data = await ApiService.getTodayStatus(widget.employeeId);
-        if ((data['status'] as String?) != 'completed') {
-          if (mounted) setState(() => _isLoading = false);
-          _showSnack(
-            'Could not confirm end of day. Please try again.',
-            isError: true,
-          );
+        if ((data['status'] as String?) == 'in_progress') {
+          setState(() => _isLoading = false);
+          _showSnack('Could not end session. Please try again.', isError: true);
           return;
         }
       } catch (_) {}
@@ -334,11 +403,16 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
     await _state.end();
     _stopTimers();
-    if (mounted) setState(() => _isLoading = false);
+    _detachListeners();
+    _position = null;
+    _accuracy = null;
+    _goodAccuracy = true;
+
+    setState(() => _isLoading = false);
     _fetchLogs();
   }
 
-  // ── HELPERS ───────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
@@ -394,20 +468,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   }
 
   _StatusConfig get _statusConfig {
+    final hasPrior = _state.hasActivityToday || _logs.isNotEmpty;
     switch (_state.dayStatus) {
-      case DayStatus.completed:
-        return _StatusConfig(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF00897B), Color(0xFF26A69A)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          icon: Icons.check_circle_rounded,
-          label: 'Work Day Complete',
-          sublabel: 'Total on-site: $_totalWorkedLabel   👋 See you tomorrow!',
-          dotColor: const Color(0xFF80CBC4),
-          showPulse: false,
-        );
       case DayStatus.inProgress:
         if (_state.isInsideSite) {
           return _StatusConfig(
@@ -431,11 +493,26 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
           icon: Icons.radar_rounded,
           label: 'Tracking Active',
-          sublabel: 'Outside registered sites',
+          sublabel: 'Moving between sites',
           dotColor: const Color(0xFF90CAF9),
           showPulse: true,
         );
       case DayStatus.notStarted:
+        if (hasPrior) {
+          return _StatusConfig(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4527A0), Color(0xFF7B1FA2)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            icon: Icons.play_circle_outline_rounded,
+            label: 'Session Paused',
+            sublabel:
+                'Session ${_state.sessionCountToday} ended · Tap START to resume',
+            dotColor: const Color(0xFFCE93D8),
+            showPulse: false,
+          );
+        }
         return _StatusConfig(
           gradient: const LinearGradient(
             colors: [Color(0xFF455A64), Color(0xFF607D8B)],
@@ -455,95 +532,48 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ── Responsive helpers ──────────────────────────────────────────────────
     final mq = MediaQuery.of(context);
     final sw = mq.size.width;
     final sh = mq.size.height;
-    final isSmall = sw < 360; // very small phones (SE 1st gen)
-    final isCompact = sh < 680; // short screens (landscape / SE)
-    final safeBottom = mq.padding.bottom; // home-bar height (notch phones)
-
+    final isSmall = sw < 360;
+    final isCompact = sh < 680;
+    final safeBot = mq.padding.bottom;
     final isRunning = _state.dayStatus == DayStatus.inProgress;
     final notStarted = _state.dayStatus == DayStatus.notStarted;
 
-    // ── Adaptive sizing ─────────────────────────────────────────────────────
-    final hPad = isSmall ? 12.0 : 16.0; // horizontal screen padding
-    final cardPad = isSmall ? 14.0 : 20.0; // status card inner padding
-    final gap = isCompact ? 10.0 : 16.0; // spacing between sections
-    final btnHeight = isSmall ? 48.0 : 54.0; // START / END button height
-    final btnRadius = isSmall ? 12.0 : 16.0; // button corner radius
-    final btnFontSize = isSmall ? 13.0 : 15.0; // button label size
-    final btnIconSize = isSmall ? 19.0 : 22.0; // button icon size
+    final hPad = isSmall ? 12.0 : 16.0;
+    final cardPad = isSmall ? 14.0 : 20.0;
+    final gap = isCompact ? 10.0 : 16.0;
+    final btnH = isSmall ? 48.0 : 54.0;
+    final btnR = isSmall ? 12.0 : 16.0;
+    final btnFs = isSmall ? 13.0 : 15.0;
+    final btnIs = isSmall ? 19.0 : 22.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
-        // SafeArea handles top notch; we handle bottom manually so the
-        // home-bar gap isn't swallowed by an extra blank area.
         bottom: false,
         child: Padding(
           padding: EdgeInsets.fromLTRB(hPad, hPad, hPad, 0),
           child: Column(
             children: [
-              // ── Status card ───────────────────────────────────────────────
               _buildStatusCard(cardPad: cardPad, isCompact: isCompact),
-
               SizedBox(height: gap),
-
-              // ── Section header ────────────────────────────────────────────
-              Row(
-                children: [
-                  Icon(
-                    Icons.list_alt_rounded,
-                    size: isSmall ? 15 : 17,
-                    color: Colors.indigo,
-                  ),
-                  SizedBox(width: isSmall ? 5 : 7),
-                  Text(
-                    "Today's Site Visits",
-                    style: TextStyle(
-                      fontSize: isSmall ? 12 : 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.grey[800],
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                  const Spacer(),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: _fetchLogs,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.refresh_rounded,
-                        size: 18,
-                        color: Colors.indigo.shade300,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
+              _buildLogHeader(isSmall: isSmall),
               SizedBox(height: isSmall ? 6 : 8),
-
-              // ── Log list (fills remaining space) ──────────────────────────
               Expanded(child: _buildLogList(isRunning, isSmall: isSmall)),
-
-              // ── START / END buttons ───────────────────────────────────────
-              // Uses intrinsic height so it never overflows, even on SE.
               Padding(
                 padding: EdgeInsets.only(
                   top: gap,
-                  // Leave room for home-bar + a little breathing space
-                  bottom: safeBottom + (isSmall ? 8 : 12),
+                  bottom: safeBot + (isSmall ? 8 : 12),
                 ),
                 child: _buildButtons(
                   isRunning: isRunning,
                   notStarted: notStarted,
-                  height: btnHeight,
-                  radius: btnRadius,
-                  fontSize: btnFontSize,
-                  iconSize: btnIconSize,
+                  height: btnH,
+                  radius: btnR,
+                  fontSize: btnFs,
+                  iconSize: btnIs,
                   isSmall: isSmall,
                 ),
               ),
@@ -554,7 +584,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     );
   }
 
-  // ── STATUS CARD ───────────────────────────────────────────────────────────
+  // ── Status card ───────────────────────────────────────────────────────────
 
   Widget _buildStatusCard({required double cardPad, required bool isCompact}) {
     if (_isLoading) {
@@ -595,7 +625,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Top row ──────────────────────────────────────────────────────
+            // Top row
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -623,19 +653,18 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                           color: Colors.white,
                           fontSize: isCompact ? 15 : 17,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: 0.1,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         cfg.sublabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.82),
                           fontSize: isCompact ? 11 : 12.5,
                           fontWeight: FontWeight.w500,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -674,7 +703,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               ],
             ),
 
-            // Hide the divider + bottom row on very short screens to save space
+            // Bottom section
             if (!isCompact) ...[
               const SizedBox(height: 16),
               Container(height: 1, color: Colors.white.withValues(alpha: 0.15)),
@@ -693,7 +722,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   Widget _buildCardBottom({required bool isRunning, required bool isCompact}) {
     return Row(
       children: [
-        if (_state.dayStatus != DayStatus.notStarted) ...[
+        // Total on-site time
+        if (_logs.isNotEmpty) ...[
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -721,7 +751,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       fontSize: isCompact ? 13 : 15,
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.2,
                     ),
                   ),
                   if (_logs.length > 1) ...[
@@ -757,6 +786,46 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
           const SizedBox(width: 16),
         ],
+
+        // Session info
+        if (!isRunning && _state.hasActivityToday) ...[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sessions Today',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Icon(
+                    Icons.repeat_rounded,
+                    size: 14,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${_state.sessionCountToday}',
+                    style: TextStyle(
+                      fontSize: isCompact ? 13 : 15,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const Spacer(),
+        ],
+
+        // GPS signal (while running)
         if (isRunning)
           Expanded(
             child: Column(
@@ -847,7 +916,63 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     );
   }
 
-  // ── LOG LIST ──────────────────────────────────────────────────────────────
+  // ── Log header ────────────────────────────────────────────────────────────
+
+  Widget _buildLogHeader({required bool isSmall}) {
+    return Row(
+      children: [
+        Icon(
+          Icons.list_alt_rounded,
+          size: isSmall ? 15 : 17,
+          color: Colors.indigo,
+        ),
+        SizedBox(width: isSmall ? 5 : 7),
+        Text(
+          "Today's Site Visits",
+          style: TextStyle(
+            fontSize: isSmall ? 12 : 13,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey[800],
+            letterSpacing: 0.2,
+          ),
+        ),
+        if (_state.sessionCountToday > 1) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.indigo.shade200, width: 1),
+            ),
+            child: Text(
+              '${_state.sessionCountToday} sessions',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.indigo.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+        const Spacer(),
+        InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: _fetchLogs,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              Icons.refresh_rounded,
+              size: 18,
+              color: Colors.indigo.shade300,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Log list ──────────────────────────────────────────────────────────────
 
   Widget _buildLogList(bool isRunning, {required bool isSmall}) {
     if (_logs.isEmpty) {
@@ -871,7 +996,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     }
 
     return ListView.separated(
-      // Prevent the list's own bottom padding from hiding behind the buttons
       padding: EdgeInsets.zero,
       itemCount: _logs.length,
       separatorBuilder: (_, _) => SizedBox(height: isSmall ? 6 : 8),
@@ -879,6 +1003,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         final log = _logs[i];
         final isOpen = log['out_time'] == null;
         final duration = log['duration_minutes'] as int?;
+        // Session number badge (if server returns it)
+        final sessionNum = log['session_number'] as int?;
 
         return Container(
           padding: EdgeInsets.symmetric(
@@ -922,18 +1048,45 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      log['site_name'] as String? ?? 'Unknown',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: isSmall ? 12 : 13.5,
-                        color: const Color(0xFF1A1A2E),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            log['site_name'] as String? ?? 'Unknown',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: isSmall ? 12 : 13.5,
+                              color: const Color(0xFF1A1A2E),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // Session number chip
+                        if (sessionNum != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'S$sessionNum',
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: Colors.indigo.shade400,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
-                    // Wrap prevents time tags from overflowing on narrow screens
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
@@ -962,7 +1115,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 ),
               ),
               const SizedBox(width: 8),
-              // Duration badge — shrinks text on small screens
               Container(
                 padding: EdgeInsets.symmetric(
                   horizontal: isSmall ? 7 : 10,
@@ -1027,7 +1179,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     );
   }
 
-  // ── BUTTONS ───────────────────────────────────────────────────────────────
+  // ── Buttons ───────────────────────────────────────────────────────────────
 
   Widget _buildButtons({
     required bool isRunning,
@@ -1058,9 +1210,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         Expanded(
           child: _ActionButton(
             label: 'END',
-            icon: Icons.stop_rounded,
+            icon: Icons.pause_rounded,
             gradient: const LinearGradient(
-              colors: [Color(0xFFC62828), Color(0xFFE53935)],
+              colors: [Color(0xFFE65100), Color(0xFFFF6D00)],
             ),
             onPressed: (isRunning && !_isLoading) ? _endWork : null,
             height: height,
@@ -1074,7 +1226,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   }
 }
 
-// ── STATUS CONFIG ─────────────────────────────────────────────────────────────
+// ─── StatusConfig ─────────────────────────────────────────────────────────────
 
 class _StatusConfig {
   final LinearGradient gradient;
@@ -1083,7 +1235,6 @@ class _StatusConfig {
   final String sublabel;
   final Color dotColor;
   final bool showPulse;
-
   const _StatusConfig({
     required this.gradient,
     required this.icon,
@@ -1094,7 +1245,7 @@ class _StatusConfig {
   });
 }
 
-// ── ACTION BUTTON ─────────────────────────────────────────────────────────────
+// ─── ActionButton ─────────────────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
   final String label;

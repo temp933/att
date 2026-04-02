@@ -156,15 +156,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     preferredSize: const Size.fromHeight(70),
     child: Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color.fromARGB(255, 255, 255, 255),
-            Color.fromARGB(255, 255, 255, 255),
-            Color.fromARGB(255, 255, 255, 255),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         boxShadow: [
           BoxShadow(
             color: Color(0x401A56DB),
@@ -186,21 +178,15 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                   children: [
                     const SizedBox(height: 2),
                     Text(
-                      "Date: ${_displayDate(_selectedDate)}",
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color.fromARGB(255, 0, 0, 0),
-                      ),
+                      'Date: ${_displayDate(_selectedDate)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black),
                     ),
                   ],
                 ),
               ),
               IconButton(
                 tooltip: 'Download Report',
-                icon: const Icon(
-                  Icons.download_rounded,
-                  color: Color.fromARGB(255, 0, 0, 0),
-                ),
+                icon: const Icon(Icons.download_rounded, color: Colors.black),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -236,7 +222,6 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    // ── Summary cards
                     SliverToBoxAdapter(
                       child: Container(
                         color: _card,
@@ -250,8 +235,6 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                     const SliverToBoxAdapter(
                       child: Divider(height: 1, thickness: 1, color: _border),
                     ),
-
-                    // ── Filter bar
                     SliverToBoxAdapter(
                       child: Container(
                         color: _card,
@@ -265,8 +248,6 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                     const SliverToBoxAdapter(
                       child: Divider(height: 1, thickness: 1, color: _border),
                     ),
-
-                    // ── Record count label
                     if (_filteredRecords.isNotEmpty)
                       SliverToBoxAdapter(
                         child: Padding(
@@ -286,22 +267,15 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                           ),
                         ),
                       ),
-
-                    // ── Empty state
                     if (_filteredRecords.isEmpty)
                       SliverFillRemaining(child: _emptyState()),
-
-                    // ── Employee cards
                     if (_filteredRecords.isNotEmpty)
                       SliverPadding(
                         padding: EdgeInsets.fromLTRB(
                           s.pagePadding,
                           8,
                           s.pagePadding,
-                          32 +
-                              MediaQuery.of(
-                                context,
-                              ).padding.bottom, // ← accounts for home bar
+                          32 + MediaQuery.of(context).padding.bottom,
                         ),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
@@ -740,7 +714,9 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
     final s = widget.s;
     final sc = _statusColor;
     final initial = e.name.isNotEmpty ? e.name[0].toUpperCase() : '?';
-    final hasVisits = e.visits.isNotEmpty;
+    final hasSessions = e.sessions.isNotEmpty;
+    final totalVisits = e.visits.length;
+    final totalSessions = e.sessions.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -764,9 +740,9 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // ── Header row (always visible) ───────────────────────────────────
+          // ── Header row ────────────────────────────────────────────────────
           InkWell(
-            onTap: hasVisits ? _toggle : null,
+            onTap: hasSessions ? _toggle : null,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
             child: Padding(
               padding: EdgeInsets.symmetric(
@@ -832,27 +808,24 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   ),
                   const SizedBox(width: 10),
 
-                  // Visit count pill (only for present)
-                  if (hasVisits)
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
+                  // Session / visit count pills
+                  if (hasSessions) ...[
+                    if (totalSessions > 1)
+                      _pill(
+                        '${totalSessions}x',
+                        Icons.repeat_rounded,
+                        _purple,
+                        const Color(0xFFF5F3FF),
                       ),
-                      decoration: BoxDecoration(
-                        color: _primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${e.visits.length} visit${e.visits.length > 1 ? 's' : ''}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _primary,
-                        ),
-                      ),
+                    const SizedBox(width: 6),
+                    _pill(
+                      '$totalVisits visit${totalVisits != 1 ? 's' : ''}',
+                      Icons.location_on_rounded,
+                      _primary,
+                      const Color(0xFFEFF6FF),
                     ),
+                    const SizedBox(width: 8),
+                  ],
 
                   // Status badge
                   Container(
@@ -890,7 +863,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   ),
 
                   // Expand chevron
-                  if (hasVisits) ...[
+                  if (hasSessions) ...[
                     const SizedBox(width: 8),
                     RotationTransition(
                       turns: _rotateAnim,
@@ -906,13 +879,13 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
             ),
           ),
 
-          // ── Expandable visits section ─────────────────────────────────────
+          // ── Expandable section ────────────────────────────────────────────
           SizeTransition(
             sizeFactor: _expandAnim,
             axisAlignment: -1,
             child: Column(
               children: [
-                // thin gradient divider
+                // Gradient divider
                 Container(
                   height: 1,
                   decoration: BoxDecoration(
@@ -926,8 +899,8 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   ),
                 ),
 
-                // Summary strip inside expanded area
-                if (hasVisits)
+                // Overall summary strip
+                if (hasSessions)
                   Container(
                     color: sc.withOpacity(0.04),
                     padding: EdgeInsets.symmetric(
@@ -963,7 +936,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                     ),
                   ),
 
-                // Visit rows
+                // Session blocks
                 Padding(
                   padding: EdgeInsets.fromLTRB(
                     s.pagePadding,
@@ -973,11 +946,11 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   ),
                   child: Column(
                     children: [
-                      for (int i = 0; i < e.visits.length; i++)
-                        _VisitRow(
-                          visit: e.visits[i],
-                          index: i,
-                          isLast: i == e.visits.length - 1,
+                      for (int si = 0; si < e.sessions.length; si++)
+                        _SessionBlock(
+                          session: e.sessions[si],
+                          sessionIndex: si,
+                          totalSessions: e.sessions.length,
                           s: s,
                         ),
                     ],
@@ -987,17 +960,17 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
             ),
           ),
 
-          // ── Absent placeholder (no expand) ───────────────────────────────
-          if (!hasVisits && e.status.toUpperCase() == 'ABSENT')
+          // ── Absent placeholder ─────────────────────────────────────────────
+          if (!hasSessions && e.status.toUpperCase() == 'ABSENT')
             Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(
                 horizontal: s.pagePadding,
                 vertical: 10,
               ),
-              decoration: BoxDecoration(
-                color: _red.withOpacity(0.03),
-                border: const Border(top: BorderSide(color: _border)),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF9F9),
+                border: Border(top: BorderSide(color: _border)),
               ),
               child: Row(
                 children: [
@@ -1018,6 +991,29 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
       ),
     );
   }
+
+  Widget _pill(String label, IconData icon, Color color, Color bg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: color),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _summaryPill(
     IconData icon,
@@ -1067,6 +1063,195 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
   );
 }
 
+// ── Session Block ─────────────────────────────────────────────────────────────
+class _SessionBlock extends StatelessWidget {
+  final SessionModel session;
+  final int sessionIndex;
+  final int totalSessions;
+  final _Screen s;
+
+  const _SessionBlock({
+    required this.session,
+    required this.sessionIndex,
+    required this.totalSessions,
+    required this.s,
+  });
+
+  String _fmt(DateTime? dt) {
+    if (dt == null) return '--:--';
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _endReasonLabel(String? reason) {
+    switch (reason) {
+      case 'manual_end':
+        return 'Ended manually';
+      case 'force_logout':
+        return 'Force logged out';
+      case 'logout':
+        return 'Logged out';
+      case 'app_restart':
+        return 'App restarted';
+      default:
+        return reason ?? 'Ended';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLast = sessionIndex == totalSessions - 1;
+    final isOpen = session.endedAt == null;
+
+    // Only show session header when there are multiple sessions
+    final showSessionHeader = totalSessions > 1;
+
+    return Container(
+      margin: EdgeInsets.only(bottom: isLast ? 0 : 12),
+      decoration: showSessionHeader
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _border),
+            )
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Session header (only when multiple sessions exist)
+          if (showSessionHeader)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: _primary.withOpacity(0.04),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(10),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Session ${session.sessionNumber}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Session time range
+                  Icon(Icons.access_time_rounded, size: 11, color: _textMid),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${_fmt(session.startedAt)} – ${_fmt(session.endedAt)}',
+                    style: const TextStyle(fontSize: 11, color: _textMid),
+                  ),
+                  const Spacer(),
+                  // Duration
+                  Text(
+                    session.sessionDuration,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: _purple,
+                    ),
+                  ),
+                  // Open session indicator
+                  if (isOpen) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _accent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'Active',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: _accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+          // End reason (only for multi-session, closed sessions)
+          if (showSessionHeader && !isOpen && session.endReason != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+              child: Text(
+                _endReasonLabel(session.endReason),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: _textLight,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+
+          // Visit rows
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              showSessionHeader ? 10 : 0,
+              showSessionHeader ? 8 : 0,
+              showSessionHeader ? 10 : 0,
+              showSessionHeader ? 10 : 0,
+            ),
+            child: Column(
+              children: [
+                if (session.visits.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_off_rounded,
+                          size: 13,
+                          color: _textLight.withOpacity(0.6),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'No site visits recorded in this session',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _textLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  for (int vi = 0; vi < session.visits.length; vi++)
+                    _VisitRow(
+                      visit: session.visits[vi],
+                      index: vi,
+                      isLast: vi == session.visits.length - 1,
+                      s: s,
+                    ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Individual Visit Row ──────────────────────────────────────────────────────
 class _VisitRow extends StatelessWidget {
   final SiteVisitModel visit;
@@ -1088,7 +1273,6 @@ class _VisitRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Alternate subtle background for readability
     final bg = index.isEven ? _primary.withOpacity(0.025) : Colors.transparent;
 
     return Container(
@@ -1101,7 +1285,7 @@ class _VisitRow extends StatelessWidget {
       child: IntrinsicHeight(
         child: Row(
           children: [
-            // Index stripe
+            // Accent stripe
             Container(
               width: 3,
               decoration: BoxDecoration(
@@ -1112,7 +1296,6 @@ class _VisitRow extends StatelessWidget {
                 ),
               ),
             ),
-
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -1128,51 +1311,6 @@ class _VisitRow extends StatelessWidget {
     );
   }
 
-  Widget _timeChipFixed(
-    IconData icon,
-    String label,
-    String value,
-    Color color,
-  ) => SizedBox(
-    width: (s.width - s.pagePadding * 2 - 40) / 3,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 10, color: color.withOpacity(0.7)),
-              const SizedBox(width: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: color.withOpacity(0.7),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    ),
-  );
   Widget _mobileLayout() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1214,25 +1352,13 @@ class _VisitRow extends StatelessWidget {
         ],
       ),
       const SizedBox(height: 8),
-      // Time chips
-      // AFTER
       Wrap(
         spacing: 6,
         runSpacing: 6,
         children: [
-          _timeChipFixed(
-            Icons.login_rounded,
-            'In',
-            _fmt(visit.inTime),
-            _accent,
-          ),
-          _timeChipFixed(
-            Icons.logout_rounded,
-            'Out',
-            _fmt(visit.outTime),
-            _primary,
-          ),
-          _timeChipFixed(
+          _timeChip(Icons.login_rounded, 'In', _fmt(visit.inTime), _accent),
+          _timeChip(Icons.logout_rounded, 'Out', _fmt(visit.outTime), _primary),
+          _timeChip(
             Icons.timer_outlined,
             'Worked',
             visit.workedFormatted,
@@ -1243,9 +1369,52 @@ class _VisitRow extends StatelessWidget {
     ],
   );
 
+  Widget _timeChip(IconData icon, String label, String value, Color color) {
+    final chipWidth = (s.width - s.pagePadding * 2 - 40) / 3;
+    return SizedBox(
+      width: chipWidth,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 10, color: color.withOpacity(0.7)),
+                const SizedBox(width: 3),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: color.withOpacity(0.7),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _desktopLayout() => Row(
     children: [
-      // Visit number
       Container(
         width: 24,
         height: 24,
@@ -1267,7 +1436,6 @@ class _VisitRow extends StatelessWidget {
       const SizedBox(width: 10),
       const Icon(Icons.location_on_rounded, size: 14, color: _primary),
       const SizedBox(width: 6),
-      // Location name
       SizedBox(
         width: 160,
         child: Text(
@@ -1281,10 +1449,8 @@ class _VisitRow extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 16),
-      // Divider
       Container(width: 1, height: 28, color: _border),
       const SizedBox(width: 16),
-      // Time cells
       _desktopCell(
         Icons.login_rounded,
         'Check In',
@@ -1307,47 +1473,6 @@ class _VisitRow extends StatelessWidget {
       ),
     ],
   );
-
-  // Widget _timeChip(IconData icon, String label, String value, Color color) =>
-  //     Expanded(
-  //       child: Container(
-  //         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-  //         decoration: BoxDecoration(
-  //           color: color.withOpacity(0.07),
-  //           borderRadius: BorderRadius.circular(8),
-  //           border: Border.all(color: color.withOpacity(0.18)),
-  //         ),
-  //         child: Column(
-  //           crossAxisAlignment: CrossAxisAlignment.start,
-  //           children: [
-  //             Row(
-  //               children: [
-  //                 Icon(icon, size: 10, color: color.withOpacity(0.7)),
-  //                 const SizedBox(width: 3),
-  //                 Text(
-  //                   label,
-  //                   style: TextStyle(
-  //                     fontSize: 9,
-  //                     color: color.withOpacity(0.7),
-  //                     fontWeight: FontWeight.w500,
-  //                   ),
-  //                 ),
-  //               ],
-  //             ),
-  //             const SizedBox(height: 2),
-  //             Text(
-  //               value,
-  //               style: TextStyle(
-  //                 fontSize: 12,
-  //                 fontWeight: FontWeight.w700,
-  //                 color: color,
-  //               ),
-  //               overflow: TextOverflow.ellipsis,
-  //             ),
-  //           ],
-  //         ),
-  //       ),
-  //     );
 
   Widget _desktopCell(IconData icon, String label, String value, Color color) =>
       Row(

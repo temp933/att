@@ -227,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       SizedBox(height: isDesktop ? 24 : 16),
                       Text(
-                        'Employee Attendance',
+                        'Employee Management System',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: isDesktop ? 36 : 28,

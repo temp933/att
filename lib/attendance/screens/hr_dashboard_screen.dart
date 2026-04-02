@@ -13,6 +13,9 @@ import 'emp_profile_screen.dart';
 import 'emp_work_location.dart';
 import 'admin_manage_user.dart';
 import 'session_guard_mixin.dart';
+import '../services/attendance_state.dart';
+import '../services/api_service.dart';
+import '../services/site_cache.dart';
 
 class HRDashboardScreen extends StatefulWidget {
   final int initialIndex;
@@ -47,7 +50,7 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen>
   late int selectedIndex;
   bool isExpanded = false;
 
-  static const int notificationIndex = 16;
+  // static const int notificationIndex = 16;
 
   @override
   void initState() {
@@ -222,18 +225,18 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen>
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              tooltip: 'Notifications',
-              icon: const Icon(
-                Icons.notifications_outlined,
-                color: Colors.white,
-              ),
-              onPressed: () =>
-                  setState(() => selectedIndex = notificationIndex),
-            ),
-            const SizedBox(width: 4),
-          ],
+          // actions: [
+          //   IconButton(
+          //     tooltip: 'Notifications',
+          //     icon: const Icon(
+          //       Icons.notifications_outlined,
+          //       color: Colors.white,
+          //     ),
+          //     onPressed: () =>
+          //         setState(() => selectedIndex = notificationIndex),
+          //   ),
+          //   const SizedBox(width: 4),
+          // ],
         ),
         drawer: isDesktop ? null : _mobileDrawer(),
         body: Row(
@@ -628,13 +631,40 @@ class _HRDashboardScreenScreenState extends State<HRDashboardScreen>
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   Future<void> _logout() async {
+    // 1. End active tracking session on server (closes open site visits too)
     try {
-      await AuthService.clearSession();
+      final state = AttendanceState.instance;
+      if (state.dayStatus == DayStatus.inProgress) {
+        await ApiService.endSession(
+          int.parse(widget.employeeId),
+          state.currentSessionId, // ← correct field name
+          reason: 'logout',
+        );
+      }
+    } catch (_) {
+      // best-effort — don't block logout on API failure
+    }
+
+    // 2. forceStop handles: background service, SharedPrefs,
+    //    and all AttendanceState fields in one call
+    try {
+      await AttendanceState.instance.forceStop();
     } catch (_) {}
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+
+    // 3. Stop site cache auto-sync timer
+    try {
+      SiteCache.dispose();
+    } catch (_) {}
+
+    // 4. Call server logout + clear SharedPreferences
+    await AuthService.clearSession();
+
+    // 5. Navigate to login
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 }

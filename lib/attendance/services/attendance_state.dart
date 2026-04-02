@@ -1,431 +1,277 @@
 // import 'package:flutter_background_service/flutter_background_service.dart';
 // import 'package:shared_preferences/shared_preferences.dart';
 // import 'api_service.dart';
-// import 'offline_queue.dart';
 
-// // ─── STATE ENUM ───────────────────────────────────────────────────────────────
-
-// enum DayStatus {
-//   notStarted, // employee hasn't pressed START yet
-//   inProgress, // tracking is active (service running)
-//   completed, // employee pressed END — locked for the day
-// }
-
-// // ─── SINGLETON ────────────────────────────────────────────────────────────────
+// enum DayStatus { notStarted, inProgress }
 
 // class AttendanceState {
 //   AttendanceState._();
 //   static final AttendanceState instance = AttendanceState._();
 
-//   // ── Mutable state ──────────────────────────────────────────────────────────
 //   DayStatus dayStatus = DayStatus.notStarted;
-//   DateTime? startTime;
-//   DateTime? endTime;
-//   String currentSiteName = "";
 //   bool isInsideSite = false;
+//   String currentSiteName = '';
+//   int? currentSessionId;
+//   int sessionCountToday = 0;
+//   DateTime? currentSessionStart;
 
 //   int _empId = -1;
-//   bool _initialized = false;
 
-//   // ── Pref keys (scoped per employee) ───────────────────────────────────────
-//   String get _doneKey => "is_done_for_day_$_empId";
-//   String get _doneDateKey => "done_for_day_date_$_empId";
-//   String get _startKey => "start_time_$_empId";
+//   String get _activeKey => 'tracking_active_$_empId';
+//   String get _sessionIdKey => 'session_id_$_empId';
+//   String get _sessionStart => 'session_start_$_empId';
+//   String get _sessionCount => 'session_count_$_empId';
 
-//   // ── Status check (called on app open) ─────────────────────────────────────
-
+//   // ── checkStatus ────────────────────────────────────────────────────────────
 //   Future<DayStatus> checkStatus(int empId) async {
-//     if (empId != _empId) _reset(empId);
-
+//     if (empId != _empId) _resetFor(empId);
 //     final prefs = await SharedPreferences.getInstance();
-//     final today = _todayString();
 
-//     // ── Step 1: Ask server first (source of truth = DB last row status) ──────
 //     try {
 //       final data = await ApiService.getTodayStatus(empId);
-//       final status = data["status"] as String? ?? "not_started";
+//       final status = data['status'] as String? ?? 'not_started';
 
-//       if (status == "completed") {
-//         // DB has ended_manually row → lock the day
-//         await _writeDoneFlag(prefs);
-//         _setCompleted(prefs);
-//         // Stop any lingering service
-//         if (await FlutterBackgroundService().isRunning()) {
-//           FlutterBackgroundService().invoke("stop_service");
+//       if (status == 'in_progress') {
+//         currentSessionId = data['session_id'] as int?;
+//         sessionCountToday = data['session_number'] as int? ?? 1;
+//         dayStatus = DayStatus.inProgress;
+
+//         await prefs.setInt('employee_id', empId);
+//         await prefs.setBool(_activeKey, true);
+//         if (currentSessionId != null) {
+//           await prefs.setInt(_sessionIdKey, currentSessionId!);
 //         }
-//         _initialized = true;
-//         return dayStatus;
-//       }
+//         _recoverSessionStart(prefs);
 
-//       if (status == "in_progress") {
-//         // DB has active/completed rows but NOT ended_manually
-//         // Guard: local done flag overrides stale server state
-//         final ld = prefs.getBool(_doneKey) ?? false;
-//         final dd = prefs.getString(_doneDateKey) ?? "";
-//         if (ld && dd == today) {
-//           _setCompleted(prefs);
-//           _initialized = true;
-//           return dayStatus;
-//         }
-
-//         // Service might have been killed — restart it
-//         await prefs.setInt("employee_id", empId);
-//         final serviceRunning = await FlutterBackgroundService().isRunning();
-//         if (!serviceRunning) {
+//         if (!await FlutterBackgroundService().isRunning()) {
 //           await FlutterBackgroundService().startService();
 //         }
-//         dayStatus = DayStatus.inProgress;
-//         _recoverStartTime(prefs);
-//         _initialized = true;
 //         return dayStatus;
 //       }
 
-//       // status == "not_started" → no rows today
-//       // Clear any stale local flags from previous days
-//       await prefs.setBool(_doneKey, false);
-//       await prefs.remove(_doneDateKey);
+//       // not_started — between sessions or never started today
+//       sessionCountToday = data['sessions_today'] as int? ?? 0;
 //       dayStatus = DayStatus.notStarted;
 //       isInsideSite = false;
-//       currentSiteName = "";
+//       currentSiteName = '';
+//       currentSessionId = null;
+//       await prefs.setBool(_activeKey, false);
+//       return dayStatus;
 //     } catch (_) {
-//       // Network unavailable — fall back to local prefs
-//       final localDone = prefs.getBool(_doneKey) ?? false;
-//       final localDoneDate = prefs.getString(_doneDateKey) ?? "";
-//       if (localDone && localDoneDate == today) {
-//         _setCompleted(prefs);
-//         _initialized = true;
-//         return dayStatus;
-//       }
-
-//       // Check if service is running as fallback
-//       final serviceRunning = await FlutterBackgroundService().isRunning();
-//       if (serviceRunning) {
+//       // Offline fallback
+//       final active = prefs.getBool(_activeKey) ?? false;
+//       if (active) {
+//         currentSessionId = prefs.getInt(_sessionIdKey);
+//         sessionCountToday = prefs.getInt(_sessionCount) ?? 1;
 //         dayStatus = DayStatus.inProgress;
-//         _recoverStartTime(prefs);
+//         _recoverSessionStart(prefs);
+//         if (!await FlutterBackgroundService().isRunning()) {
+//           await prefs.setInt('employee_id', empId);
+//           await FlutterBackgroundService().startService();
+//         }
 //       } else {
 //         dayStatus = DayStatus.notStarted;
 //         isInsideSite = false;
-//         currentSiteName = "";
+//         currentSiteName = '';
+//         currentSessionId = null;
 //       }
+//       return dayStatus;
 //     }
-
-//     _initialized = true;
-//     return dayStatus;
 //   }
-//   // ── START ──────────────────────────────────────────────────────────────────
 
+//   // ── start ──────────────────────────────────────────────────────────────────
 //   Future<void> start(int empId) async {
 //     _empId = empId;
 //     final prefs = await SharedPreferences.getInstance();
-//     final today = _todayString();
+//     currentSessionStart = DateTime.now();
+//     sessionCountToday += 1;
 
-//     // Guard: never start if already completed today
-//     if (dayStatus == DayStatus.completed) return;
-//     final localDone = prefs.getBool(_doneKey) ?? false;
-//     final localDoneDate = prefs.getString(_doneDateKey) ?? "";
-//     if (localDone && localDoneDate == today) {
-//       _setCompleted(prefs);
-//       return;
-//     }
+//     // Reset site state for new session
+//     isInsideSite = false;
+//     currentSiteName = '';
 
-//     startTime = DateTime.now();
-//     await prefs.setString(_startKey, startTime!.toIso8601String());
-//     await prefs.setInt("employee_id", empId);
-//     await prefs.setBool(_doneKey, false);
-//     await prefs.remove(_doneDateKey);
+//     // Open a new session row on the server
+//     final sessionId = await ApiService.startSession(empId);
+//     currentSessionId = sessionId;
 
-//     // Start the background service (foreground service survives app kill)
-//     if (!await FlutterBackgroundService().isRunning()) {
-//       await FlutterBackgroundService().startService();
-//     }
+//     await prefs.setInt('employee_id', empId);
+//     await prefs.setBool(_activeKey, true);
+//     await prefs.setString(
+//       _sessionStart,
+//       currentSessionStart!.toIso8601String(),
+//     );
+//     await prefs.setInt(_sessionCount, sessionCountToday);
+//     if (sessionId != null) await prefs.setInt(_sessionIdKey, sessionId);
 
 //     dayStatus = DayStatus.inProgress;
 //   }
 
-//   // ── END ────────────────────────────────────────────────────────────────────
-//   //
-//   // The UI calls _service.invoke("end_day") and waits for "end_day_done".
-//   // That sequence (in employee_home.dart) is unchanged.
-//   // After the background service confirms, the UI calls AttendanceState.end().
-
+//   // ── end ────────────────────────────────────────────────────────────────────
 //   Future<void> end() async {
-//     if (dayStatus == DayStatus.completed) return;
-
 //     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setBool(_activeKey, false);
+//     await prefs.remove(_sessionStart);
+//     // Keep session count — badge persists across sessions
 
-//     endTime = DateTime.now();
-
-//     await prefs.remove(_startKey);
-//     await _writeDoneFlag(prefs);
-
-//     if (await FlutterBackgroundService().isRunning()) {
-//       FlutterBackgroundService().invoke("stop_service");
-//     }
-
-//     _setCompleted(prefs);
+//     dayStatus = DayStatus.notStarted;
+//     isInsideSite = false;
+//     currentSiteName = '';
+//     currentSessionId = null;
+//     currentSessionStart = null;
 //   }
 
-//   // ── Site status (pushed from background service) ───────────────────────────
+//   // ── forceStop — logout (admin or user) ────────────────────────────────────
+//   Future<void> forceStop() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     try {
+//       if (await FlutterBackgroundService().isRunning()) {
+//         FlutterBackgroundService().invoke('force_stop');
+//       }
+//     } catch (_) {}
+
+//     await prefs.remove(_activeKey);
+//     await prefs.remove(_sessionStart);
+//     await prefs.remove(_sessionIdKey);
+//     await prefs.remove(_sessionCount);
+//     await prefs.remove('employee_id');
+//     await prefs.remove('current_site_id_$_empId');
+
+//     dayStatus = DayStatus.notStarted;
+//     isInsideSite = false;
+//     currentSiteName = '';
+//     currentSessionId = null;
+//     currentSessionStart = null;
+//     sessionCountToday = 0;
+//     _empId = -1;
+//   }
 
 //   void updateSiteStatus(bool inside, String siteName) {
 //     isInsideSite = inside;
 //     currentSiteName = siteName;
 //   }
 
-//   // ── Internals ──────────────────────────────────────────────────────────────
-
-//   void _reset(int empId) {
+//   void _resetFor(int empId) {
 //     _empId = empId;
 //     dayStatus = DayStatus.notStarted;
-//     startTime = null;
-//     endTime = null;
 //     isInsideSite = false;
-//     currentSiteName = "";
-//     _initialized = false;
+//     currentSiteName = '';
+//     currentSessionId = null;
+//     currentSessionStart = null;
+//     sessionCountToday = 0;
 //   }
 
-//   void _setCompleted(SharedPreferences prefs) {
-//     dayStatus = DayStatus.completed;
-//     isInsideSite = false;
-//     currentSiteName = ""; // ⭐ IMPORTANT
-//     endTime ??= DateTime.now();
+//   void _recoverSessionStart(SharedPreferences prefs) {
+//     if (currentSessionStart != null) return;
+//     final s = prefs.getString(_sessionStart);
+//     currentSessionStart = s != null ? DateTime.tryParse(s) : DateTime.now();
 //   }
 
-//   void _recoverStartTime(SharedPreferences prefs) {
-//     if (startTime != null) return;
-//     final saved = prefs.getString(_startKey);
-//     if (saved != null) startTime = DateTime.tryParse(saved);
-//     startTime ??= DateTime.now();
+//   String get sessionDuration {
+//     if (currentSessionStart == null) return '--';
+//     final d = DateTime.now().difference(currentSessionStart!);
+//     final h = d.inHours;
+//     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+//     return h > 0 ? '${h}h ${m}m' : '${d.inMinutes}m';
 //   }
 
-//   Future<void> _writeDoneFlag(SharedPreferences prefs) async {
-//     await prefs.setBool(_doneKey, true);
-//     await prefs.setString(_doneDateKey, _todayString());
-//   }
-
-//   String _todayString() {
-//     final n = DateTime.now();
-//     return "${n.year}-${n.month.toString().padLeft(2, '0')}"
-//         "-${n.day.toString().padLeft(2, '0')}";
-//   }
-
-//   // ── UI helpers ─────────────────────────────────────────────────────────────
-
-//   String get workingDuration {
-//     if (startTime == null) return "--";
-//     final d = (endTime ?? DateTime.now()).difference(startTime!);
-//     return "${d.inHours}h ${(d.inMinutes % 60).toString().padLeft(2, '0')}m";
-//   }
+//   bool get hasActivityToday => sessionCountToday > 0;
 // }
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
-// ─── STATUS ENUM ─────────────────────────────────────────────────────────────
-
-enum DayStatus {
-  notStarted, // No rows in DB for today
-  inProgress, // Has rows, last row is NOT ended_manually
-  completed, // Last row in DB is ended_manually — locked for the day
-}
-
-// ─── SINGLETON ────────────────────────────────────────────────────────────────
+enum DayStatus { notStarted, inProgress }
 
 class AttendanceState {
   AttendanceState._();
   static final AttendanceState instance = AttendanceState._();
 
   DayStatus dayStatus = DayStatus.notStarted;
-  DateTime? startTime;
-  DateTime? endTime;
-  String currentSiteName = '';
   bool isInsideSite = false;
-
+  String currentSiteName = '';
+  int? currentSessionId;
+  int sessionCountToday = 0;
+  DateTime? currentSessionStart;
   int _empId = -1;
 
-  String get _startKey => 'start_time_$_empId';
-
-  // ── CHECK STATUS ─────────────────────────────────────────────────────────────
-  //
-  // The SERVER DB is the single source of truth.
-  // Called on: app open, every 1-minute timer, before START press.
-  //
-  // Server returns:
-  //   "not_started"  → no rows today at all
-  //   "in_progress"  → has rows, last row is active/completed (between sites)
-  //   "completed"    → last row is ended_manually
-  //
-  // Offline fallback: if server unreachable, use SharedPreferences only.
-
+  // ── Check status ───────────────────────────────────────────────────────────
   Future<DayStatus> checkStatus(int empId) async {
-    if (empId != _empId) _resetFor(empId);
-
-    final prefs = await SharedPreferences.getInstance();
-    final today = _todayStr();
-
-    // ── 1. Ask server DB ──────────────────────────────────────────────────────
-    //
-    // GET /attendance/status/:empId returns one of:
-    //   { status: "not_started" } → no rows in DB today
-    //   { status: "in_progress" } → has rows, last row is active/completed (between sites)
-    //   { status: "completed" }   → last DB row is ended_manually → day is DONE
-    //
-    // "completed" from the server == employee pressed END == lock the day everywhere.
+    _empId = empId;
     try {
       final data = await ApiService.getTodayStatus(empId);
-      final serverStatus = data['status'] as String? ?? 'not_started';
+      final status = data['status'] as String? ?? 'not_started';
 
-      if (serverStatus == 'completed') {
-        // DB says this employee explicitly ended their day — lock on all devices
-        await prefs.setString('day_status_$empId', 'completed');
-        await prefs.setString('day_status_date_$empId', today);
-        await _stopServiceIfRunning();
-        _setCompleted();
-        return dayStatus;
-      }
-
-      if (serverStatus == 'in_progress') {
-        // Server says tracking is active — has rows today but NOT ended.
-        // Check if THIS device already did end_day locally (pending sync).
-        final localStatus = prefs.getString('day_status_$empId');
-        final localDate = prefs.getString('day_status_date_$empId') ?? '';
-        if (localStatus == 'completed' && localDate == today) {
-          // end_day written locally, pending server sync — show completed here
-          _setCompleted();
-          return dayStatus;
-        }
-
-        // Ensure the background service is alive (OS may have killed it)
-        await prefs.setInt('employee_id', empId);
-        if (!await FlutterBackgroundService().isRunning()) {
-          await FlutterBackgroundService().startService();
-        }
+      if (status == 'in_progress') {
+        currentSessionId = data['session_id'] as int?;
+        sessionCountToday = data['session_number'] as int? ?? 1;
         dayStatus = DayStatus.inProgress;
-        _recoverStartTime(prefs);
-        await prefs.setString('day_status_$empId', 'in_progress');
-        await prefs.setString('day_status_date_$empId', today);
-        return dayStatus;
+      } else {
+        sessionCountToday = data['sessions_today'] as int? ?? 0;
+        dayStatus = DayStatus.notStarted;
+        isInsideSite = false;
+        currentSiteName = '';
+        currentSessionId = null;
       }
-
-      // 'not_started' — no rows in DB for today. Clear any stale yesterday flags.
-      if ((prefs.getString('day_status_date_$empId') ?? '') != today) {
-        await prefs.remove('day_status_$empId');
-        await prefs.remove('day_status_date_$empId');
-        await prefs.remove(_startKey);
-      }
-      dayStatus = DayStatus.notStarted;
-      isInsideSite = false;
-      currentSiteName = '';
-      return dayStatus;
     } catch (_) {
-      // ── 2. Offline fallback — read from SharedPreferences ─────────────────
-      final localStatus = prefs.getString('day_status_$empId');
-      final localDate = prefs.getString('day_status_date_$empId') ?? '';
-
-      if (localDate == today) {
-        if (localStatus == 'completed') {
-          _setCompleted();
-          return dayStatus;
-        }
-        if (localStatus == 'in_progress') {
-          // Make sure service is running
-          if (!await FlutterBackgroundService().isRunning()) {
-            await FlutterBackgroundService().startService();
-          }
-          dayStatus = DayStatus.inProgress;
-          _recoverStartTime(prefs);
-          return dayStatus;
-        }
+      // Offline fallback
+      final svc = FlutterBackgroundService();
+      if (await svc.isRunning()) {
+        dayStatus = DayStatus.inProgress;
+      } else {
+        dayStatus = DayStatus.notStarted;
+        isInsideSite = false;
+        currentSiteName = '';
+        currentSessionId = null;
       }
-
-      dayStatus = DayStatus.notStarted;
-      isInsideSite = false;
-      currentSiteName = '';
-      return dayStatus;
     }
+    return dayStatus;
   }
 
-  // ── START ─────────────────────────────────────────────────────────────────
-  //
-  // Only called after checkStatus() confirmed notStarted.
-  // Writes local prefs so offline fallback works.
-
+  // ── START — always fresh ───────────────────────────────────────────────────
   Future<void> start(int empId) async {
     _empId = empId;
-    final prefs = await SharedPreferences.getInstance();
-    startTime = DateTime.now();
-    await prefs.setString(_startKey, startTime!.toIso8601String());
-    await prefs.setInt('employee_id', empId);
-    await prefs.setString('day_status_$empId', 'in_progress');
-    await prefs.setString('day_status_date_$empId', _todayStr());
+    currentSessionStart = DateTime.now();
+    sessionCountToday += 1;
+    isInsideSite = false;
+    currentSiteName = '';
+
+    final sessionId = await ApiService.startSession(empId);
+    currentSessionId = sessionId;
     dayStatus = DayStatus.inProgress;
   }
 
-  // ── END ───────────────────────────────────────────────────────────────────
-  //
-  // Called after background service confirms end_day_done (or server confirms).
-  // Locks the day locally.
-
+  // ── END — full reset ───────────────────────────────────────────────────────
   Future<void> end() async {
-    if (dayStatus == DayStatus.completed) return;
-    final prefs = await SharedPreferences.getInstance();
-    endTime = DateTime.now();
-    await prefs.remove(_startKey);
-    await prefs.setString('day_status_$_empId', 'completed');
-    await prefs.setString('day_status_date_$_empId', _todayStr());
-    await _stopServiceIfRunning();
-    _setCompleted();
+    dayStatus = DayStatus.notStarted;
+    isInsideSite = false;
+    currentSiteName = '';
+    currentSessionId = null;
+    currentSessionStart = null;
   }
 
-  // ── SITE STATUS (pushed by background service stream events) ─────────────
+  // ── Force stop (logout) ────────────────────────────────────────────────────
+  Future<void> forceStop() async {
+    dayStatus = DayStatus.notStarted;
+    isInsideSite = false;
+    currentSiteName = '';
+    currentSessionId = null;
+    currentSessionStart = null;
+    sessionCountToday = 0;
+    _empId = -1;
+  }
 
   void updateSiteStatus(bool inside, String siteName) {
     isInsideSite = inside;
     currentSiteName = siteName;
   }
 
-  // ── INTERNALS ─────────────────────────────────────────────────────────────
-
-  void _resetFor(int empId) {
-    _empId = empId;
-    dayStatus = DayStatus.notStarted;
-    startTime = null;
-    endTime = null;
-    isInsideSite = false;
-    currentSiteName = '';
+  String get sessionDuration {
+    if (currentSessionStart == null) return '--';
+    final d = DateTime.now().difference(currentSessionStart!);
+    final h = d.inHours;
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    return h > 0 ? '${h}h ${m}m' : '${d.inMinutes}m';
   }
 
-  void _setCompleted() {
-    dayStatus = DayStatus.completed;
-    isInsideSite = false;
-    currentSiteName = '';
-    endTime ??= DateTime.now();
-  }
-
-  void _recoverStartTime(SharedPreferences prefs) {
-    if (startTime != null) return;
-    final s = prefs.getString(_startKey);
-    startTime = s != null ? DateTime.tryParse(s) : null;
-    startTime ??= DateTime.now();
-  }
-
-  Future<void> _stopServiceIfRunning() async {
-    try {
-      if (await FlutterBackgroundService().isRunning()) {
-        FlutterBackgroundService().invoke('stop_service');
-      }
-    } catch (_) {}
-  }
-
-  String _todayStr() {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}'
-        '-${n.day.toString().padLeft(2, '0')}';
-  }
-
-  String get workingDuration {
-    if (startTime == null) return '--';
-    final d = (endTime ?? DateTime.now()).difference(startTime!);
-    return '${d.inHours}h ${(d.inMinutes % 60).toString().padLeft(2, '0')}m';
-  }
+  bool get hasActivityToday => sessionCountToday > 0;
 }
