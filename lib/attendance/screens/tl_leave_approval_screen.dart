@@ -46,10 +46,49 @@ class _TLLeaveScreenState extends State<TLLeaveScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchCtrl.dispose(); // ← ADD
     super.dispose();
   }
 
   Future<void> _loadAll() => Future.wait([_loadPending(), _loadHistory()]);
+
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _historyFilter = 'All';
+  bool _historySortAsc = false;
+
+  List<LeaveModel> get _filteredHistory {
+    var list = _historyLeaves.where((l) {
+      final q = _searchCtrl.text.toLowerCase();
+      final matchesSearch =
+          q.isEmpty ||
+          (l.employeeName?.toLowerCase().contains(q) ?? false) ||
+          l.leaveType.toLowerCase().contains(q) ||
+          (l.departmentName?.toLowerCase().contains(q) ?? false) ||
+          l.empId.toString().contains(q); // ← ADD
+
+      final matchesFilter =
+          _historyFilter == 'All' ||
+          (_historyFilter == 'Approved' && l.status == 'Approved') ||
+          (_historyFilter == 'Recommended' &&
+              (l.status == 'Pending_Manager' || l.status == 'Pending_HR')) ||
+          (_historyFilter == 'Not Recommended' &&
+              (l.status.contains('Not_Recommended') ||
+                  l.status.contains('Rejected_By_TL'))) ||
+          (_historyFilter == 'Rejected' &&
+              (l.status.contains('Rejected_By_Manager') ||
+                  l.status.contains('Rejected_By_HR'))) ||
+          (_historyFilter == 'Cancelled' && l.status == 'Cancelled');
+
+      return matchesSearch && matchesFilter;
+    }).toList();
+
+    list.sort(
+      (a, b) => _historySortAsc
+          ? a.fromDate.compareTo(b.fromDate)
+          : b.fromDate.compareTo(a.fromDate),
+    );
+    return list;
+  }
 
   Future<void> _loadPending() async {
     setState(() {
@@ -237,21 +276,182 @@ class _TLLeaveScreenState extends State<TLLeaveScreen>
   Widget _buildHistoryTab() {
     if (_historyLoading) return _loader();
     if (_historyError != null) return _error(_historyError!, _loadHistory);
-    if (_historyLeaves.isEmpty) {
-      return _empty(
-        icon: Icons.history_toggle_off_rounded,
-        title: 'No records yet',
-        subtitle: 'Leave history will appear here.',
-        onRefresh: _loadHistory,
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _loadHistory,
-      color: _primary,
-      child: LayoutBuilder(
-        builder: (ctx, cs) => cs.maxWidth >= 860
-            ? _TLDesktopHistory(leaves: _historyLeaves, fmt: _fmt)
-            : _TLMobileHistory(leaves: _historyLeaves, fmt: _fmt),
+
+    return Column(
+      children: [
+        _buildHistorySearchBar(),
+        Expanded(
+          child: _filteredHistory.isEmpty
+              ? _empty(
+                  icon: Icons.search_off_rounded,
+                  title: 'No results',
+                  subtitle: 'Try a different search or filter.',
+                  onRefresh: _loadHistory,
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadHistory,
+                  color: _primary,
+                  child: LayoutBuilder(
+                    builder: (ctx, cs) => cs.maxWidth >= 860
+                        ? _TLDesktopHistory(leaves: _filteredHistory, fmt: _fmt)
+                        : _TLMobileHistory(leaves: _filteredHistory, fmt: _fmt),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHistorySearchBar() {
+    return Container(
+      color: _card,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontSize: 13, color: _textDark),
+            decoration: InputDecoration(
+              hintText: 'Search employee, ID,  leave type…',
+              hintStyle: const TextStyle(color: _textLight, fontSize: 13),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: _textMid,
+              ),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: _textMid,
+                      ),
+                      onPressed: () => setState(() => _searchCtrl.clear()),
+                    )
+                  : null,
+              filled: true,
+              fillColor: _surface,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _primary, width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _TLFilterChip(
+                        label: 'All',
+                        selected: _historyFilter == 'All',
+                        color: _primary,
+                        onTap: () => setState(() => _historyFilter = 'All'),
+                      ),
+                      const SizedBox(width: 6),
+                      _TLFilterChip(
+                        label: 'Approved',
+                        selected: _historyFilter == 'Approved',
+                        color: _accent,
+                        onTap: () =>
+                            setState(() => _historyFilter = 'Approved'),
+                      ),
+                      const SizedBox(width: 6),
+                      _TLFilterChip(
+                        label: 'Recommended',
+                        selected: _historyFilter == 'Recommended',
+                        color: _purple,
+                        onTap: () =>
+                            setState(() => _historyFilter = 'Recommended'),
+                      ),
+                      const SizedBox(width: 6),
+                      _TLFilterChip(
+                        label: 'Not Recommended',
+                        selected: _historyFilter == 'Not Recommended',
+                        color: _red,
+                        onTap: () =>
+                            setState(() => _historyFilter = 'Not Recommended'),
+                      ),
+                      const SizedBox(width: 6),
+                      _TLFilterChip(
+                        label: 'Rejected',
+                        selected: _historyFilter == 'Rejected',
+                        color: _red,
+                        onTap: () =>
+                            setState(() => _historyFilter = 'Rejected'),
+                      ),
+                      const SizedBox(width: 6),
+                      _TLFilterChip(
+                        label: 'Cancelled',
+                        selected: _historyFilter == 'Cancelled',
+                        color: _amber,
+                        onTap: () =>
+                            setState(() => _historyFilter = 'Cancelled'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => setState(() => _historySortAsc = !_historySortAsc),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _historySortAsc
+                            ? Icons.arrow_upward_rounded
+                            : Icons.arrow_downward_rounded,
+                        size: 13,
+                        color: _textMid,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _historySortAsc ? 'Oldest' : 'Newest',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: _textMid,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${_filteredHistory.length} of ${_historyLeaves.length} records',
+            style: const TextStyle(fontSize: 11, color: _textLight),
+          ),
+        ],
       ),
     );
   }
@@ -921,63 +1121,58 @@ class _TLMobileHistoryState extends State<_TLMobileHistory> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
-                        child: Stack(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        l.employeeName ?? 'Emp #${l.empId}',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: _textDark,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${l.leaveType}  ·  ${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}  ·  ${l.numberOfDays} day(s)',
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: _textMid,
-                                        ),
-                                      ),
-                                    ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l.employeeName ?? 'Emp #${l.empId}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: _textDark,
+                                    ),
                                   ),
-                                ),
-
-                                const SizedBox(width: 8),
-
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '#${l.empId}  ·  ${l.leaveType}  ·  '
+                                    '${widget.fmt(l.fromDate)} – ${widget.fmt(l.toDate)}'
+                                    '  ·  ${l.numberOfDays} day(s)',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _textMid,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
                                 _TLStatusBadge(l.status),
-
-                                const SizedBox(width: 24), // space for arrow
+                                if (hasAnyDetail) ...[
+                                  const SizedBox(width: 4),
+                                  AnimatedRotation(
+                                    turns: isOpen ? 0.5 : 0,
+                                    duration: const Duration(milliseconds: 220),
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 20,
+                                      color: isOpen ? accentColor : _textLight,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
-
-                            // Arrow
-                            if (hasAnyDetail)
-                              Positioned(
-                                top: 0,
-                                right: 0,
-                                child: AnimatedRotation(
-                                  turns: isOpen ? 0.5 : 0,
-                                  duration: const Duration(milliseconds: 220),
-                                  child: Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    size: 20,
-                                    color: isOpen ? accentColor : _textLight,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                       ),
@@ -1185,15 +1380,30 @@ class _TLDesktopHistoryState extends State<_TLDesktopHistory> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
+                                    // WITH THIS:
                                     Expanded(
-                                      child: Text(
-                                        l.employeeName ?? 'Emp #${l.empId}',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: _textDark,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            l.employeeName ?? 'Emp #${l.empId}',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: _textDark,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            '#${l.empId}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: _textLight,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -1484,6 +1694,7 @@ class _TLReasonSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final tiles = <Widget>[];
 
+    // 1 — Employee reason
     if (leave.reason?.isNotEmpty == true) {
       tiles.add(
         _ReasonTile(
@@ -1497,56 +1708,15 @@ class _TLReasonSection extends StatelessWidget {
       );
     }
 
-    if ((leave.status == 'Not_Recommended_By_TL' ||
-            leave.status == 'Rejected_By_TL') &&
-        leave.rejectionReason?.isNotEmpty == true) {
+    // 2 — Approved
+    if (leave.status == 'Approved') {
       tiles.add(
         _ReasonTile(
-          icon: Icons.thumb_down_alt_outlined,
-          label: 'Not Recommended — TL Remark',
-          text: leave.rejectionReason!,
-          iconColor: _red,
-          iconBg: const Color(0xFFFEE2E2),
-          textColor: _red,
-        ),
-      );
-    }
-
-    if (leave.status == 'Pending_Manager' || leave.status == 'Pending_HR') {
-      tiles.add(
-        _ReasonTile(
-          icon: Icons.schedule_outlined,
-          label: 'Recommended — Awaiting Manager',
-          text:
-              'You have recommended this leave. It is pending final approval by the manager.',
-          iconColor: _purple,
-          iconBg: const Color(0xFFF3E8FF),
-          textColor: _textDark,
-        ),
-      );
-    }
-
-    if ((leave.status == 'Rejected_By_Manager' ||
-            leave.status == 'Rejected_By_HR') &&
-        leave.rejectionReason?.isNotEmpty == true) {
-      tiles.add(
-        _ReasonTile(
-          icon: Icons.business_center_outlined,
-          label: 'Rejected by Manager',
-          text: leave.rejectionReason!,
-          iconColor: _red,
-          iconBg: const Color(0xFFFEE2E2),
-          textColor: _red,
-        ),
-      );
-    }
-
-    if (leave.status == 'Approved' && leave.approvedBy?.isNotEmpty == true) {
-      tiles.add(
-        _ReasonTile(
-          icon: Icons.verified_outlined,
+          icon: Icons.verified_rounded,
           label: 'Approved by',
-          text: leave.approvedBy!,
+          text: leave.approvedBy?.isNotEmpty == true
+              ? leave.approvedBy!
+              : 'Manager',
           iconColor: _accent,
           iconBg: const Color(0xFFD1FAE5),
           textColor: _textDark,
@@ -1554,12 +1724,113 @@ class _TLReasonSection extends StatelessWidget {
       );
     }
 
-    if (leave.cancelReason?.isNotEmpty == true) {
+    // 3 — Pending TL
+    if (leave.status == 'Pending_TL') {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.hourglass_top_rounded,
+          label: 'Awaiting Your Review',
+          text: 'This leave request is waiting for your recommendation.',
+          iconColor: _primary,
+          iconBg: const Color(0xFFEEF2FF),
+          textColor: _textDark,
+        ),
+      );
+    }
+
+    // 4 — Recommended, pending manager
+    if (leave.status == 'Pending_Manager' || leave.status == 'Pending_HR') {
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.thumb_up_alt_outlined,
+          label: 'Recommended by TL',
+          text: leave.recommendedByName?.isNotEmpty == true
+              ? leave.recommendedByName!
+              : 'You recommended this leave.',
+          iconColor: _purple,
+          iconBg: const Color(0xFFF3E8FF),
+          textColor: _textDark,
+        ),
+      );
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.schedule_outlined,
+          label: 'Awaiting Manager Approval',
+          text: 'Pending final approval by the manager.',
+          iconColor: _amber,
+          iconBg: const Color(0xFFFFF8E1),
+          textColor: const Color(0xFF92400E),
+        ),
+      );
+    }
+
+    // 5 — Not recommended by TL
+    if (leave.status == 'Not_Recommended_By_TL' ||
+        leave.status == 'Rejected_By_TL') {
+      if (leave.recommendedByName?.isNotEmpty == true) {
+        tiles.add(
+          _ReasonTile(
+            icon: Icons.supervisor_account_outlined,
+            label: 'Not Recommended by',
+            text: leave.recommendedByName!,
+            iconColor: _red,
+            iconBg: const Color(0xFFFEE2E2),
+            textColor: _textDark,
+          ),
+        );
+      }
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.thumb_down_alt_outlined,
+          label: 'Reason',
+          text: leave.rejectionReason?.isNotEmpty == true
+              ? leave.rejectionReason!
+              : 'No reason provided.',
+          iconColor: _red,
+          iconBg: const Color(0xFFFEE2E2),
+          textColor: _red,
+        ),
+      );
+    }
+
+    // 6 — Rejected by Manager / HR
+    if (leave.status == 'Rejected_By_Manager' ||
+        leave.status == 'Rejected_By_HR') {
+      if (leave.approvedBy?.isNotEmpty == true) {
+        tiles.add(
+          _ReasonTile(
+            icon: Icons.manage_accounts_outlined,
+            label: 'Rejected by',
+            text: leave.approvedBy!,
+            iconColor: _red,
+            iconBg: const Color(0xFFFEE2E2),
+            textColor: _textDark,
+          ),
+        );
+      }
+      tiles.add(
+        _ReasonTile(
+          icon: Icons.do_not_disturb_on_outlined,
+          label: 'Rejection Reason',
+          text: leave.rejectionReason?.isNotEmpty == true
+              ? leave.rejectionReason!
+              : 'No reason provided.',
+          iconColor: _red,
+          iconBg: const Color(0xFFFEE2E2),
+          textColor: _red,
+        ),
+      );
+    }
+
+    // 7 — Cancelled
+    if (leave.status == 'Cancelled') {
       tiles.add(
         _ReasonTile(
           icon: Icons.cancel_outlined,
-          label: 'Cancelled — Reason',
-          text: leave.cancelReason!,
+          label: 'Cancelled by Employee',
+          text: leave.cancelReason?.isNotEmpty == true
+              ? leave.cancelReason!
+              : 'No reason provided.',
           iconColor: _amber,
           iconBg: const Color(0xFFFFF8E1),
           textColor: const Color(0xFF92400E),
@@ -1610,8 +1881,11 @@ class _TLReasonSection extends StatelessWidget {
 
 class _ReasonTile extends StatelessWidget {
   final IconData icon;
-  final String label, text;
-  final Color iconColor, iconBg, textColor;
+  final String label;
+  final String text;
+  final Color iconColor;
+  final Color iconBg;
+  final Color textColor;
 
   const _ReasonTile({
     required this.icon,
@@ -1669,6 +1943,44 @@ class _ReasonTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TLFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _TLFilterChip({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? color : _surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? color : _border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : _textMid,
+          ),
+        ),
       ),
     );
   }

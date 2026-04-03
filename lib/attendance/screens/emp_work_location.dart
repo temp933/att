@@ -542,14 +542,6 @@ class _EmployeeAssignmentsScreenState extends State<EmployeeAssignmentsScreen>
       ),
       child: Row(
         children: [
-          const Text(
-            'My Assignments',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-          ),
           const Spacer(),
           IconButton(
             icon: const Icon(

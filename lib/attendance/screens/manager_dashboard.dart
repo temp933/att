@@ -1,3 +1,4 @@
+import 'admin_manage_user.dart';
 import '../services/auth_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/attendance_provider.dart';
@@ -18,7 +19,7 @@ import '../services/site_cache.dart';
 
 class ManagerDashboardScreen extends StatefulWidget {
   final String employeeId;
-  final String role;
+  final String roleId;
   final int initialIndex;
   final int loginId;
 
@@ -26,7 +27,7 @@ class ManagerDashboardScreen extends StatefulWidget {
     super.key,
     required this.loginId,
     required this.employeeId,
-    required this.role,
+    required this.roleId,
     this.initialIndex = 0,
   });
 
@@ -62,12 +63,17 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
 
   // ── Pages ──────────────────────────────────────────────────────────────────
   List<Widget> get pages => [
-    HrHomeScreen(employeeId: widget.employeeId), // 0
+    HrHomeScreen(
+      employeeId: widget.employeeId,
+      onNavigate: (index) => setState(() => selectedIndex = index),
+    ), // 0
     AttendanceScreen(employeeId: int.parse(widget.employeeId)), // 1
     AdminHrAttendanceScreen(), // 2
     LeaveApprovalScreen(loginId: widget.loginId), // 3
     MGLeaveScreen(employeeId: widget.employeeId), // 4
+    ManageUserScreen(roleId: widget.roleId), // 10
     EmployeeAssignmentsScreen(), //5
+
     EmployeeProfileScreen(employeeId: widget.employeeId.toString()), // 6
   ];
 
@@ -78,6 +84,7 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
     'Manage Attendance',
     'Leave Approval',
     'Apply Leave',
+    "Manager User",
     "Site",
     'Profile',
   ];
@@ -108,6 +115,11 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen>
       icon: Icon(Icons.beach_access_outlined),
       selectedIcon: Icon(Icons.beach_access),
       label: Text('Apply Leave'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.manage_accounts_outlined),
+      selectedIcon: Icon(Icons.manage_accounts),
+      label: Text('Manage Users'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.place_outlined),

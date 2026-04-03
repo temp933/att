@@ -142,6 +142,7 @@ import 'attendance/screens/team_lead_dashboard.dart';
 import 'attendance/services/location_services.dart';
 import 'attendance/services/auth_service.dart';
 import 'attendance/services/background_service.dart';
+import 'attendance/screens/manager_dashboard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -227,6 +228,12 @@ class _SplashRouterState extends State<SplashRouter> {
         loginId: loginId,
         employeeId: empId.toString(),
         role: roleId.toString(),
+      );
+    } else if (roleId == 8) {
+      destination = ManagerDashboardScreen(
+        loginId: loginId,
+        employeeId: empId.toString(),
+        roleId: roleId.toString(),
       );
     } else {
       destination = DashboardScreen(

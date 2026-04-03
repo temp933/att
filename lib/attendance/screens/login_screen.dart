@@ -6,7 +6,7 @@ import 'emp_dashboard_screen.dart';
 import 'admin_dashboard.dart';
 import 'hr_dashboard_screen.dart';
 import '../services/employee_service.dart';
-import '../services/auth_service.dart';
+
 import '../services/biometric_service.dart';
 import 'team_lead_dashboard.dart';
 import 'manager_dashboard.dart';
@@ -172,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
         screen = ManagerDashboardScreen(
           loginId: loginId,
           employeeId: empId.toString(),
-          role: roleId.toString(),
+          roleId: roleId.toString(),
         );
         break;
 

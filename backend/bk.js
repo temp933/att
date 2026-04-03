@@ -4643,7 +4643,7 @@ app.get("/leaves/pending-tl", async (req, res) => {
       [login_id],
     );
 
-    console.log("[pending-tl] login_id:", login_id, "→ tlUser:", tlUser);
+    // console.log("[pending-tl] login_id:", login_id, "→ tlUser:", tlUser);
 
     if (!tlUser || !tlUser.emp_id) {
       return res
@@ -5026,6 +5026,8 @@ app.get("/leaves/all-history", async (req, res) => {
           l.reason,
           l.rejection_reason,
           l.cancel_reason,
+          DATE_FORMAT(l.created_at, '%d-%m-%Y %h:%i %p') AS created_at,
+          DATE_FORMAT(l.updated_at, '%d-%m-%Y %h:%i %p') AS updated_at,
           CASE
             WHEN l.recommended_by IS NOT NULL
             THEN CONCAT(tl_emp.first_name,' ',tl_emp.last_name)
@@ -6694,6 +6696,7 @@ app.post("/employee-edit-request", async (req, res) => {
     gender,
     department_id,
     role_id,
+    tl_id,
     date_of_joining,
     date_of_relieving,
     employment_type,
@@ -6749,6 +6752,7 @@ app.post("/employee-edit-request", async (req, res) => {
       gender,
       safeInt(department_id),
       safeInt(role_id),
+      safeInt(tl_id), // ← ADDED
       date_of_joining,
       dorValue,
       employment_type,
@@ -6774,7 +6778,7 @@ app.post("/employee-edit-request", async (req, res) => {
       await dbRun(
         `UPDATE employee_pending_request SET
            first_name=?, mid_name=?, last_name=?, email_id=?, phone_number=?,
-           date_of_birth=?, gender=?, department_id=?, role_id=?,
+           date_of_birth=?, gender=?, department_id=?, role_id=?, tl_id=?,
            date_of_joining=?, date_of_relieving=?, employment_type=?, work_type=?,
            permanent_address=?, communication_address=?,
            aadhar_number=?, pan_number=?, passport_number=?,
