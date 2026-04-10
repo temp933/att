@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const String kServerBaseUrl = "http://192.168.29.103:3000";
+const String kServerBaseUrl = "http://192.168.29.216:3000";
 
 class ApiService {
   static const String baseUrl = kServerBaseUrl;
@@ -54,7 +54,7 @@ class ApiService {
 
   /// Opens a new tracking_session row. Returns the new session_id (int).
   /// Called when the employee presses START.
-  static Future<int?> startSession(int employeeId) async {
+  static Future<Map<String, dynamic>> startSession(int employeeId) async {
     final res = await _client
         .post(
           Uri.parse('$baseUrl/attendance/start-session'),
@@ -62,9 +62,7 @@ class ApiService {
           body: jsonEncode({'employee_id': employeeId}),
         )
         .timeout(_timeout);
-    if (res.statusCode == 200) {
-      return _decode(res.body)['session_id'] as int?;
-    }
+    if (res.statusCode == 200) return _decode(res.body);
     throw ApiException('Start session failed: ${res.body}', res.statusCode);
   }
 
@@ -169,6 +167,27 @@ class ApiService {
     }
   }
 
+  // ── Cancel Session (location not verified) ────────────────────────────────
+  static Future<void> cancelSession(int employeeId, int sessionId) async {
+    final res = await _delete('/attendance/cancel-session', {
+      'employee_id': employeeId,
+      'session_id': sessionId,
+    });
+    if (res.statusCode != 200) {
+      throw ApiException('Cancel session failed: ${res.body}', res.statusCode);
+    }
+  }
+
+  static Future<http.Response> _delete(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final request = http.Request('DELETE', Uri.parse('$baseUrl$path'));
+    request.headers['Content-Type'] = 'application/json';
+    request.body = jsonEncode(body);
+    final streamed = await _client.send(request).timeout(_timeout);
+    return http.Response.fromStream(streamed);
+  }
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   static Map<String, dynamic> _decode(String body) {
@@ -178,8 +197,6 @@ class ApiService {
       return {'raw': body};
     }
   }
-
-  
 }
 
 class ApiException implements Exception {

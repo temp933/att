@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'admin_attendance_report.dart';
 import 'package:flutter/material.dart';
 import '../models/admin_hr_attendance_model.dart';
@@ -487,7 +489,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: _primary.withOpacity(0.08),
+            color: _primary.withValues(alpha: 0.08),
             shape: BoxShape.circle,
           ),
           child: const Icon(
@@ -523,7 +525,7 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _red.withOpacity(0.08),
+              color: _red.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.wifi_off_rounded, color: _red, size: 28),
@@ -592,7 +594,7 @@ class _SummaryCard extends StatelessWidget {
         border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -724,14 +726,14 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
         color: _card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _expanded ? sc.withOpacity(0.35) : _border,
+          color: _expanded ? sc.withValues(alpha: 0.35) : _border,
           width: _expanded ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
             color: _expanded
-                ? sc.withOpacity(0.10)
-                : Colors.black.withOpacity(0.04),
+                ? sc.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.04),
             blurRadius: _expanded ? 16 : 8,
             offset: const Offset(0, 2),
           ),
@@ -758,7 +760,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: _expanded
-                            ? [sc, sc.withOpacity(0.7)]
+                            ? [sc, sc.withValues(alpha: 0.7)]
                             : [
                                 const Color(0xFF1A56DB),
                                 const Color(0xFF1E3A8A),
@@ -796,12 +798,16 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'EMP ID: ${e.empId}',
-                          style: TextStyle(
-                            fontSize: s.captionFont,
-                            color: _textLight,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              'EMP ID: ${e.empId}',
+                              style: TextStyle(
+                                fontSize: s.captionFont,
+                                color: _textLight,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -836,7 +842,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                     decoration: BoxDecoration(
                       color: _statusBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: sc.withOpacity(0.3)),
+                      border: Border.all(color: sc.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -891,9 +897,9 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        sc.withOpacity(0.0),
-                        sc.withOpacity(0.4),
-                        sc.withOpacity(0.0),
+                        sc.withValues(alpha: 0.0),
+                        sc.withValues(alpha: 0.4),
+                        sc.withValues(alpha: 0.0),
                       ],
                     ),
                   ),
@@ -902,7 +908,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                 // Overall summary strip
                 if (hasSessions)
                   Container(
-                    color: sc.withOpacity(0.04),
+                    color: sc.withValues(alpha: 0.04),
                     padding: EdgeInsets.symmetric(
                       horizontal: s.pagePadding,
                       vertical: 8,
@@ -932,6 +938,16 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                           _purple,
                           s,
                         ),
+                        if (e.isLate && e.lateText != null) ...[
+                          const SizedBox(width: 8),
+                          _summaryPill(
+                            Icons.watch_later_outlined,
+                            'Late By',
+                            e.lateText!,
+                            _amber,
+                            s,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -977,7 +993,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   Icon(
                     Icons.event_busy_rounded,
                     size: 13,
-                    color: _red.withOpacity(0.5),
+                    color: _red.withValues(alpha: 0.5),
                   ),
                   const SizedBox(width: 6),
                   const Text(
@@ -1025,9 +1041,9 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
+        color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: color.withOpacity(0.15)),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
@@ -1041,7 +1057,7 @@ class _EmployeeAttendanceCardState extends State<_EmployeeAttendanceCard>
                   label,
                   style: TextStyle(
                     fontSize: 9,
-                    color: color.withOpacity(0.7),
+                    color: color.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1121,7 +1137,7 @@ class _SessionBlock extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: _primary.withOpacity(0.04),
+                color: _primary.withValues(alpha: 0.04),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(10),
                 ),
@@ -1134,7 +1150,7 @@ class _SessionBlock extends StatelessWidget {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: _primary.withOpacity(0.1),
+                      color: _primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -1173,7 +1189,7 @@ class _SessionBlock extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: _accent.withOpacity(0.1),
+                        color: _accent.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
@@ -1222,7 +1238,7 @@ class _SessionBlock extends StatelessWidget {
                         Icon(
                           Icons.location_off_rounded,
                           size: 13,
-                          color: _textLight.withOpacity(0.6),
+                          color: _textLight.withValues(alpha: 0.6),
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -1252,6 +1268,52 @@ class _SessionBlock extends StatelessWidget {
   }
 }
 
+Future<void> openMapFromVisit(
+  BuildContext context,
+  SiteVisitModel visit,
+) async {
+  double? lat = visit.latitude;
+  double? lng = visit.longitude;
+
+  // If visit has no coordinates, fetch from site polygon centroid
+  if ((lat == null || lng == null) && visit.siteId != null) {
+    try {
+      final loc = await AdminHrAttendanceService.fetchSiteLocation(
+        visit.siteId!,
+      );
+      lat = loc?['lat'];
+      lng = loc?['lng'];
+    } catch (_) {}
+  }
+
+  final Uri uri;
+  if (lat != null && lng != null) {
+    uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
+    );
+  } else {
+    uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(visit.locationName)}',
+    );
+  }
+
+  try {
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open maps')));
+    }
+  } catch (e) {
+    debugPrint("Map error: $e");
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Map failed to open')));
+    }
+  }
+}
+
 // ── Individual Visit Row ──────────────────────────────────────────────────────
 class _VisitRow extends StatelessWidget {
   final SiteVisitModel visit;
@@ -1273,55 +1335,98 @@ class _VisitRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = index.isEven ? _primary.withOpacity(0.025) : Colors.transparent;
+    final bg = index.isEven
+        ? _primary.withValues(alpha: 0.025)
+        : Colors.transparent;
 
-    return Container(
-      margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _border),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            // Accent stripe
-            Container(
-              width: 3,
-              decoration: BoxDecoration(
-                color: _primary.withOpacity(0.25),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(10),
-                  bottomLeft: Radius.circular(10),
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+
+      // ✅ TAP → open map
+      onTap: () => openMapFromVisit(context, visit),
+
+      // ✅ LONG PRESS → options
+      onLongPress: () {
+        showModalBottomSheet(
+          context: context,
+          builder: (_) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.map),
+                title: const Text("Open in Maps"),
+                onTap: () {
+                  Navigator.pop(context);
+                  openMapFromVisit(context, visit);
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.copy),
+                title: const Text("Copy Coordinates"),
+                onTap: () {
+                  if (visit.latitude != null && visit.longitude != null) {
+                    Clipboard.setData(
+                      ClipboardData(
+                        text: '${visit.latitude}, ${visit.longitude}',
+                      ),
+                    );
+                  }
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+      child: Container(
+        margin: EdgeInsets.only(bottom: isLast ? 0 : 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _border),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.25),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(10),
+                    bottomLeft: Radius.circular(10),
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: s.isMobile ? _mobileLayout(context) : _desktopLayout(),
                 ),
-                child: s.isMobile ? _mobileLayout() : _desktopLayout(),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _mobileLayout() => Column(
+  Widget _mobileLayout(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      // Location name + visit number
+      // Location row
       Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: _primary.withOpacity(0.1),
+              color: _primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Center(
@@ -1339,76 +1444,119 @@ class _VisitRow extends StatelessWidget {
           const Icon(Icons.location_on_rounded, size: 13, color: _primary),
           const SizedBox(width: 4),
           Expanded(
-            child: Text(
-              visit.locationName,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: _textDark,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        visit.locationName,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => openMapFromVisit(context, visit),
+                      child: const Icon(
+                        Icons.map_rounded,
+                        size: 14,
+                        color: _primary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (visit.latitude != null && visit.longitude != null)
+                  GestureDetector(
+                    onTap: () => openMapFromVisit(context, visit),
+                    child: Text(
+                      '${visit.latitude!.toStringAsFixed(5)}, ${visit.longitude!.toStringAsFixed(5)}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
       ),
+      // Time chips — separate row below location
       const SizedBox(height: 8),
-      Wrap(
-        spacing: 6,
-        runSpacing: 6,
+      Row(
         children: [
-          _timeChip(Icons.login_rounded, 'In', _fmt(visit.inTime), _accent),
-          _timeChip(Icons.logout_rounded, 'Out', _fmt(visit.outTime), _primary),
-          _timeChip(
-            Icons.timer_outlined,
-            'Worked',
-            visit.workedFormatted,
-            _purple,
+          Expanded(
+            child: _timeChip(
+              Icons.login_rounded,
+              'In',
+              _fmt(visit.inTime),
+              _accent,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _timeChip(
+              Icons.logout_rounded,
+              'Out',
+              _fmt(visit.outTime),
+              _primary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _timeChip(
+              Icons.timer_outlined,
+              'Worked',
+              visit.workedFormatted,
+              _purple,
+            ),
           ),
         ],
       ),
     ],
   );
-
   Widget _timeChip(IconData icon, String label, String value, Color color) {
-    final chipWidth = (s.width - s.pagePadding * 2 - 40) / 3;
-    return SizedBox(
-      width: chipWidth,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.18)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 10, color: color.withOpacity(0.7)),
-                const SizedBox(width: 3),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: color.withOpacity(0.7),
-                    fontWeight: FontWeight.w500,
-                  ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 10, color: color.withValues(alpha: 0.7)),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: color.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w500,
                 ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: color,
               ),
-              overflow: TextOverflow.ellipsis,
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
-          ],
-        ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -1419,7 +1567,7 @@ class _VisitRow extends StatelessWidget {
         width: 24,
         height: 24,
         decoration: BoxDecoration(
-          color: _primary.withOpacity(0.1),
+          color: _primary.withValues(alpha: 0.1),
           shape: BoxShape.circle,
         ),
         child: Center(
@@ -1481,7 +1629,7 @@ class _VisitRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
+              color: color.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(icon, size: 12, color: color),
@@ -1494,7 +1642,7 @@ class _VisitRow extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 9,
-                  color: color.withOpacity(0.7),
+                  color: color.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w500,
                 ),
               ),

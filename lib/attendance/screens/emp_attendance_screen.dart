@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
 import '../services/attendance_state.dart';
 import '../services/background_service.dart';
+import 'attendance_history_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
   final int employeeId;
@@ -22,6 +24,10 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     with SingleTickerProviderStateMixin {
   final _service = FlutterBackgroundService();
   final _state = AttendanceState.instance;
+  bool _verifyingLocation = false;
+  int _verifyCountdown = 120;
+  Timer? _verifyTimer;
+  StreamSubscription? _verifySub;
 
   LatLng? _position;
   double? _accuracy;
@@ -64,6 +70,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     _statusTimer?.cancel();
     _logsTimer?.cancel();
     _clockTimer?.cancel();
+    _verifyTimer?.cancel();
+    _verifySub?.cancel();
     super.dispose();
   }
 
@@ -96,7 +104,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     );
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {}); // refresh session duration display
+      if (mounted) setState(() {});
     });
   }
 
@@ -109,7 +117,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     _clockTimer = null;
   }
 
-  // ── Stream listeners ─────────────────────────────────────────────────────
+  // ── Stream listeners ──────────────────────────────────────────────────────
 
   void _attachListeners() {
     if (_listenersAttached) return;
@@ -196,7 +204,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   // ── START ─────────────────────────────────────────────────────────────────
 
   Future<void> _startWork() async {
-    if (_isLoading) return;
+    if (_isLoading || _verifyingLocation) return;
     setState(() => _isLoading = true);
 
     await _state.checkStatus(widget.employeeId);
@@ -274,7 +282,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       }
     }
 
-    // ── Start ─────────────────────────────────────────────────────────────
+    // ── Start session + background service ────────────────────────────────
     try {
       await _state.start(widget.employeeId);
       await startBackgroundTracking(
@@ -282,12 +290,222 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         sessionId: _state.currentSessionId,
       );
       _attachListeners();
-      _startTimers();
-      setState(() => _isLoading = false);
+
+      setState(() {
+        _isLoading = false;
+        _verifyingLocation = true;
+        _verifyCountdown = 120;
+      });
+
+      // ── Countdown timer ───────────────────────────────────────────────
+      _verifyTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+        if (!mounted) {
+          t.cancel();
+          return;
+        }
+        setState(() => _verifyCountdown -= 1);
+        if (_verifyCountdown <= 0) {
+          t.cancel();
+          await _cancelVerification();
+        }
+      });
+
+      // ── Listen for IN event ───────────────────────────────────────────
+      _verifySub = _service.on('status_update').listen((e) async {
+        if (!mounted || e == null) return;
+        if (e['status'] == 'IN') {
+          await _confirmVerification();
+        }
+      });
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnack('Failed to start tracking: $e', isError: true);
     }
+  }
+
+  // ── Confirm verification ──────────────────────────────────────────────────
+
+  Future<void> _confirmVerification() async {
+    _verifyTimer?.cancel();
+    _verifySub?.cancel();
+    _verifyTimer = null;
+    _verifySub = null;
+
+    _state.confirmStart();
+
+    if (!mounted) return;
+    setState(() => _verifyingLocation = false);
+
+    _startTimers();
+
+    // ── Show late entry snack if applicable ───────────────────────────
+    if (_state.isLate && _state.lateText != null) {
+      _showSnack(
+        'Late by ${_state.lateText} · Check-in after 9:00 AM',
+        isError: true,
+      );
+    } else {
+      _showSnack('Location verified! Tracking started.');
+    }
+
+    await _fetchLogs();
+  }
+
+  // ── Cancel verification ───────────────────────────────────────────────────
+
+  Future<void> _cancelVerification() async {
+    _verifyTimer?.cancel();
+    _verifySub?.cancel();
+    _verifyTimer = null;
+    _verifySub = null;
+
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke('force_stop');
+      await Future.delayed(const Duration(milliseconds: 800));
+    }
+
+    await _state.cancelStart(widget.employeeId);
+    _detachListeners();
+
+    if (!mounted) return;
+    setState(() => _verifyingLocation = false);
+
+    _showSnack('You are not near any site. Session cancelled.', isError: true);
+  }
+
+  // ── Verifying card ────────────────────────────────────────────────────────
+
+  Widget _buildVerifyingCard() {
+    final minutes = (_verifyCountdown ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_verifyCountdown % 60).toString().padLeft(2, '0');
+    final progress = _verifyCountdown / 120.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange.shade700, Colors.deepOrange.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withValues(alpha: 0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.my_location_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Verifying Location...',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Please stay near your site',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$minutes:$seconds',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              minHeight: 6,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Session will be cancelled if you are not detected\nat a site within $minutes:$seconds',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _cancelVerification,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+              ),
+              child: const Center(
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── END ───────────────────────────────────────────────────────────────────
@@ -295,7 +513,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   Future<void> _endWork() async {
     if (_state.dayStatus != DayStatus.inProgress || _isLoading) return;
 
-    // ── Step 1: Are you still on site? ───────────────────────────────────
     bool? stillOnSite;
 
     if (_state.isInsideSite) {
@@ -320,13 +537,11 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             'Are you still physically at this location?',
           ),
           actions: [
-            // "No — I've left"
             OutlinedButton.icon(
               icon: const Icon(Icons.directions_walk_rounded, size: 16),
               label: const Text("No, I've left"),
               onPressed: () => Navigator.pop(ctx, false),
             ),
-            // "Yes — still here"
             ElevatedButton.icon(
               icon: const Icon(Icons.home_work_rounded, size: 16),
               label: const Text('Yes, still here'),
@@ -338,12 +553,11 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ],
         ),
       );
-      if (stillOnSite == null) return; // dialog dismissed
+      if (stillOnSite == null) return;
     } else {
-      stillOnSite = false; // not on site — no need to ask
+      stillOnSite = false;
     }
 
-    // ── Step 2: Confirm end session ───────────────────────────────────────
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -390,7 +604,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     final ok = await sendEndSession(stillOnSite: stillOnSite!);
 
     if (!ok) {
-      // Service timed out — verify with server
       try {
         final data = await ApiService.getTodayStatus(widget.employeeId);
         if ((data['status'] as String?) == 'in_progress') {
@@ -557,7 +770,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           padding: EdgeInsets.fromLTRB(hPad, hPad, hPad, 0),
           child: Column(
             children: [
-              _buildStatusCard(cardPad: cardPad, isCompact: isCompact),
+              _verifyingLocation
+                  ? _buildVerifyingCard()
+                  : _buildStatusCard(cardPad: cardPad, isCompact: isCompact),
               SizedBox(height: gap),
               _buildLogHeader(isSmall: isSmall),
               SizedBox(height: isSmall ? 6 : 8),
@@ -720,145 +935,185 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   }
 
   Widget _buildCardBottom({required bool isRunning, required bool isCompact}) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Total on-site time
-        if (_logs.isNotEmpty) ...[
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Total On-Site',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
+        Row(
+          children: [
+            // Total on-site time
+            if (_logs.isNotEmpty) ...[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.timelapse_rounded,
-                    size: 14,
-                    color: Colors.white.withValues(alpha: 0.9),
-                  ),
-                  const SizedBox(width: 5),
                   Text(
-                    _totalWorkedLabel,
+                    'Total On-Site',
                     style: TextStyle(
-                      fontSize: isCompact ? 13 : 15,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.4,
                     ),
                   ),
-                  if (_logs.length > 1) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1,
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.timelapse_rounded,
+                        size: 14,
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '${_logs.length} visits',
+                      const SizedBox(width: 5),
+                      Text(
+                        _totalWorkedLabel,
                         style: TextStyle(
-                          fontSize: 9.5,
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontWeight: FontWeight.w600,
+                          fontSize: isCompact ? 13 : 15,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
-                  ],
+                      if (_logs.length > 1) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${_logs.length} visits',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 1,
-            height: 32,
-            color: Colors.white.withValues(alpha: 0.2),
-          ),
-          const SizedBox(width: 16),
-        ],
-
-        // Session info
-        if (!isRunning && _state.hasActivityToday) ...[
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Sessions Today',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.4,
-                ),
+              const SizedBox(width: 16),
+              Container(
+                width: 1,
+                height: 32,
+                color: Colors.white.withValues(alpha: 0.2),
               ),
-              const SizedBox(height: 2),
-              Row(
+              const SizedBox(width: 16),
+            ],
+
+            // Session info (when not running)
+            if (!isRunning && _state.hasActivityToday) ...[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.repeat_rounded,
-                    size: 14,
-                    color: Colors.white.withValues(alpha: 0.9),
-                  ),
-                  const SizedBox(width: 5),
                   Text(
-                    '${_state.sessionCountToday}',
+                    'Sessions Today',
                     style: TextStyle(
-                      fontSize: isCompact ? 13 : 15,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.4,
                     ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.repeat_rounded,
+                        size: 14,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        '${_state.sessionCountToday}',
+                        style: TextStyle(
+                          fontSize: isCompact ? 13 : 15,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
+              const Spacer(),
             ],
-          ),
-          const Spacer(),
-        ],
 
-        // GPS signal (while running)
-        if (isRunning)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            // GPS signal (while running)
+            if (isRunning)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'GPS Signal',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _position == null
+                        ? _infoChip(
+                            icon: Icons.gps_not_fixed,
+                            label: 'Acquiring...',
+                            spinning: true,
+                          )
+                        : _infoChipColor(
+                            icon: _goodAccuracy
+                                ? Icons.gps_fixed
+                                : Icons.gps_not_fixed,
+                            label: _accuracyLabel(),
+                            color: _accuracyColor(),
+                          ),
+                  ],
+                ),
+              )
+            else
+              const Spacer(),
+          ],
+        ),
+
+        // ── Late entry badge ──────────────────────────────────────────────
+        if (isRunning && _state.isLate && _state.lateText != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.25),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                const Icon(
+                  Icons.schedule_rounded,
+                  size: 13,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 5),
                 Text(
-                  'GPS Signal',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.4,
+                  'Late by ${_state.lateText}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 2),
-                _position == null
-                    ? _infoChip(
-                        icon: Icons.gps_not_fixed,
-                        label: 'Acquiring...',
-                        spinning: true,
-                      )
-                    : _infoChipColor(
-                        icon: _goodAccuracy
-                            ? Icons.gps_fixed
-                            : Icons.gps_not_fixed,
-                        label: _accuracyLabel(),
-                        color: _accuracyColor(),
-                      ),
               ],
             ),
-          )
-        else
-          const Spacer(),
+          ),
+        ],
       ],
     );
   }
@@ -956,6 +1211,43 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
         ],
         const Spacer(),
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  AttendanceHistoryScreen(employeeId: widget.employeeId),
+            ),
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.indigo.shade200),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_month_rounded,
+                  size: 13,
+                  color: Colors.indigo.shade600,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'History',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.indigo.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: _fetchLogs,
@@ -1003,7 +1295,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         final log = _logs[i];
         final isOpen = log['out_time'] == null;
         final duration = log['duration_minutes'] as int?;
-        // Session number badge (if server returns it)
         final sessionNum = log['session_number'] as int?;
 
         return Container(
@@ -1062,7 +1353,6 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        // Session number chip
                         if (sessionNum != null) ...[
                           const SizedBox(width: 6),
                           Container(
@@ -1199,7 +1489,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             gradient: const LinearGradient(
               colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
             ),
-            onPressed: (notStarted && !_isLoading) ? _startWork : null,
+            onPressed: (notStarted && !_isLoading && !_verifyingLocation)
+                ? _startWork
+                : null,
             height: height,
             radius: radius,
             fontSize: fontSize,
@@ -1214,7 +1506,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             gradient: const LinearGradient(
               colors: [Color(0xFFE65100), Color(0xFFFF6D00)],
             ),
-            onPressed: (isRunning && !_isLoading) ? _endWork : null,
+            onPressed: (isRunning && !_isLoading && !_verifyingLocation)
+                ? _endWork
+                : null,
             height: height,
             radius: radius,
             fontSize: fontSize,

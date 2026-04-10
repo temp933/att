@@ -1267,9 +1267,7 @@ const Color _textMid = Color(0xFF64748B);
 const Color _textLight = Color(0xFF94A3B8);
 const Color _border = Color(0xFFE2E8F0);
 
-// ─────────────────────────────────────────────────────────────────────────────
 //  LIST PAGE
-// ─────────────────────────────────────────────────────────────────────────────
 class AdminApprovalPage extends StatefulWidget {
   const AdminApprovalPage({super.key});
 

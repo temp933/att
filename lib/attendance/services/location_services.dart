@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/location_modules.dart';
 
 class LocationService {
-  final String baseUrl = "http://192.168.29.103:3000";  
+  final String baseUrl = "http://192.168.29.216:3000";
 
   /// GET all locations
   Future<List<LocationManager>> fetchLocations() async {

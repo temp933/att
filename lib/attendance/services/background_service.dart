@@ -716,8 +716,6 @@
 //   );
 // }
 
-// // Legacy compat
-// Future<bool> sendEndDay() => sendEndSession(stillOnSite: false);
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -1034,7 +1032,7 @@ void onServiceStart(ServiceInstance service) async {
     }
 
     // Close session
-    if (writeEndSession) {
+    if (writeEndSession && endReason != 'not_in_range') {
       await LocalDB.writeEvent(
         type: endReason == 'logout' ? 'force_end_session' : 'end_session',
         employeeId: empId,
@@ -1079,7 +1077,7 @@ void onServiceStart(ServiceInstance service) async {
   service.on('force_stop').listen((_) async {
     await shutdown(
       writeEndSession: true,
-      endReason: 'logout',
+      endReason: 'not_in_range',
       clearAllData: true,
       doneEvent: 'force_stop_done',
     );

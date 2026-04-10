@@ -13,7 +13,7 @@ class AuthService {
   static const _kToken = 'session_token';
   static const _kDeviceId = 'device_id';
 
-  static const String _baseUrl = 'http://192.168.29.103:3000';
+  static const String _baseUrl = 'http://192.168.29.216:3000';
 
   /// Returns a stable, persistent device ID (stored in SharedPreferences).
   static Future<String> getDeviceId() async {

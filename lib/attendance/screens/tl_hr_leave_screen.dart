@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'responsive_utils.dart';
+import 'emp_holiday_view.dart';
 
-const String baseUrl = 'http://192.168.29.103:3000';
+const String baseUrl = 'http://192.168.29.216:3000';
 
 class TL_HR_LeaveScreen extends StatefulWidget {
   final String employeeId;
@@ -455,7 +456,48 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
               ),
             ),
             const Spacer(),
-            if (leaves.isNotEmpty)
+            // ── Holiday view button ──────────────────────────────────────
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const EmpHolidayView()),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withOpacity(0.4),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.event_note_rounded,
+                      size: 13,
+                      color: Color(0xFFF59E0B),
+                    ),
+                    SizedBox(width: 5),
+                    Text(
+                      'Holidays',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFF59E0B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // ── Records chip ─────────────────────────────────────────────
+            if (leaves.isNotEmpty) ...[
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -474,6 +516,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),

@@ -10,10 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:file_saver/file_saver.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
-const String _baseUrl = 'http://192.168.29.103:3000';
+const String _baseUrl = 'http://192.168.29.216:3000';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
@@ -27,9 +25,7 @@ const Color _textDark = Color(0xFF0F172A);
 const Color _textMid = Color(0xFF64748B);
 const Color _border = Color(0xFFE2E8F0);
 
-// ─────────────────────────────────────────────────────────────────────────────
 // MODELS
-// ─────────────────────────────────────────────────────────────────────────────
 class _LeaveRecord {
   final int leaveId;
   final int empId;
@@ -146,9 +142,7 @@ class _LeaveRecord {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SERVICE
-// ─────────────────────────────────────────────────────────────────────────────
 class _LeaveReportService {
   static Future<List<_LeaveRecord>> fetchAllHistory() async {
     final res = await http.get(Uri.parse('$_baseUrl/leaves/all-history'));
@@ -178,9 +172,7 @@ class _LeaveReportService {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // EXCEL BUILDER
-// ─────────────────────────────────────────────────────────────────────────────
 class _LeaveExcelBuilder {
   static xl.CellStyle _hdrStyle({String hex = 'FF1A56DB'}) => xl.CellStyle(
     backgroundColorHex: xl.ExcelColor.fromHexString(hex),
@@ -794,9 +786,8 @@ class _EmpSummary {
   _EmpSummary({required this.empId, required this.name});
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SCROLL BEHAVIOR
-// ─────────────────────────────────────────────────────────────────────────────
+
 class _DragScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
@@ -807,9 +798,8 @@ class _DragScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+
 class LeaveReportScreen extends StatefulWidget {
   const LeaveReportScreen({super.key});
 
@@ -1513,9 +1503,8 @@ class _LeaveReportScreenState extends State<LeaveReportScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // LEAVE TABLE
-// ─────────────────────────────────────────────────────────────────────────────
+
 class _LeaveTable extends StatelessWidget {
   final List<_LeaveRecord> records;
   final String Function(DateTime) fmt;
@@ -1838,9 +1827,8 @@ class _LeaveCardState extends State<_LeaveCard>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SHARED SMALL WIDGETS
-// ─────────────────────────────────────────────────────────────────────────────
+
 class _InfoCell extends StatelessWidget {
   final IconData icon;
   final String label, value;

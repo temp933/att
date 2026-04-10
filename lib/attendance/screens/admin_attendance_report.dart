@@ -10,15 +10,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:file_saver/file_saver.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
-const String _baseUrl = 'http://192.168.29.103:3000';
+const String _baseUrl = 'http://192.168.29.216:3000';
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
 const Color _accent = Color(0xFF0E9F6E);
 const Color _red = Color(0xFFEF4444);
+const Color _amber = Color(0xFFF59E0B);
+const Color _purple = Color(0xFF7C3AED);
 const Color _surface = Color(0xFFF0F4FF);
 const Color _card = Colors.white;
 const Color _textDark = Color(0xFF0F172A);
@@ -49,7 +47,6 @@ class _Visit {
 
   String get inFmt => inTime == null ? '--:--' : _fmtTime(inTime!);
   String get outFmt => outTime == null ? '--:--' : _fmtTime(outTime!);
-
   static String _fmtTime(DateTime dt) =>
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
@@ -59,12 +56,18 @@ class _EmpDay {
   final String empName;
   final DateTime date;
   final List<_Visit> visits;
+  final bool isLate;
+  final int lateMinutes;
+  final String? lateText;
 
   _EmpDay({
     required this.empId,
     required this.empName,
     required this.date,
     required this.visits,
+    this.isLate = false,
+    this.lateMinutes = 0,
+    this.lateText,
   });
 
   int get totalMinutes => visits.fold(0, (s, v) => s + v.workedMinutes);
@@ -76,12 +79,107 @@ class _EmpDay {
   }
 }
 
+class _Holiday {
+  final DateTime date;
+  final String name;
+  final String type;
+  _Holiday({required this.date, required this.name, required this.type});
+}
+
+class _ApprovedLeave {
+  final int empId;
+  final String leaveType;
+  final DateTime startDate;
+  final DateTime endDate;
+  _ApprovedLeave({
+    required this.empId,
+    required this.leaveType,
+    required this.startDate,
+    required this.endDate,
+  });
+
+  bool coversDate(DateTime d) => !d.isBefore(startDate) && !d.isAfter(endDate);
+
+  /// Short label shown in the cell
+  String get shortLabel {
+    switch (leaveType.toLowerCase()) {
+      case 'sick':
+        return 'SL';
+      case 'casual':
+        return 'CL';
+      case 'paid':
+        return 'PL';
+      case 'maternity':
+        return 'ML';
+      case 'paternity':
+        return 'PTL';
+      default:
+        return 'LOP';
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVICE
 // ─────────────────────────────────────────────────────────────────────────────
 class _ReportService {
   static String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  static Future<List<_Holiday>> fetchHolidays(
+    DateTime from,
+    DateTime to,
+  ) async {
+    try {
+      final url = Uri.parse(
+        '$_baseUrl/holidays/range?from=${_fmt(from)}&to=${_fmt(to)}',
+      );
+      final res = await http.get(url);
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body);
+      final List rows = body['data'] ?? [];
+      return rows.map((r) {
+        return _Holiday(
+          date: DateTime.parse((r['holiday_date'] as String).substring(0, 10)),
+          name: r['holiday_name']?.toString() ?? '',
+          type: r['holiday_type']?.toString() ?? '',
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('fetchHolidays error: $e');
+      return [];
+    }
+  }
+
+  static Future<List<_ApprovedLeave>> fetchApprovedLeaves(
+    DateTime from,
+    DateTime to,
+  ) async {
+    try {
+      final url = Uri.parse(
+        '$_baseUrl/leaves/approved-range?from=${_fmt(from)}&to=${_fmt(to)}',
+      );
+      final res = await http.get(url);
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body);
+      final List rows = body['data'] ?? [];
+      return rows.map((r) {
+        return _ApprovedLeave(
+          empId: int.parse(r['emp_id'].toString()),
+          leaveType: r['leave_type']?.toString() ?? 'LOP',
+          startDate: DateTime.parse(
+            (r['leave_start_date'] as String).substring(0, 10),
+          ),
+          endDate: DateTime.parse(
+            (r['leave_end_date'] as String).substring(0, 10),
+          ),
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('fetchApprovedLeaves error: $e');
+      return [];
+    }
+  }
 
   static Future<List<_EmpDay>> fetchRange(DateTime from, DateTime to) async {
     final List<_EmpDay> result = [];
@@ -113,16 +211,24 @@ class _ReportService {
 
           final empName = row['name']?.toString().trim() ?? '';
 
-          // ── New format: sessions[] → visits[] ─────────────────────────────
-          // ── Old format: flat visits[] (TL endpoint) ───────────────────────
-          // Both are handled below so the report works for any endpoint.
           List<_Visit> flatVisits = [];
+          bool isLate = false;
+          int lateMinutes = 0;
+          String? lateText;
 
           final rawSessions = row['sessions'];
           if (rawSessions is List && rawSessions.isNotEmpty) {
-            // New backend: flatten all sessions → all visits
-            for (final sess in rawSessions) {
+            for (int si = 0; si < rawSessions.length; si++) {
+              final sess = rawSessions[si];
               if (sess is! Map) continue;
+
+              // Late info only from first session
+              if (si == 0) {
+                isLate = sess['is_late'] == true || sess['is_late'] == 1;
+                lateMinutes = (sess['late_minutes'] as num?)?.toInt() ?? 0;
+                lateText = sess['late_text']?.toString();
+              }
+
               final sessionVisits = sess['visits'];
               if (sessionVisits is! List) continue;
               for (final v in sessionVisits) {
@@ -131,7 +237,6 @@ class _ReportService {
               }
             }
           } else {
-            // Legacy / TL endpoint: flat visits[]
             final rawVisits = row['visits'];
             if (rawVisits is List) {
               for (final v in rawVisits) {
@@ -147,6 +252,9 @@ class _ReportService {
               empName: empName,
               date: d,
               visits: flatVisits,
+              isLate: isLate,
+              lateMinutes: lateMinutes,
+              lateText: lateText,
             ),
           );
         }
@@ -158,17 +266,12 @@ class _ReportService {
     return result;
   }
 
-  /// Parses a single visit map into a [_Visit], or returns null if invalid.
   static _Visit? _parseVisit(dynamic v, DateTime date) {
     if (v is! Map) return null;
-
-    // New backend uses 'site_name'; legacy uses 'location_name'
     final locationName =
         (v['site_name'] ?? v['location_name'])?.toString() ?? 'Unknown';
-
     final inRaw = v['in_time'];
     final outRaw = v['out_time'];
-
     final rawMins = v['worked_minutes'];
     int mins = 0;
     if (rawMins is num) {
@@ -177,7 +280,6 @@ class _ReportService {
       mins = int.tryParse(rawMins) ?? 0;
     }
     if (mins < 0) mins = 0;
-
     return _Visit(
       locationName: locationName,
       inTime: inRaw != null ? _parseTime(inRaw.toString(), date) : null,
@@ -205,7 +307,7 @@ class _ReportService {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EXCEL BUILDER  (unchanged — operates on flat _Visit / _EmpDay models)
+// EXCEL BUILDER
 // ─────────────────────────────────────────────────────────────────────────────
 class _ExcelBuilder {
   static xl.CellStyle _hdrStyle({String hex = 'FF1A56DB'}) => xl.CellStyle(
@@ -248,6 +350,36 @@ class _ExcelBuilder {
     verticalAlign: xl.VerticalAlign.Center,
   );
 
+  static xl.CellStyle _lateStyle() => xl.CellStyle(
+    backgroundColorHex: xl.ExcelColor.fromHexString('FFFEF3C7'),
+    fontColorHex: xl.ExcelColor.fromHexString('FFB45309'),
+    bold: true,
+    fontSize: 9,
+    fontFamily: 'Arial',
+    horizontalAlign: xl.HorizontalAlign.Center,
+    verticalAlign: xl.VerticalAlign.Center,
+  );
+
+  static xl.CellStyle _holidayStyle() => xl.CellStyle(
+    backgroundColorHex: xl.ExcelColor.fromHexString('FFEDE9FE'),
+    fontColorHex: xl.ExcelColor.fromHexString('FF6D28D9'),
+    bold: true,
+    fontSize: 9,
+    fontFamily: 'Arial',
+    horizontalAlign: xl.HorizontalAlign.Center,
+    verticalAlign: xl.VerticalAlign.Center,
+  );
+
+  static xl.CellStyle _leaveStyle() => xl.CellStyle(
+    backgroundColorHex: xl.ExcelColor.fromHexString('FFFFE4E6'),
+    fontColorHex: xl.ExcelColor.fromHexString('FFBe123C'),
+    bold: true,
+    fontSize: 9,
+    fontFamily: 'Arial',
+    horizontalAlign: xl.HorizontalAlign.Center,
+    verticalAlign: xl.VerticalAlign.Center,
+  );
+
   static void _setCell(
     xl.Sheet sheet,
     int row,
@@ -267,15 +399,29 @@ class _ExcelBuilder {
   }
 
   // ── DAY-WISE ───────────────────────────────────────────────────────────────
-  static xl.Excel buildDayWise(List<_EmpDay> data, DateTime from, DateTime to) {
+  static xl.Excel buildDayWise(
+    List<_EmpDay> data,
+    DateTime from,
+    DateTime to,
+    List<_Holiday> holidays,
+    List<_ApprovedLeave> leaves,
+  ) {
     final excel = xl.Excel.createExcel();
     const sheetName = 'Day-Wise Report';
     excel.rename('Sheet1', sheetName);
     final sheet = excel[sheetName];
 
+    // Build holiday & leave lookup maps
+    final Set<String> holidayDates = holidays
+        .map((h) => _fmtDate(h.date))
+        .toSet();
+    final Map<String, String> holidayNames = {
+      for (final h in holidays) _fmtDate(h.date): h.name,
+    };
+
     sheet.merge(
       xl.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0),
-      xl.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0),
+      xl.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: 0),
     );
     _setCell(
       sheet,
@@ -297,6 +443,7 @@ class _ExcelBuilder {
       'S.No',
       'Emp ID',
       'Employee Name',
+      'Date',
       'Site Name',
       'Check In',
       'Check Out',
@@ -306,7 +453,7 @@ class _ExcelBuilder {
       _setCell(sheet, 1, c, headers[c], _hdrStyle());
     sheet.setRowHeight(1, 22);
 
-    final widths = [6.0, 9.0, 22.0, 22.0, 12.0, 12.0, 12.0];
+    final widths = [6.0, 9.0, 22.0, 13.0, 22.0, 12.0, 12.0, 12.0, 18.0];
     for (int c = 0; c < widths.length; c++) sheet.setColumnWidth(c, widths[c]);
 
     int sno = 1, row = 2;
@@ -316,18 +463,84 @@ class _ExcelBuilder {
     });
 
     for (final day in data) {
-      if (day.visits.isEmpty) continue;
+      final dk = _fmtDate(day.date);
+      final isHoliday = holidayDates.contains(dk);
+      final holidayName = holidayNames[dk];
+
+      // Check approved leave for this employee on this date
+      final leaveOnDay = leaves
+          .where((l) => l.empId == day.empId && l.coversDate(day.date))
+          .firstOrNull;
+
+      if (isHoliday) {
+        // Holiday row — spans all columns
+        sheet.merge(
+          xl.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row),
+          xl.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row),
+        );
+        _setCell(
+          sheet,
+          row,
+          0,
+          '🎉  Holiday: $holidayName  (${day.empName})',
+          _holidayStyle(),
+        );
+        sheet.setRowHeight(row, 18);
+        row++;
+        continue;
+      }
+
+      if (day.visits.isEmpty) {
+        // Absent / Leave row
+        sheet.merge(
+          xl.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row),
+          xl.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row),
+        );
+        final label = leaveOnDay != null ? leaveOnDay.shortLabel : 'A';
+        final remarkText = leaveOnDay != null
+            ? '${leaveOnDay.leaveType} Leave'
+            : 'Absent';
+        _setCell(
+          sheet,
+          row,
+          0,
+          '${day.empName} (ID: ${day.empId})  —  $dk',
+          leaveOnDay != null ? _leaveStyle() : _cellStyle(),
+        );
+        _setCell(
+          sheet,
+          row,
+          7,
+          label,
+          leaveOnDay != null ? _leaveStyle() : _cellStyle(center: true),
+        );
+        _setCell(
+          sheet,
+          row,
+          8,
+          remarkText,
+          leaveOnDay != null ? _leaveStyle() : _cellStyle(),
+        );
+        sheet.setRowHeight(row, 18);
+        row++;
+        continue;
+      }
+
+      // Section header
       sheet.merge(
         xl.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row),
-        xl.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row),
+        xl.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row),
       );
       _setCell(
         sheet,
         row,
         0,
-        '📅  ${_fmtDateLong(day.date)}  —  ${day.empName}  (ID: ${day.empId})',
+        '📅  ${_fmtDateLong(day.date)}  —  ${day.empName}  (ID: ${day.empId})'
+        '${day.isLate ? '  ⏰ Late: ${day.lateText}' : ''}',
         xl.CellStyle(
-          backgroundColorHex: xl.ExcelColor.fromHexString('FFE8F0FE'),
+          backgroundColorHex: xl.ExcelColor.fromHexString(
+            day.isLate ? 'FFFFF3CD' : 'FFE8F0FE',
+          ),
           bold: true,
           fontSize: 9,
           fontFamily: 'Arial',
@@ -338,27 +551,42 @@ class _ExcelBuilder {
 
       for (int vi = 0; vi < day.visits.length; vi++) {
         final v = day.visits[vi];
+        final remarks = day.isLate && vi == 0 ? 'Late by ${day.lateText}' : '';
         _setCell(sheet, row, 0, sno, _cellStyle(center: true));
         _setCell(sheet, row, 1, day.empId, _cellStyle(center: true));
         _setCell(sheet, row, 2, day.empName, _cellStyle());
-        _setCell(sheet, row, 3, v.locationName, _cellStyle());
-        _setCell(sheet, row, 4, v.inFmt, _cellStyle(center: true));
-        _setCell(sheet, row, 5, v.outFmt, _cellStyle(center: true));
-        _setCell(sheet, row, 6, v.workedFormatted, _cellStyle(center: true));
+        _setCell(sheet, row, 3, dk, _cellStyle(center: true));
+        _setCell(sheet, row, 4, v.locationName, _cellStyle());
+        _setCell(sheet, row, 5, v.inFmt, _cellStyle(center: true));
+        _setCell(sheet, row, 6, v.outFmt, _cellStyle(center: true));
+        _setCell(
+          sheet,
+          row,
+          7,
+          v.workedFormatted,
+          day.isLate && vi == 0 ? _lateStyle() : _cellStyle(center: true),
+        );
+        _setCell(
+          sheet,
+          row,
+          8,
+          remarks,
+          remarks.isNotEmpty ? _lateStyle() : _cellStyle(),
+        );
 
         if (vi == day.visits.length - 1 && day.visits.length > 1) {
           sheet.merge(
             xl.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row + 1),
-            xl.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row + 1),
+            xl.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: row + 1),
           );
           _setCell(
             sheet,
             row + 1,
             0,
-            'Total for ${day.empName} on ${_fmtDate(day.date)}',
+            'Total for ${day.empName} on $dk',
             _totalStyle(),
           );
-          _setCell(sheet, row + 1, 6, day.totalFormatted, _totalStyle());
+          _setCell(sheet, row + 1, 8, day.totalFormatted, _totalStyle());
           row++;
         }
         row++;
@@ -369,7 +597,13 @@ class _ExcelBuilder {
   }
 
   // ── MONTHLY ────────────────────────────────────────────────────────────────
-  static xl.Excel buildMonthly(List<_EmpDay> data, DateTime from, DateTime to) {
+  static xl.Excel buildMonthly(
+    List<_EmpDay> data,
+    DateTime from,
+    DateTime to,
+    List<_Holiday> holidays,
+    List<_ApprovedLeave> leaves,
+  ) {
     final excel = xl.Excel.createExcel();
     const sheetName = 'Monthly Report';
     excel.rename('Sheet1', sheetName);
@@ -378,6 +612,10 @@ class _ExcelBuilder {
     final List<DateTime> dates = [];
     for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1)))
       dates.add(d);
+
+    final Set<String> holidayDates = holidays
+        .map((h) => _fmtDate(h.date))
+        .toSet();
 
     final Map<int, String> empNames = {};
     final Map<int, Map<String, Map<String, int>>> empSiteDate = {};
@@ -390,6 +628,15 @@ class _ExcelBuilder {
         empSiteDate[day.empId]![v.locationName]![dk] =
             (empSiteDate[day.empId]![v.locationName]![dk] ?? 0) +
             v.workedMinutes;
+      }
+    }
+
+    // Build late lookup: empId -> set of date keys
+    final Map<int, Map<String, String?>> lateLookup = {};
+    for (final day in data) {
+      if (day.isLate) {
+        lateLookup.putIfAbsent(day.empId, () => {});
+        lateLookup[day.empId]![_fmtDate(day.date)] = day.lateText;
       }
     }
 
@@ -417,13 +664,26 @@ class _ExcelBuilder {
     final fixedHeaders = ['S.No', 'Emp ID', 'Employee Name', 'Site Name'];
     for (int c = 0; c < fixedHeaders.length; c++)
       _setCell(sheet, 1, c, fixedHeaders[c], _hdrStyle());
+
     for (int di = 0; di < dates.length; di++) {
+      final isHoliday = holidayDates.contains(_fmtDate(dates[di]));
       _setCell(
         sheet,
         1,
         4 + di,
         '${dates[di].day}\n${_monthShort(dates[di].month)}',
-        _subHdrStyle(),
+        isHoliday
+            ? xl.CellStyle(
+                backgroundColorHex: xl.ExcelColor.fromHexString('FFEDE9FE'),
+                fontColorHex: xl.ExcelColor.fromHexString('FF6D28D9'),
+                bold: true,
+                fontSize: 8,
+                fontFamily: 'Arial',
+                horizontalAlign: xl.HorizontalAlign.Center,
+                verticalAlign: xl.VerticalAlign.Center,
+                textWrapping: xl.TextWrapping.WrapText,
+              )
+            : _subHdrStyle(),
       );
       sheet.setColumnWidth(4 + di, 8.0);
     }
@@ -461,15 +721,57 @@ class _ExcelBuilder {
 
         int siteTotalMins = 0;
         for (int di = 0; di < dates.length; di++) {
-          final mins = dateMap[_fmtDate(dates[di])] ?? 0;
+          final dk = _fmtDate(dates[di]);
+          final isHoliday = holidayDates.contains(dk);
+          final mins = dateMap[dk] ?? 0;
           siteTotalMins += mins;
-          _setCell(
-            sheet,
-            row,
-            4 + di,
-            mins > 0 ? _minsToHrs(mins) : '',
-            _cellStyle(center: true),
-          );
+
+          if (isHoliday && mins == 0) {
+            _setCell(sheet, row, 4 + di, 'H', _holidayStyle());
+          } else {
+            // Check leave
+            final leaveOnDay = leaves
+                .where(
+                  (l) =>
+                      l.empId == empId && l.coversDate(dates[di]) && mins == 0,
+                )
+                .firstOrNull;
+            final isLateOnDay = lateLookup[empId]?.containsKey(dk) ?? false;
+
+            if (leaveOnDay != null) {
+              _setCell(
+                sheet,
+                row,
+                4 + di,
+                leaveOnDay.shortLabel,
+                _leaveStyle(),
+              );
+            } else if (mins > 0) {
+              _setCell(
+                sheet,
+                row,
+                4 + di,
+                isLateOnDay ? '${_minsToHrs(mins)}*' : _minsToHrs(mins),
+                isLateOnDay ? _lateStyle() : _cellStyle(center: true),
+              );
+            } else {
+              _setCell(
+                sheet,
+                row,
+                4 + di,
+                'A',
+                xl.CellStyle(
+                  backgroundColorHex: xl.ExcelColor.fromHexString('FFFEE2E2'),
+                  fontColorHex: xl.ExcelColor.fromHexString('FFB91C1C'),
+                  bold: true,
+                  fontSize: 9,
+                  fontFamily: 'Arial',
+                  horizontalAlign: xl.HorizontalAlign.Center,
+                  verticalAlign: xl.VerticalAlign.Center,
+                ),
+              );
+            }
+          }
         }
         empTotalMins += siteTotalMins;
         _setCell(
@@ -537,7 +839,6 @@ class _ExcelBuilder {
     return excel;
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   static String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -597,11 +898,10 @@ class _ExcelBuilder {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN SCREEN  — Two-tab layout (Day-Wise / Monthly)
+// MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 class AdminAttendanceReportScreen extends StatefulWidget {
   const AdminAttendanceReportScreen({super.key});
-
   @override
   State<AdminAttendanceReportScreen> createState() =>
       _AdminAttendanceReportScreenState();
@@ -612,22 +912,24 @@ class _AdminAttendanceReportScreenState
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // ── Day-wise: single date ──────────────────────────────────────────────────
   DateTime _dayDate = DateTime.now();
   bool _loading = false;
   bool _fetched = false;
   String? _error;
   List<_EmpDay> _data = [];
+  List<_Holiday> _holidays = [];
+  List<_ApprovedLeave> _leaves = [];
   String _searchQuery = '';
   String _filterSite = 'All';
 
-  // ── Monthly date range (independent) ──────────────────────────────────────
   DateTime _mFromDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _mToDate = DateTime.now();
   bool _mLoading = false;
   bool _mFetched = false;
   String? _mError;
   List<_EmpDay> _mData = [];
+  List<_Holiday> _mHolidays = [];
+  List<_ApprovedLeave> _mLeaves = [];
 
   @override
   void initState() {
@@ -643,7 +945,6 @@ class _AdminAttendanceReportScreenState
 
   String _fmt(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-
   String _fmtKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -696,8 +997,15 @@ class _AdminAttendanceReportScreenState
       _fetched = false;
     });
     try {
-      _data = await _ReportService.fetchRange(_dayDate, _dayDate);
-      _data.sort((a, b) => a.empName.compareTo(b.empName));
+      final results = await Future.wait([
+        _ReportService.fetchRange(_dayDate, _dayDate),
+        _ReportService.fetchHolidays(_dayDate, _dayDate),
+        _ReportService.fetchApprovedLeaves(_dayDate, _dayDate),
+      ]);
+      _data = (results[0] as List<_EmpDay>)
+        ..sort((a, b) => a.empName.compareTo(b.empName));
+      _holidays = results[1] as List<_Holiday>;
+      _leaves = results[2] as List<_ApprovedLeave>;
       setState(() {
         _fetched = true;
         _searchQuery = '';
@@ -717,7 +1025,14 @@ class _AdminAttendanceReportScreenState
       _mFetched = false;
     });
     try {
-      _mData = await _ReportService.fetchRange(_mFromDate, _mToDate);
+      final results = await Future.wait([
+        _ReportService.fetchRange(_mFromDate, _mToDate),
+        _ReportService.fetchHolidays(_mFromDate, _mToDate),
+        _ReportService.fetchApprovedLeaves(_mFromDate, _mToDate),
+      ]);
+      _mData = results[0] as List<_EmpDay>;
+      _mHolidays = results[1] as List<_Holiday>;
+      _mLeaves = results[2] as List<_ApprovedLeave>;
       setState(() => _mFetched = true);
     } catch (e) {
       setState(() => _mError = e.toString());
@@ -733,7 +1048,13 @@ class _AdminAttendanceReportScreenState
     }
     setState(() => _loading = true);
     try {
-      final excel = _ExcelBuilder.buildDayWise(_data, _dayDate, _dayDate);
+      final excel = _ExcelBuilder.buildDayWise(
+        _data,
+        _dayDate,
+        _dayDate,
+        _holidays,
+        _leaves,
+      );
       await _saveAndOpen(excel, 'Attendance_DayWise_${_fmtKey(_dayDate)}.xlsx');
     } catch (e) {
       _showSnack('Export failed: $e', isError: true);
@@ -749,7 +1070,13 @@ class _AdminAttendanceReportScreenState
     }
     setState(() => _mLoading = true);
     try {
-      final excel = _ExcelBuilder.buildMonthly(_mData, _mFromDate, _mToDate);
+      final excel = _ExcelBuilder.buildMonthly(
+        _mData,
+        _mFromDate,
+        _mToDate,
+        _mHolidays,
+        _mLeaves,
+      );
       await _saveAndOpen(
         excel,
         'Attendance_Monthly_${_fmtKey(_mFromDate)}_to_${_fmtKey(_mToDate)}.xlsx',
@@ -764,7 +1091,6 @@ class _AdminAttendanceReportScreenState
   Future<void> _saveAndOpen(xl.Excel excel, String fileName) async {
     final bytes = excel.save();
     if (bytes == null) throw Exception('Failed to generate Excel');
-
     if (kIsWeb) {
       await FileSaver.instance.saveFile(
         name: fileName.replaceAll('.xlsx', ''),
@@ -827,6 +1153,8 @@ class _AdminAttendanceReportScreenState
               fetched: _fetched,
               error: _error,
               data: _filteredData,
+              holidays: _holidays,
+              leaves: _leaves,
               searchQuery: _searchQuery,
               filterSite: _filterSite,
               allSites: _allSites,
@@ -845,6 +1173,8 @@ class _AdminAttendanceReportScreenState
               fetched: _mFetched,
               error: _mError,
               data: _mData,
+              holidays: _mHolidays,
+              leaves: _mLeaves,
               fmt: _fmt,
               onPickFrom: () => _pickMonthlyDate(true),
               onPickTo: () => _pickMonthlyDate(false),
@@ -951,6 +1281,8 @@ class _DayWiseTab extends StatelessWidget {
   final bool loading, fetched;
   final String? error;
   final List<_EmpDay> data;
+  final List<_Holiday> holidays;
+  final List<_ApprovedLeave> leaves;
   final String searchQuery, filterSite;
   final List<String> allSites;
   final String Function(DateTime) fmt;
@@ -965,6 +1297,8 @@ class _DayWiseTab extends StatelessWidget {
     required this.fetched,
     required this.error,
     required this.data,
+    required this.holidays,
+    required this.leaves,
     required this.searchQuery,
     required this.filterSite,
     required this.allSites,
@@ -1094,6 +1428,9 @@ class _DayWiseTab extends StatelessWidget {
               ],
               if (fetched && !loading) ...[
                 const SizedBox(height: 14),
+                // Legend
+                _LegendRow(),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     _StatChip(
@@ -1107,7 +1444,7 @@ class _DayWiseTab extends StatelessWidget {
                       icon: Icons.location_on_rounded,
                       label: 'Total Visits',
                       value: _totalVisits.toString(),
-                      color: const Color(0xFF7C3AED),
+                      color: _purple,
                     ),
                     const SizedBox(width: 8),
                     _StatChip(
@@ -1161,7 +1498,13 @@ class _DayWiseTab extends StatelessWidget {
                         ),
                 ),
                 const SizedBox(height: 14),
-                _DayWiseList(data: data, isWide: isWide),
+                _DayWiseList(
+                  data: data,
+                  isWide: isWide,
+                  holidays: holidays,
+                  leaves: leaves,
+                  date: selectedDate,
+                ),
               ],
             ],
           ),
@@ -1171,11 +1514,43 @@ class _DayWiseTab extends StatelessWidget {
   }
 }
 
+class _LegendRow extends StatelessWidget {
+  const _LegendRow();
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    runSpacing: 6,
+    children: [
+      _legendChip('Present', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
+      _legendChip('Absent', const Color(0xFFDC2626), const Color(0xFFFEE2E2)),
+      _legendChip('Late', const Color(0xFFB45309), const Color(0xFFFEF3C7)),
+      _legendChip('Holiday', const Color(0xFF6D28D9), const Color(0xFFEDE9FE)),
+      _legendChip(
+        'Leave (SL/CL/PL…)',
+        const Color(0xFFBE123C),
+        const Color(0xFFFFE4E6),
+      ),
+    ],
+  );
+
+  Widget _legendChip(String label, Color text, Color bg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: text.withOpacity(0.3)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: text),
+    ),
+  );
+}
+
 class _SearchField extends StatelessWidget {
   final String query;
   final ValueChanged<String> onChanged;
   const _SearchField({required this.query, required this.onChanged});
-
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
@@ -1200,11 +1575,24 @@ class _SearchField extends StatelessWidget {
 class _DayWiseList extends StatelessWidget {
   final List<_EmpDay> data;
   final bool isWide;
-  const _DayWiseList({required this.data, required this.isWide});
+  final List<_Holiday> holidays;
+  final List<_ApprovedLeave> leaves;
+  final DateTime date;
+  const _DayWiseList({
+    required this.data,
+    required this.isWide,
+    required this.holidays,
+    required this.leaves,
+    required this.date,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) {
+    final dk =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final holiday = holidays.where((h) => _fmtDate(h.date) == dk).firstOrNull;
+
+    if (data.isEmpty && holiday == null) {
       return _Card(
         child: Center(
           child: Padding(
@@ -1227,22 +1615,76 @@ class _DayWiseList extends StatelessWidget {
         ),
       );
     }
+
     return Column(
       children: [
+        if (holiday != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEDE9FE),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF6D28D9).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.celebration_rounded,
+                  color: Color(0xFF6D28D9),
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        holiday.name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF6D28D9),
+                        ),
+                      ),
+                      Text(
+                        '${holiday.type} Holiday',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF7C3AED),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         for (final emp in data) ...[
-          _EmpExpandCard(emp: emp, isWide: isWide),
+          _EmpExpandCard(emp: emp, isWide: isWide, leaves: leaves, date: date),
           const SizedBox(height: 8),
         ],
       ],
     );
   }
+
+  static String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
 class _EmpExpandCard extends StatefulWidget {
   final _EmpDay emp;
   final bool isWide;
-  const _EmpExpandCard({required this.emp, required this.isWide});
-
+  final List<_ApprovedLeave> leaves;
+  final DateTime date;
+  const _EmpExpandCard({
+    required this.emp,
+    required this.isWide,
+    required this.leaves,
+    required this.date,
+  });
   @override
   State<_EmpExpandCard> createState() => _EmpExpandCardState();
 }
@@ -1280,11 +1722,28 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
   @override
   Widget build(BuildContext context) {
     final emp = widget.emp;
+    final leaveOnDay = widget.leaves
+        .where((l) => l.empId == emp.empId && l.coversDate(widget.date))
+        .firstOrNull;
+    final hasVisits = emp.visits.isNotEmpty;
+    final isAbsent = !hasVisits;
+
+    Color cardBorderColor = _border;
+    Color? cardBg;
+    if (emp.isLate) cardBorderColor = const Color(0xFFF59E0B).withOpacity(0.5);
+    if (isAbsent && leaveOnDay != null) {
+      cardBorderColor = const Color(0xFFBE123C).withOpacity(0.3);
+      cardBg = const Color(0xFFFFF1F2);
+    } else if (isAbsent) {
+      cardBorderColor = _red.withOpacity(0.3);
+      cardBg = const Color(0xFFFFF9F9);
+    }
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg ?? Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: cardBorderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1296,22 +1755,24 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
       child: Column(
         children: [
           InkWell(
-            onTap: _toggle,
+            onTap: hasVisits ? _toggle : null,
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
+                  // Avatar
                   Container(
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _primary.withOpacity(0.15),
-                          _primary.withOpacity(0.08),
-                        ],
-                      ),
+                      color: isAbsent
+                          ? (leaveOnDay != null
+                                ? const Color(0xFFFFE4E6)
+                                : const Color(0xFFFEE2E2))
+                          : emp.isLate
+                          ? const Color(0xFFFEF3C7)
+                          : _primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Center(
@@ -1319,10 +1780,16 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                         emp.empName.isNotEmpty
                             ? emp.empName[0].toUpperCase()
                             : '?',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: _primary,
+                          color: isAbsent
+                              ? (leaveOnDay != null
+                                    ? const Color(0xFFBE123C)
+                                    : _red)
+                              : emp.isLate
+                              ? const Color(0xFFB45309)
+                              : _primary,
                         ),
                       ),
                     ),
@@ -1341,42 +1808,83 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          'ID: ${emp.empId}  ·  ${emp.visits.length} visit${emp.visits.length == 1 ? '' : 's'}',
-                          style: const TextStyle(fontSize: 11, color: _textMid),
+                        Row(
+                          children: [
+                            Text(
+                              'ID: ${emp.empId}  ·  ',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _textMid,
+                              ),
+                            ),
+                            if (isAbsent && leaveOnDay != null)
+                              _statusBadge(
+                                leaveOnDay.shortLabel,
+                                const Color(0xFFBE123C),
+                                const Color(0xFFFFE4E6),
+                              )
+                            else if (isAbsent)
+                              _statusBadge(
+                                'Absent',
+                                _red,
+                                const Color(0xFFFEE2E2),
+                              )
+                            else if (emp.isLate)
+                              _statusBadge(
+                                emp.lateText != null
+                                    ? 'Late ${emp.lateText}'
+                                    : 'Late',
+                                const Color(0xFFB45309),
+                                const Color(0xFFFEF3C7),
+                              )
+                            else
+                              _statusBadge(
+                                'Present',
+                                _accent,
+                                const Color(0xFFDCFCE7),
+                              ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _accent.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _accent.withOpacity(0.25)),
-                    ),
-                    child: Text(
-                      emp.totalFormatted,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _accent,
+                  if (hasVisits) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: emp.isLate
+                            ? const Color(0xFFFEF3C7)
+                            : _accent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: emp.isLate
+                              ? const Color(0xFFF59E0B).withOpacity(0.4)
+                              : _accent.withOpacity(0.25),
+                        ),
+                      ),
+                      child: Text(
+                        emp.totalFormatted,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: emp.isLate ? const Color(0xFFB45309) : _accent,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  RotationTransition(
-                    turns: _rotate,
-                    child: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: _textMid,
-                      size: 20,
+                    const SizedBox(width: 8),
+                    RotationTransition(
+                      turns: _rotate,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: _textMid,
+                        size: 20,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1395,14 +1903,16 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
                           vertical: 8,
                         ),
                         child: widget.isWide
-                            ? _VisitTableHeaderWide()
-                            : _VisitTableHeaderNarrow(),
+                            ? const _VisitTableHeaderWide()
+                            : const _VisitTableHeaderNarrow(),
                       ),
                       for (int i = 0; i < emp.visits.length; i++)
                         _VisitRowWidget(
                           visit: emp.visits[i],
                           isEven: i.isEven,
                           isWide: widget.isWide,
+                          isFirstAndLate: i == 0 && emp.isLate,
+                          lateText: emp.lateText,
                         ),
                       if (emp.visits.length > 1)
                         Container(
@@ -1447,6 +1957,19 @@ class _EmpExpandCardState extends State<_EmpExpandCard>
       ),
     );
   }
+
+  Widget _statusBadge(String label, Color text, Color bg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: text.withOpacity(0.3)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: text),
+    ),
+  );
 }
 
 class _VisitTableHeaderWide extends StatelessWidget {
@@ -1454,12 +1977,21 @@ class _VisitTableHeaderWide extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Expanded(flex: 3, child: _hdr('Site Name')),
+      Expanded(
+        flex: 3,
+        child: Row(
+          children: [
+            const SizedBox(width: 18), // ← matches icon(13) + gap(5) in rows
+            _hdr('Site Name'),
+          ],
+        ),
+      ),
       Expanded(flex: 2, child: _hdr('In Time', center: true)),
       Expanded(flex: 2, child: _hdr('Out Time', center: true)),
       Expanded(flex: 2, child: _hdr('Work Time', center: true)),
     ],
   );
+
   Widget _hdr(String t, {bool center = false}) => Text(
     t,
     style: const TextStyle(
@@ -1486,11 +2018,14 @@ class _VisitTableHeaderNarrow extends StatelessWidget {
 
 class _VisitRowWidget extends StatelessWidget {
   final _Visit visit;
-  final bool isEven, isWide;
+  final bool isEven, isWide, isFirstAndLate;
+  final String? lateText;
   const _VisitRowWidget({
     required this.visit,
     required this.isEven,
     required this.isWide,
+    this.isFirstAndLate = false,
+    this.lateText,
   });
 
   Widget _timeCell(String t, IconData icon, Color color) => Row(
@@ -1514,12 +2049,16 @@ class _VisitRowWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = isEven ? Colors.white : const Color(0xFFF8FAFF);
+    final lateBg = const Color(0xFFFEF3C7);
+    final rowBg = isFirstAndLate ? lateBg : bg;
+
     if (isWide) {
       return Container(
-        color: bg,
+        color: rowBg,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
+            // ── Site Name ── icon(13) + gap(5) = 18px, matches header spacer
             Expanded(
               flex: 3,
               child: Row(
@@ -1544,22 +2083,53 @@ class _VisitRowWidget extends StatelessWidget {
                 ],
               ),
             ),
+            // ── In Time ── centered to match header label alignment
             Expanded(
               flex: 2,
-              child: _timeCell(
-                visit.inFmt,
-                Icons.login_rounded,
-                const Color(0xFF16A34A),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.login_rounded,
+                    size: 12,
+                    color: Color(0xFF16A34A),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    visit.inFmt,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF16A34A),
+                    ),
+                  ),
+                ],
               ),
             ),
+            // ── Out Time ── centered to match header label alignment
             Expanded(
               flex: 2,
-              child: _timeCell(
-                visit.outFmt,
-                Icons.logout_rounded,
-                const Color(0xFFDC2626),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.logout_rounded,
+                    size: 12,
+                    color: Color(0xFFDC2626),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    visit.outFmt,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
               ),
             ),
+            // ── Work Time ── pill badge, centered under header
             Expanded(
               flex: 2,
               child: Center(
@@ -1569,15 +2139,19 @@ class _VisitRowWidget extends StatelessWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: _primary.withOpacity(0.07),
+                    color: isFirstAndLate
+                        ? const Color(0xFFF59E0B).withOpacity(0.15)
+                        : _primary.withOpacity(0.07),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     visit.workedFormatted,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: _primary,
+                      color: isFirstAndLate
+                          ? const Color(0xFFB45309)
+                          : _primary,
                     ),
                   ),
                 ),
@@ -1587,17 +2161,25 @@ class _VisitRowWidget extends StatelessWidget {
         ),
       );
     }
+
+    // ── Narrow layout ────────────────────────────────────────────────────────
+    // ── Narrow layout ─────────────────────────────────────────────────────────
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: bg,
+        color: rowBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _border),
+        border: Border.all(
+          color: isFirstAndLate
+              ? const Color(0xFFF59E0B).withOpacity(0.4)
+              : _border,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Site name + work time badge ────────────────────────────────
           Row(
             children: [
               const Icon(Icons.location_on_rounded, size: 13, color: _textMid),
@@ -1617,39 +2199,92 @@ class _VisitRowWidget extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.07),
+                  color: isFirstAndLate
+                      ? const Color(0xFFF59E0B).withOpacity(0.15)
+                      : _primary.withOpacity(0.07),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   visit.workedFormatted,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: _primary,
+                    color: isFirstAndLate ? const Color(0xFFB45309) : _primary,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _timeCell(
-                  visit.inFmt,
-                  Icons.login_rounded,
-                  const Color(0xFF16A34A),
+          // ── Late notice (only when late) ───────────────────────────────
+          if (isFirstAndLate && lateText != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '⏰ Late by $lateText',
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: Color(0xFFB45309),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _timeCell(
-                  visit.outFmt,
-                  Icons.logout_rounded,
-                  const Color(0xFFDC2626),
+            ),
+          const SizedBox(height: 6), // ← always present, separates from In/Out
+          // ── In / Out times — always shown ─────────────────────────────
+          IntrinsicHeight(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.login_rounded,
+                        size: 12,
+                        color: Color(0xFF16A34A),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        visit.inFmt,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF16A34A),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                Container(
+                  width: 1,
+                  color: _border,
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.logout_rounded,
+                          size: 12,
+                          color: Color(0xFFDC2626),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          visit.outFmt,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1665,6 +2300,8 @@ class _MonthlyTab extends StatelessWidget {
   final bool loading, fetched;
   final String? error;
   final List<_EmpDay> data;
+  final List<_Holiday> holidays;
+  final List<_ApprovedLeave> leaves;
   final String Function(DateTime) fmt;
   final VoidCallback onPickFrom, onPickTo, onFetch, onDownload;
   final void Function(DateTime from, DateTime to) onQuickRange;
@@ -1676,6 +2313,8 @@ class _MonthlyTab extends StatelessWidget {
     required this.fetched,
     required this.error,
     required this.data,
+    required this.holidays,
+    required this.leaves,
     required this.fmt,
     required this.onPickFrom,
     required this.onPickTo,
@@ -1796,6 +2435,8 @@ class _MonthlyTab extends StatelessWidget {
               ],
               if (fetched && !loading) ...[
                 const SizedBox(height: 14),
+                _LegendRow(),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     _StatChip(
@@ -1811,7 +2452,7 @@ class _MonthlyTab extends StatelessWidget {
                       value: data
                           .fold(0, (s, e) => s + e.visits.length)
                           .toString(),
-                      color: const Color(0xFF7C3AED),
+                      color: _purple,
                     ),
                     const SizedBox(width: 8),
                     _StatChip(
@@ -1823,7 +2464,13 @@ class _MonthlyTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 14),
-                _MonthlyPreview(data: data, from: fromDate, to: toDate),
+                _MonthlyPreview(
+                  data: data,
+                  from: fromDate,
+                  to: toDate,
+                  holidays: holidays,
+                  leaves: leaves,
+                ),
               ],
             ],
           ),
@@ -1834,7 +2481,7 @@ class _MonthlyTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MONTHLY PREVIEW  (sticky-left + scrollable date columns) — unchanged
+// MONTHLY PREVIEW  (sticky-left + scrollable date columns)
 // ─────────────────────────────────────────────────────────────────────────────
 class _DragScrollBehavior extends MaterialScrollBehavior {
   @override
@@ -1849,12 +2496,15 @@ class _DragScrollBehavior extends MaterialScrollBehavior {
 class _MonthlyPreview extends StatefulWidget {
   final List<_EmpDay> data;
   final DateTime from, to;
+  final List<_Holiday> holidays;
+  final List<_ApprovedLeave> leaves;
   const _MonthlyPreview({
     required this.data,
     required this.from,
     required this.to,
+    required this.holidays,
+    required this.leaves,
   });
-
   @override
   State<_MonthlyPreview> createState() => _MonthlyPreviewState();
 }
@@ -1869,9 +2519,8 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   }
 
   String _fmtDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-  String _dk(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _dk(DateTime d) => _fmtDate(d);
 
   static const double _rowH = 38.0;
   static const double _hdrH1 = 38.0;
@@ -1879,7 +2528,7 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   static const double wSno = 44.0;
   static const double wId = 72.0;
   static const double wName = 150.0;
-  static const double wDay = 32.0;
+  static const double wDay = 36.0;
   static const double wSummary = 76.0;
 
   static const Color _hdr1 = Color(0xFF1E3A8A);
@@ -1888,6 +2537,9 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   static const Color _divCol = Color(0xFF93C5FD);
   static const Color _presentBg = Color(0xFFDCFCE7);
   static const Color _absentBg = Color(0xFFFEE2E2);
+  static const Color _lateBg = Color(0xFFFEF3C7);
+  static const Color _holidayBg = Color(0xFFEDE9FE);
+  static const Color _leaveBg = Color(0xFFFFE4E6);
 
   Widget _vDiv() => Container(width: 1, color: _divCol);
   Widget _hDiv(double w) => Container(height: 1, width: w, color: _divCol);
@@ -1950,6 +2602,8 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
     final List<_EmpDay> data = widget.data;
     final DateTime from = widget.from;
     final DateTime to = widget.to;
+    final holidays = widget.holidays;
+    final leaves = widget.leaves;
 
     if (data.isEmpty) {
       return _Card(
@@ -1979,6 +2633,13 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
     for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1)))
       dates.add(d);
 
+    final Set<String> holidayDates = holidays
+        .map((h) => _fmtDate(h.date))
+        .toSet();
+    final Map<String, String> holidayNames = {
+      for (final h in holidays) _fmtDate(h.date): h.name,
+    };
+
     final Map<int, String> empNames = {};
     final Map<int, Map<String, List<_Visit>>> empDateV = {};
     for (final day in data) {
@@ -1986,33 +2647,53 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
       empDateV.putIfAbsent(day.empId, () => {});
       empDateV[day.empId]![_dk(day.date)] = day.visits;
     }
+
+    // Late lookup: empId -> {dateKey -> lateText}
+    final Map<int, Map<String, String?>> lateLookup = {};
+    for (final day in data) {
+      if (day.isLate) {
+        lateLookup.putIfAbsent(day.empId, () => {});
+        lateLookup[day.empId]![_dk(day.date)] = day.lateText;
+      }
+    }
+
     final sortedEmpIds = empNames.keys.toList()..sort();
 
     final empStats = <int, _EmpStat>{};
     for (final empId in sortedEmpIds) {
       final dateMap = empDateV[empId] ?? {};
       final statuses = <String>[];
-      int present = 0, absent = 0, lateDays = 0, lateMins = 0;
+      int present = 0,
+          absent = 0,
+          holiday = 0,
+          lateDays = 0,
+          lateMins = 0,
+          leaveDays = 0;
+
       for (final d in dates) {
-        final visits = dateMap[_dk(d)];
-        if (visits != null && visits.isNotEmpty) {
+        final dk = _dk(d);
+        final isHoliday = holidayDates.contains(dk);
+        final visits = dateMap[dk];
+        final leaveOnDay = leaves
+            .where((l) => l.empId == empId && l.coversDate(d))
+            .firstOrNull;
+        final isLateOnDay = lateLookup[empId]?.containsKey(dk) ?? false;
+
+        if (isHoliday) {
+          holiday++;
+          statuses.add('H');
+        } else if (visits != null && visits.isNotEmpty) {
           present++;
-          final firstIn = visits
-              .where((v) => v.inTime != null)
-              .map((v) => v.inTime!)
-              .fold<DateTime?>(
-                null,
-                (a, b) => a == null || b.isBefore(a) ? b : a,
-              );
-          final threshold = DateTime(d.year, d.month, d.day, 9, 30);
-          final noon = DateTime(d.year, d.month, d.day, 12, 0);
-          if (firstIn != null &&
-              firstIn.isAfter(threshold) &&
-              firstIn.isBefore(noon)) {
+          if (isLateOnDay) {
             lateDays++;
-            lateMins += firstIn.difference(threshold).inMinutes;
+            lateMins += lateLookup[empId]![dk] != null
+                ? _parseLateMinutes(lateLookup[empId]![dk]!)
+                : 0;
           }
-          statuses.add('P');
+          statuses.add(isLateOnDay ? 'L' : 'P');
+        } else if (leaveOnDay != null) {
+          leaveDays++;
+          statuses.add(leaveOnDay.shortLabel);
         } else {
           absent++;
           statuses.add('A');
@@ -2022,16 +2703,18 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
         statuses: statuses,
         present: present,
         absent: absent,
+        holidays: holiday,
         lateDays: lateDays,
         lateMins: lateMins,
-        totalWorkedMins: empDateV[empId]!.values.fold(
+        leaveDays: leaveDays,
+        totalWorkedMins: (empDateV[empId] ?? {}).values.fold(
           0,
           (s, visits) => s + visits.fold(0, (s2, v) => s2 + v.workedMinutes),
         ),
       );
     }
 
-    final double scrollW = dates.length * wDay + 1 + 6 * wSummary + 5;
+    final double scrollW = dates.length * wDay + 1 + 7 * wSummary + 6;
 
     Widget leftPanel() => Container(
       decoration: const BoxDecoration(
@@ -2142,7 +2825,7 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                   ),
                   _vDiv(),
                   Container(
-                    width: 6 * wSummary + 5,
+                    width: 7 * wSummary + 6,
                     height: _hdrH1,
                     color: _hdr3,
                     alignment: Alignment.center,
@@ -2162,13 +2845,19 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                 children: [
                   for (int i = 0; i < dates.length; i++)
                     _scrollCell(
-                      '${dates[i].day}',
+                      holidayDates.contains(_dk(dates[i]))
+                          ? '${dates[i].day}\nH'
+                          : '${dates[i].day}',
                       wDay,
                       _hdrH2,
-                      bg: _hdr2,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
+                      bg: holidayDates.contains(_dk(dates[i]))
+                          ? const Color(0xFF5B21B6)
+                          : _hdr2,
+                      style: TextStyle(
+                        color: holidayDates.contains(_dk(dates[i]))
+                            ? const Color(0xFFE9D5FF)
+                            : Colors.white,
+                        fontSize: 8,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -2177,6 +2866,7 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                     ('Total\nDays', _hdr3),
                     ('Present\nDays', _hdr3),
                     ('Absent\nDays', _hdr3),
+                    ('Leave\nDays', _hdr3),
                     ('Late\nDays', _hdr3),
                     ('Late\nHrs', _hdr3),
                     ('Total\nWork\nHrs', const Color(0xFF065F46)),
@@ -2212,22 +2902,63 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                         : '${lateH}h ${lateM.toString().padLeft(2, '0')}m';
                     return Row(
                       children: [
-                        for (int di = 0; di < dates.length; di++)
-                          _scrollCell(
-                            stat.statuses[di],
-                            wDay,
-                            _rowH,
-                            bg: stat.statuses[di] == 'A'
-                                ? _absentBg
-                                : _presentBg,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: stat.statuses[di] == 'A'
-                                  ? const Color(0xFFDC2626)
-                                  : const Color(0xFF16A34A),
-                            ),
+                        for (int di = 0; di < dates.length; di++) ...[
+                          Builder(
+                            builder: (_) {
+                              final s = stat.statuses[di];
+                              Color bg = rowBg;
+                              TextStyle style = const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: _textDark,
+                              );
+                              if (s == 'P') {
+                                bg = _presentBg;
+                                style = const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF16A34A),
+                                );
+                              } else if (s == 'L') {
+                                bg = _lateBg;
+                                style = const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFB45309),
+                                );
+                              } else if (s == 'A') {
+                                bg = _absentBg;
+                                style = const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFDC2626),
+                                );
+                              } else if (s == 'H') {
+                                bg = _holidayBg;
+                                style = const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF6D28D9),
+                                );
+                              } else {
+                                // Leave labels (SL, CL, PL etc.)
+                                bg = _leaveBg;
+                                style = const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFBE123C),
+                                );
+                              }
+                              return _scrollCell(
+                                s,
+                                wDay,
+                                _rowH,
+                                bg: bg,
+                                style: style,
+                              );
+                            },
                           ),
+                        ],
                         _vDiv(),
                         _scrollCell(
                           dates.length.toString(),
@@ -2272,12 +3003,24 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                         ),
                         _vDiv(),
                         _scrollCell(
+                          stat.leaveDays.toString(),
+                          wSummary,
+                          _rowH,
+                          bg: stat.leaveDays > 0 ? _leaveBg : rowBg,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: stat.leaveDays > 0
+                                ? const Color(0xFFBE123C)
+                                : _textMid,
+                          ),
+                        ),
+                        _vDiv(),
+                        _scrollCell(
                           stat.lateDays.toString(),
                           wSummary,
                           _rowH,
-                          bg: stat.lateDays > 0
-                              ? const Color(0xFFFFFBEB)
-                              : rowBg,
+                          bg: stat.lateDays > 0 ? _lateBg : rowBg,
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -2291,9 +3034,7 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
                           lateStr,
                           wSummary,
                           _rowH,
-                          bg: stat.lateMins > 0
-                              ? const Color(0xFFFFFBEB)
-                              : rowBg,
+                          bg: stat.lateMins > 0 ? _lateBg : rowBg,
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -2374,15 +3115,33 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
   }
 }
 
+// ── helper to parse "1hr 20min" / "45 min" back to int minutes ───────────────
+int _parseLateMinutes(String text) {
+  int total = 0;
+  final hrMatch = RegExp(r'(\d+)\s*hr').firstMatch(text);
+  final minMatch = RegExp(r'(\d+)\s*min').firstMatch(text);
+  if (hrMatch != null) total += int.parse(hrMatch.group(1)!) * 60;
+  if (minMatch != null) total += int.parse(minMatch.group(1)!);
+  return total;
+}
+
 class _EmpStat {
   final List<String> statuses;
-  final int present, absent, lateDays, lateMins, totalWorkedMins;
+  final int present,
+      absent,
+      holidays,
+      lateDays,
+      lateMins,
+      leaveDays,
+      totalWorkedMins;
   const _EmpStat({
     required this.statuses,
     required this.present,
     required this.absent,
+    required this.holidays,
     required this.lateDays,
     required this.lateMins,
+    required this.leaveDays,
     required this.totalWorkedMins,
   });
 }
@@ -2394,7 +3153,7 @@ String _minsToWorkedStr(int mins) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED SMALL WIDGETS
+// SHARED SMALL WIDGETS  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 class _Card extends StatelessWidget {
   final Widget child;
@@ -2509,13 +3268,6 @@ class _DropdownField extends StatelessWidget {
             .map((s) => DropdownMenuItem(value: s, child: Text(s)))
             .toList(),
         onChanged: onChanged,
-        hint: Row(
-          children: [
-            Icon(icon, size: 14, color: _textMid),
-            const SizedBox(width: 6),
-            Text(label, style: const TextStyle(fontSize: 12, color: _textMid)),
-          ],
-        ),
       ),
     ),
   );

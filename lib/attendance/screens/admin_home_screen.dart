@@ -209,7 +209,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         value: onSiteCount.toString(),
                         icon: Icons.work_outline,
                         gradient: [Colors.indigo, Colors.indigoAccent],
-                        // no onTap — keep as is
+                        onTap: () => widget.onNavigate?.call(7),
                       ),
 
                       _DashboardCard(

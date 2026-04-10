@@ -57,7 +57,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
       errorMessage = null;
     });
     try {
-      const base = 'http://192.168.29.103:3000';
+      const base = 'http://192.168.29.216:3000';
       final results = await Future.wait([
         http.get(Uri.parse('$base/employees/${widget.employeeId}')),
         http.get(Uri.parse('$base/employees/${widget.employeeId}/education')),
