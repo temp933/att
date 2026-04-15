@@ -1,3 +1,6 @@
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
@@ -858,10 +861,11 @@ class ManageUserScreenState extends State<ManageUserScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee list card
 // ─────────────────────────────────────────────────────────────────────────────
-class _EmployeeCard extends StatelessWidget {
+class _EmployeeCard extends StatefulWidget {
   final Employee employee;
   final _Screen screen;
   final VoidCallback onTap;
+
   const _EmployeeCard({
     required this.employee,
     required this.screen,
@@ -869,8 +873,26 @@ class _EmployeeCard extends StatelessWidget {
   });
 
   @override
+  State<_EmployeeCard> createState() => _EmployeeCardState();
+}
+
+class _EmployeeCardState extends State<_EmployeeCard> {
+  late final Future<http.Response> _photoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _photoFuture = (widget.employee.empId != 0)
+        ? http.get(
+            Uri.parse('$baseUrl/employees/${widget.employee.empId}/photo'),
+          )
+        : Future.value(http.Response('', 404));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final e = employee;
+    final e = widget.employee;
+    final screen = widget.screen;
     final fullName =
         '${e.firstName ?? ''} ${e.midName ?? ''} ${e.lastName ?? ''}'.trim();
     final initial = (e.firstName?.isNotEmpty == true ? e.firstName![0] : '?')
@@ -881,7 +903,7 @@ class _EmployeeCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Container(
           padding: EdgeInsets.all(screen.isMobile ? 12 : 14),
           decoration: BoxDecoration(
@@ -897,27 +919,44 @@ class _EmployeeCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: screen.isMobile ? 42 : 46,
-                height: screen.isMobile ? 42 : 46,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Text(
-                    initial,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: screen.isMobile ? 16 : 18,
+              FutureBuilder<http.Response>(
+                future: _photoFuture,
+                builder: (context, snap) {
+                  final hasPhoto =
+                      snap.hasData &&
+                      snap.data!.statusCode == 200 &&
+                      snap.data!.bodyBytes.isNotEmpty;
+                  return Container(
+                    width: screen.isMobile ? 42 : 46,
+                    height: screen.isMobile ? 42 : 46,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: hasPhoto
+                          ? Image.memory(
+                              snap.data!.bodyBytes,
+                              fit: BoxFit.cover,
+                            )
+                          : Center(
+                              child: Text(
+                                initial,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: screen.isMobile ? 16 : 18,
+                                ),
+                              ),
+                            ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1055,6 +1094,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   List<Map<String, dynamic>> teamLeads = [];
   int? selectedTlId;
   bool _submitting = false;
+  Uint8List? _selectedPhotoBytes;
+  String? _selectedPhotoPath; // used only on non-web for multipart upload
+  final _picker = ImagePicker();
 
   @override
   void initState() {
@@ -1129,7 +1171,63 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                     title: 'Personal Information',
                     color: _primary,
                     bgColor: const Color(0xFFEEF2FF),
+
                     children: [
+                      // ── Profile Photo ──────────────────────────────────────
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 80,
+                            maxWidth: 800,
+                          );
+                          if (picked != null) {
+                            final bytes = await picked.readAsBytes();
+                            setState(() {
+                              _selectedPhotoBytes = bytes;
+                              _selectedPhotoPath = picked.path;
+                            });
+                          }
+                        },
+                        child: Center(
+                          child: Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(50),
+                              border: Border.all(color: _border, width: 2),
+                            ),
+                            child: _selectedPhotoBytes != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(50),
+                                    child: Image.memory(
+                                      _selectedPhotoBytes!,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : const Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.add_a_photo_outlined,
+                                        color: _textMid,
+                                        size: 28,
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Add Photo',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _textMid,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       _row3(
                         context,
                         FormTextField(
@@ -1492,10 +1590,25 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
-        _snack('Employee request submitted successfully!', ok: true);
-        if (mounted) {
-          Navigator.pop(context);
+        final requestId = data['request_id'];
+        if (_selectedPhotoBytes != null && requestId != null) {
+          try {
+            final photoReq = http.MultipartRequest(
+              'POST',
+              Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+            );
+            photoReq.files.add(
+              http.MultipartFile.fromBytes(
+                'photo',
+                _selectedPhotoBytes!,
+                filename: 'photo.jpg',
+              ),
+            );
+            await photoReq.send();
+          } catch (_) {}
         }
+        _snack('Employee request submitted successfully!', ok: true);
+        if (mounted) Navigator.pop(context);
       } else {
         _snack(data['message'] ?? 'Submission failed');
       }
@@ -1556,11 +1669,17 @@ class EmployeeDetailPage extends StatefulWidget {
 class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
   Map<String, dynamic>? employeeData;
   bool isLoading = true;
+  Future<http.Response>? _photoFuture;
 
   @override
   void initState() {
     super.initState();
     _fetchDetails();
+    if (widget.source == 'MASTER') {
+      _photoFuture = http.get(
+        Uri.parse('$baseUrl/employees/${widget.id}/photo'),
+      );
+    }
   }
 
   Future<void> _fetchDetails() async {
@@ -1870,29 +1989,49 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: s.isMobile ? 52 : 64,
-                      height: s.isMobile ? 52 : 64,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(
-                          s.isMobile ? 14 : 18,
-                        ),
-                        color: Colors.white.withValues(alpha: 0.15),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          width: 2,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          initial,
-                          style: TextStyle(
-                            fontSize: s.isMobile ? 22 : 28,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                    FutureBuilder<http.Response>(
+                      future:
+                          _photoFuture ?? Future.value(http.Response('', 404)),
+                      builder: (context, snap) {
+                        final hasPhoto =
+                            snap.hasData &&
+                            snap.data!.statusCode == 200 &&
+                            snap.data!.bodyBytes.isNotEmpty;
+                        return Container(
+                          width: s.isMobile ? 52 : 64,
+                          height: s.isMobile ? 52 : 64,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              s.isMobile ? 14 : 18,
+                            ),
+                            color: Colors.white.withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              width: 2,
+                            ),
                           ),
-                        ),
-                      ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              s.isMobile ? 12 : 16,
+                            ),
+                            child: hasPhoto
+                                ? Image.memory(
+                                    snap.data!.bodyBytes,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Center(
+                                    child: Text(
+                                      initial,
+                                      style: TextStyle(
+                                        fontSize: s.isMobile ? 22 : 28,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -2515,6 +2654,10 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
   List<Map<String, dynamic>> teamLeads = [];
   int? selectedTlId;
   bool _submitting = false;
+  Uint8List? _selectedPhotoBytes;
+  String? _selectedPhotoPath;
+  final _picker = ImagePicker();
+
   List<Map<String, dynamic>> _initialEdu = [];
 
   @override
@@ -2695,6 +2838,61 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
                     color: _primary,
                     bgColor: const Color(0xFFEEF2FF),
                     children: [
+                      // ── Profile Photo ─────────────────────────────────────────────
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 80,
+                            maxWidth: 800,
+                          );
+                          if (picked != null) {
+                            final bytes = await picked.readAsBytes();
+                            setState(() {
+                              _selectedPhotoBytes = bytes;
+                              _selectedPhotoPath = picked.path;
+                            });
+                          }
+                        },
+                        child: Center(
+                          child: Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(50),
+                              border: Border.all(color: _border, width: 2),
+                            ),
+                            child: _selectedPhotoBytes != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(50),
+                                    child: Image.memory(
+                                      _selectedPhotoBytes!,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : const Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.add_a_photo_outlined,
+                                        color: _textMid,
+                                        size: 28,
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Add Photo',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _textMid,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       _row3(
                         context,
                         FormTextField(
@@ -3019,6 +3217,23 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
+        final requestId = widget.requestData['request_id'];
+        if (_selectedPhotoBytes != null && requestId != null) {
+          try {
+            final photoReq = http.MultipartRequest(
+              'POST',
+              Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+            );
+            photoReq.files.add(
+              http.MultipartFile.fromBytes(
+                'photo',
+                _selectedPhotoBytes!,
+                filename: 'photo.jpg',
+              ),
+            );
+            await photoReq.send();
+          } catch (_) {}
+        }
         _snack('Request resubmitted!', ok: true);
         Navigator.pop(context, true);
       } else {
@@ -3064,6 +3279,7 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
   final _formKey = GlobalKey<FormState>();
   final _eduKey = GlobalKey<EducationFormSectionState>();
   late Employee original;
+  late final Future<http.Response> _existingPhotoFuture;
   late TextEditingController firstNameCtrl,
       midNameCtrl,
       lastNameCtrl,
@@ -3094,6 +3310,8 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
   List<Map<String, dynamic>> teamLeads = [];
   int? selectedTlId;
   bool _submitting = false, _loadingEdu = true;
+  Uint8List? _selectedPhotoBytes;
+  final _picker = ImagePicker();
   List<Map<String, dynamic>> _initialEdu = [];
 
   @override
@@ -3146,6 +3364,9 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
     panCtrl = TextEditingController(text: e.panNumber ?? '');
     passportCtrl = TextEditingController(text: e.passportNumber ?? '');
     selectedTlId = e.tlId;
+    _existingPhotoFuture = http.get(
+      Uri.parse('$baseUrl/employees/${widget.employee.empId}/photo'),
+    );
     _loadDropdowns();
     _loadExistingEducation();
   }
@@ -3242,6 +3463,107 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
                     color: _primary,
                     bgColor: const Color(0xFFEEF2FF),
                     children: [
+                      // ── Profile Photo ──────────────────────────────────────
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 80,
+                            maxWidth: 800,
+                          );
+                          if (picked != null) {
+                            final bytes = await picked.readAsBytes();
+                            setState(() => _selectedPhotoBytes = bytes);
+                            // try {
+                            //   final photoReq = http.MultipartRequest(
+                            //     'POST',
+                            //     Uri.parse(
+                            //       '$baseUrl/employees/${widget.employee.empId}/photo',
+                            //     ),
+                            //   );
+                            //   photoReq.files.add(
+                            //     http.MultipartFile.fromBytes(
+                            //       'photo',
+                            //       bytes,
+                            //       filename: 'photo.jpg',
+                            //     ),
+                            //   );
+                            //   await photoReq.send();
+                            // } catch (_) {}
+                          }
+                        },
+                        child: Center(
+                          child: Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(50),
+                              border: Border.all(color: _border, width: 2),
+                            ),
+                            child: _selectedPhotoBytes != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(50),
+                                    child: Image.memory(
+                                      _selectedPhotoBytes!,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : FutureBuilder<http.Response>(
+                                    future: _existingPhotoFuture,
+                                    builder: (context, snap) {
+                                      if (snap.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return const Center(
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: _primary,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      final hasPhoto =
+                                          snap.hasData &&
+                                          snap.data!.statusCode == 200 &&
+                                          snap.data!.bodyBytes.isNotEmpty;
+                                      return hasPhoto
+                                          ? ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(50),
+                                              child: Image.memory(
+                                                snap.data!.bodyBytes,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            )
+                                          : const Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  Icons.add_a_photo_outlined,
+                                                  color: _textMid,
+                                                  size: 28,
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  'Change Photo',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: _textMid,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                    },
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // ... rest of children (_row3 etc.)
                       _row3(
                         context,
                         FormTextField(
@@ -3666,6 +3988,23 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
+        final requestId = data['request_id'];
+        if (_selectedPhotoBytes != null && requestId != null) {
+          final photoReq = http.MultipartRequest(
+            'POST',
+            Uri.parse(
+              '$baseUrl/pending-request/$requestId/photo',
+            ), // ✅ pending, not master
+          );
+          photoReq.files.add(
+            http.MultipartFile.fromBytes(
+              'photo',
+              _selectedPhotoBytes!,
+              filename: 'photo.jpg',
+            ),
+          );
+          await photoReq.send();
+        }
         _snack('Edit request submitted for approval!', ok: true);
         Navigator.pop(context, true);
       } else {

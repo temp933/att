@@ -2,8 +2,12 @@ const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-// const crypto = require("crypto");
-
+const crypto = require("crypto");
+const multer = require("multer");
+const storage = multer.memoryStorage();
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const Anthropic = require("@anthropic-ai/sdk");
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -34,6 +38,162 @@ function dbGet(sql, params = []) {
   );
 }
 
+// ─── UPLOAD EMPLOYEE PHOTO (existing employee → writes to employee_master) ────
+app.post(
+  "/employees/:empId/photo",
+  upload.single("photo"),
+  async (req, res) => {
+    if (!req.file)
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    try {
+      // ✅ Correct table: employee_master (not pending request)
+      const result = await dbRun(
+        `UPDATE employee_master SET profile_photo = ?, profile_photo_mime = ? WHERE emp_id = ?`,
+        [req.file.buffer, req.file.mimetype, req.params.empId],
+      );
+      if (result.affectedRows === 0)
+        return res
+          .status(404)
+          .json({ success: false, message: "Employee not found" });
+      res.json({ success: true, message: "Photo saved to employee record" });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+// ─── GET EMPLOYEE PHOTO ───────────────────────────────────────────────────────
+app.get("/employees/:empId/photo", async (req, res) => {
+  try {
+    const row = await dbGet(
+      `SELECT profile_photo, profile_photo_mime FROM employee_master WHERE emp_id = ?`,
+      [req.params.empId],
+    );
+    if (!row || !row.profile_photo)
+      return res
+        .status(404)
+        .json({ success: false, message: "No photo found" });
+    res.set("Content-Type", row.profile_photo_mime || "image/jpeg");
+    res.send(row.profile_photo);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── UPLOAD PHOTO FOR PENDING REQUEST ────────────────────────────────────────
+app.post(
+  "/pending-request/:requestId/photo",
+  upload.single("photo"),
+  async (req, res) => {
+    if (!req.file)
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    try {
+      await dbRun(
+        `UPDATE employee_pending_request 
+         SET profile_photo = ?, profile_photo_mime = ? 
+         WHERE request_id = ?`,
+        [req.file.buffer, req.file.mimetype, req.params.requestId],
+      );
+      res.json({ success: true, message: "Photo saved to pending request" });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+// ─── VERIFY FACE FOR ATTENDANCE ───────────────────────────────────────────────
+// Uses Claude Vision API to compare live photo vs stored photo
+app.post(
+  "/attendance/verify-face",
+  upload.single("photo"),
+  async (req, res) => {
+    const { employee_id } = req.body;
+    if (!employee_id || !req.file)
+      return res
+        .status(400)
+        .json({ success: false, message: "employee_id and photo required" });
+
+    try {
+      const row = await dbGet(
+        `SELECT profile_photo, profile_photo_mime FROM employee_master WHERE emp_id = ?`,
+        [employee_id],
+      );
+      if (!row || !row.profile_photo)
+        return res.status(404).json({
+          success: false,
+          message: "No reference photo on file for this employee",
+        });
+
+      const storedBase64 = row.profile_photo.toString("base64");
+      const storedMime = row.profile_photo_mime || "image/jpeg";
+      const liveBase64 = req.file.buffer.toString("base64");
+      const liveMime = req.file.mimetype;
+
+      // Call Claude Vision
+
+      const response = await client.messages.create({
+        model: "claude-opus-4-5",
+        max_tokens: 256,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text:
+                  "You are a face verification system. Compare these two photos. " +
+                  "The FIRST image is the stored reference photo of an employee. " +
+                  "The SECOND image is a live capture for attendance. " +
+                  "Reply ONLY with valid JSON in this exact format: " +
+                  '{"match": true/false, "confidence": 0-100, "reason": "brief reason"}. ' +
+                  "Be strict — same person must be clearly identifiable.",
+              },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: storedMime,
+                  data: storedBase64,
+                },
+              },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: liveMime,
+                  data: liveBase64,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const raw = response.content[0]?.text?.trim() || "{}";
+      let result;
+      try {
+        result = JSON.parse(raw);
+      } catch {
+        return res
+          .status(500)
+          .json({ success: false, message: "AI response parse error", raw });
+      }
+
+      res.json({
+        success: true,
+        match: result.match ?? false,
+        confidence: result.confidence ?? 0,
+        reason: result.reason ?? "",
+      });
+    } catch (err) {
+      console.error("[verify-face]", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
 // ─── CANCEL SESSION ───────────────────────────────────────────────────────────
 app.delete("/attendance/cancel-session", async (req, res) => {
   const { employee_id, session_id } = req.body;
@@ -2664,6 +2824,22 @@ app.post("/admin/approve-request", async (req, res) => {
         );
 
         const empId = empResult.insertId;
+
+        // ── Copy photo from pending request to employee_master ────────────────────
+        const pendingPhoto = await get(
+          `SELECT profile_photo, profile_photo_mime FROM employee_pending_request WHERE request_id = ?`,
+          [request_id],
+        );
+        if (pendingPhoto?.profile_photo) {
+          await run(
+            `UPDATE employee_master SET profile_photo = ?, profile_photo_mime = ? WHERE emp_id = ?`,
+            [
+              pendingPhoto.profile_photo,
+              pendingPhoto.profile_photo_mime,
+              empId,
+            ],
+          );
+        }
         await run(
           `INSERT INTO education_details
              (emp_id, education_level, stream, score, year_of_passout, university, college_name)
@@ -2706,14 +2882,15 @@ app.post("/admin/approve-request", async (req, res) => {
 
         const updateResult = await run(
           `UPDATE employee_master SET
-              first_name=?, mid_name=?, last_name=?, email_id=?, phone_number=?,
-              date_of_birth=?, gender=?, father_name=?,
-              emergency_contact_relation=?, emergency_contact=?,
-              department_id=?, role_id=?,tl_id=?, date_of_joining=?, date_of_relieving=?,
-              employment_type=?, work_type=?, permanent_address=?, communication_address=?,
-              aadhar_number=?, pan_number=?, passport_number=?,
-              pf_number=?, esic_number=?, years_experience=?, status=?
-            WHERE emp_id=?`,
+      first_name=?, mid_name=?, last_name=?, email_id=?, phone_number=?,
+      date_of_birth=?, gender=?, father_name=?,
+      emergency_contact_relation=?, emergency_contact=?,
+      department_id=?, role_id=?, tl_id=?, date_of_joining=?, date_of_relieving=?,
+      employment_type=?, work_type=?, permanent_address=?, communication_address=?,
+      aadhar_number=?, pan_number=?, passport_number=?,
+      pf_number=?, esic_number=?, years_experience=?, status=?,
+      profile_photo=?, profile_photo_mime=?
+    WHERE emp_id=?`,
           [
             request.first_name,
             n(request.mid_name),
@@ -2741,6 +2918,8 @@ app.post("/admin/approve-request", async (req, res) => {
             n(request.esic_number),
             toInt(request.years_experience),
             request.status || "Active",
+            request.profile_photo || null, // ✅ added
+            request.profile_photo_mime || null, // ✅ added
             request.emp_id,
           ],
         );
@@ -4049,6 +4228,27 @@ app.get("/sites/:id/location", async (req, res) => {
   } catch (err) {
     console.error("[site-location]", err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET PHOTO FROM PENDING REQUEST ─────────────────────────
+app.get("/pending-request/:requestId/photo", async (req, res) => {
+  try {
+    const row = await dbGet(
+      `SELECT profile_photo, profile_photo_mime 
+       FROM employee_pending_request 
+       WHERE request_id = ?`,
+      [req.params.requestId],
+    );
+
+    if (!row || !row.profile_photo) {
+      return res.status(404).json({ message: "No photo found" });
+    }
+
+    res.set("Content-Type", row.profile_photo_mime || "image/jpeg");
+    res.send(row.profile_photo);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 // ─── START SERVER ─────────────────────────────────────────────────────────────

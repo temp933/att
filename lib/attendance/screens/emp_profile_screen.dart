@@ -17,7 +17,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
   List<Map<String, dynamic>> educationList = [];
   bool isLoading = true;
   String? errorMessage;
-
+  Future<http.Response>? _photoFuture;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
 
@@ -84,6 +84,14 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
     } finally {
       setState(() => isLoading = false);
       if (employeeData != null) _animCtrl.forward();
+      if (employeeData != null) {
+        _animCtrl.forward();
+        _photoFuture = http.get(
+          Uri.parse(
+            'http://192.168.29.216:3000/employees/${widget.employeeId}/photo',
+          ),
+        );
+      }
     }
   }
 
@@ -448,30 +456,54 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Avatar
-                    Container(
-                      width: r.avatarSize,
-                      height: r.avatarSize,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(
-                          r.isDesktop ? 22 : 18,
-                        ),
-                        color: Colors.white.withOpacity(0.15),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                          width: 2,
+                    // Avatar with photo
+                    FutureBuilder<http.Response>(
+                      future: http.get(
+                        Uri.parse(
+                          'http://192.168.29.216:3000/employees/${widget.employeeId}/photo',
                         ),
                       ),
-                      child: Center(
-                        child: Text(
-                          _initials(),
-                          style: TextStyle(
-                            fontSize: r.avatarSize * 0.35,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 1,
+                      builder: (context, snap) {
+                        final hasPhoto =
+                            snap.hasData &&
+                            snap.data!.statusCode == 200 &&
+                            snap.data!.bodyBytes.isNotEmpty;
+                        return Container(
+                          width: r.avatarSize,
+                          height: r.avatarSize,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              r.isDesktop ? 22 : 18,
+                            ),
+                            color: Colors.white.withOpacity(0.15),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 2,
+                            ),
                           ),
-                        ),
-                      ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              r.isDesktop ? 20 : 16,
+                            ),
+                            child: hasPhoto
+                                ? Image.memory(
+                                    snap.data!.bodyBytes,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Center(
+                                    child: Text(
+                                      _initials(),
+                                      style: TextStyle(
+                                        fontSize: r.avatarSize * 0.35,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                     SizedBox(width: r.isDesktop ? 20 : 16),
                     Expanded(

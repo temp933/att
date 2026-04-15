@@ -1,1251 +1,3 @@
-// import 'dart:convert';
-// import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
-
-// const String baseUrl = 'http://192.168.29.104:3000';
-// //  PENDING REQUESTS LIST PAGE
-
-// class AdminApprovalPage extends StatefulWidget {
-//   const AdminApprovalPage({super.key});
-
-//   @override
-//   State<AdminApprovalPage> createState() => _AdminApprovalPageState();
-// }
-
-// class _AdminApprovalPageState extends State<AdminApprovalPage> {
-//   // ─── Theme ────────────────────────────────────────────────────────────────
-//   static const Color _primary = Color(0xFF0F766E);
-//   static const Color _primaryDk = Color(0xFF0D9488);
-//   static const Color _surface = Color(0xFFF8FAFC);
-//   static const Color _card = Colors.white;
-//   static const Color _border = Color(0xFFE5E7EB);
-//   static const Color _textDark = Color(0xFF111827);
-//   static const Color _textMid = Color(0xFF6B7280);
-
-//   List _requests = [];
-//   bool _loading = true;
-//   String? _error;
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _fetchRequests();
-//   }
-
-//   Future<void> _fetchRequests() async {
-//     setState(() {
-//       _loading = true;
-//       _error = null;
-//     });
-//     try {
-//       final res = await http.get(Uri.parse('$baseUrl/admin/pending-requests'));
-//       if (res.statusCode == 200) {
-//         setState(() => _requests = jsonDecode(res.body));
-//       } else {
-//         setState(() => _error = 'Server error (${res.statusCode})');
-//       }
-//     } catch (e) {
-//       setState(() => _error = 'Error: $e');
-//     } finally {
-//       if (mounted) setState(() => _loading = false);
-//     }
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: _surface,
-//       appBar: AppBar(
-//         flexibleSpace: Container(
-//           decoration: const BoxDecoration(
-//             gradient: LinearGradient(
-//               colors: [_primary, _primaryDk],
-//               begin: Alignment.topLeft,
-//               end: Alignment.bottomRight,
-//             ),
-//           ),
-//         ),
-//         backgroundColor: Colors.transparent,
-//         elevation: 0,
-//         title: const Text(
-//           'Pending Requests',
-//           style: TextStyle(
-//             fontWeight: FontWeight.w700,
-//             fontSize: 18,
-//             color: Colors.white,
-//           ),
-//         ),
-//       ),
-//       body: _loading
-//           ? const Center(child: CircularProgressIndicator(color: _primary))
-//           : _error != null
-//           ? _buildErrorState()
-//           : _requests.isEmpty
-//           ? _buildEmptyState()
-//           : RefreshIndicator(
-//               onRefresh: _fetchRequests,
-//               color: _primary,
-//               child: ListView.builder(
-//                 physics: const AlwaysScrollableScrollPhysics(),
-//                 padding: const EdgeInsets.symmetric(
-//                   horizontal: 16,
-//                   vertical: 16,
-//                 ),
-//                 itemCount: _requests.length,
-//                 itemBuilder: (context, index) =>
-//                     _buildRequestCard(_requests[index]),
-//               ),
-//             ),
-//     );
-//   }
-
-//   Widget _buildRequestCard(Map r) {
-//     final name = '${r['first_name'] ?? ''} ${r['last_name'] ?? ''}'.trim();
-//     final isNew = r['request_type'] == 'NEW';
-//     final badgeColor = isNew
-//         ? const Color(0xFF0F766E)
-//         : const Color(0xFF2563EB);
-//     final badgeBg = isNew ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF);
-
-//     return Container(
-//       margin: const EdgeInsets.only(bottom: 12),
-//       decoration: BoxDecoration(
-//         color: _card,
-//         borderRadius: BorderRadius.circular(14),
-//         border: Border.all(color: _border),
-//         boxShadow: [
-//           BoxShadow(
-//             color: Colors.black.withOpacity(0.04),
-//             blurRadius: 8,
-//             offset: const Offset(0, 2),
-//           ),
-//         ],
-//       ),
-//       child: InkWell(
-//         borderRadius: BorderRadius.circular(14),
-//         onTap: () async {
-//           final result = await Navigator.push(
-//             context,
-//             MaterialPageRoute(builder: (_) => ApprovalDetailPage(request: r)),
-//           );
-//           if (result == true) _fetchRequests();
-//         },
-//         child: Padding(
-//           padding: const EdgeInsets.all(16),
-//           child: Row(
-//             children: [
-//               // Avatar
-//               Container(
-//                 width: 52,
-//                 height: 52,
-//                 decoration: BoxDecoration(
-//                   color: const Color(0xFFECFDF5),
-//                   shape: BoxShape.circle,
-//                   border: Border.all(
-//                     color: _primary.withOpacity(0.3),
-//                     width: 1.5,
-//                   ),
-//                 ),
-//                 child: Center(
-//                   child: Text(
-//                     name.isNotEmpty ? name[0].toUpperCase() : '?',
-//                     style: const TextStyle(
-//                       fontSize: 22,
-//                       fontWeight: FontWeight.bold,
-//                       color: _primary,
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//               const SizedBox(width: 14),
-//               // Info
-//               Expanded(
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Text(
-//                       name.isEmpty ? 'Unknown' : name,
-//                       style: const TextStyle(
-//                         fontSize: 15,
-//                         fontWeight: FontWeight.w700,
-//                         color: _textDark,
-//                       ),
-//                     ),
-//                     const SizedBox(height: 3),
-//                     Text(
-//                       '${r['department_name'] ?? 'N/A'}  ·  ${r['role_name'] ?? 'N/A'}',
-//                       style: const TextStyle(fontSize: 12, color: _textMid),
-//                     ),
-//                     const SizedBox(height: 2),
-//                     Text(
-//                       r['email_id'] ?? '',
-//                       style: const TextStyle(fontSize: 12, color: _textMid),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//               const SizedBox(width: 10),
-//               // Badge + chevron
-//               Column(
-//                 crossAxisAlignment: CrossAxisAlignment.end,
-//                 children: [
-//                   Container(
-//                     padding: const EdgeInsets.symmetric(
-//                       horizontal: 10,
-//                       vertical: 4,
-//                     ),
-//                     decoration: BoxDecoration(
-//                       color: badgeBg,
-//                       borderRadius: BorderRadius.circular(20),
-//                       border: Border.all(color: badgeColor.withOpacity(0.35)),
-//                     ),
-//                     child: Text(
-//                       r['request_type']?.toString() ?? '',
-//                       style: TextStyle(
-//                         fontSize: 11,
-//                         fontWeight: FontWeight.w600,
-//                         color: badgeColor,
-//                       ),
-//                     ),
-//                   ),
-//                   const SizedBox(height: 8),
-//                   const Icon(
-//                     Icons.chevron_right_rounded,
-//                     color: _textMid,
-//                     size: 20,
-//                   ),
-//                 ],
-//               ),
-//             ],
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-
-//   Widget _buildErrorState() {
-//     return RefreshIndicator(
-//       onRefresh: _fetchRequests,
-//       color: _primary,
-//       child: CustomScrollView(
-//         physics: const AlwaysScrollableScrollPhysics(),
-//         slivers: [
-//           SliverFillRemaining(
-//             child: Column(
-//               mainAxisAlignment: MainAxisAlignment.center,
-//               children: [
-//                 const Icon(
-//                   Icons.error_outline_rounded,
-//                   color: Color(0xFFDC2626),
-//                   size: 48,
-//                 ),
-//                 const SizedBox(height: 12),
-//                 Text(_error!, style: const TextStyle(color: _textMid)),
-//                 const SizedBox(height: 8),
-//                 TextButton.icon(
-//                   onPressed: _fetchRequests,
-//                   icon: const Icon(Icons.refresh_rounded),
-//                   label: const Text('Pull down or tap to retry'),
-//                   style: TextButton.styleFrom(foregroundColor: _primary),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   Widget _buildEmptyState() {
-//     return RefreshIndicator(
-//       onRefresh: _fetchRequests,
-//       color: _primary,
-//       child: CustomScrollView(
-//         physics: const AlwaysScrollableScrollPhysics(),
-//         slivers: [
-//           SliverFillRemaining(
-//             child: Column(
-//               mainAxisAlignment: MainAxisAlignment.center,
-//               children: [
-//                 Icon(
-//                   Icons.inbox_outlined,
-//                   size: 64,
-//                   color: Colors.grey.shade300,
-//                 ),
-//                 const SizedBox(height: 16),
-//                 const Text(
-//                   'No pending requests',
-//                   style: TextStyle(
-//                     fontSize: 16,
-//                     color: _textMid,
-//                     fontWeight: FontWeight.w500,
-//                   ),
-//                 ),
-//                 const SizedBox(height: 6),
-//                 const Text(
-//                   'Pull down to refresh',
-//                   style: TextStyle(fontSize: 13, color: _textMid),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-
-// // ─────────────────────────────────────────────────────────────────────────────
-// //  DETAIL / APPROVAL PAGE
-// // ─────────────────────────────────────────────────────────────────────────────
-
-// class ApprovalDetailPage extends StatelessWidget {
-//   final Map request;
-//   const ApprovalDetailPage({super.key, required this.request});
-
-//   // ─── Theme ────────────────────────────────────────────────────────────────
-//   static const Color _primary = Color(0xFF0F766E);
-//   static const Color _primaryDk = Color(0xFF0D9488);
-//   static const Color _surface = Color(0xFFF8FAFC);
-//   static const Color _card = Colors.white;
-//   static const Color _border = Color(0xFFE5E7EB);
-//   static const Color _textDark = Color(0xFF111827);
-//   static const Color _textMid = Color(0xFF6B7280);
-
-//   // ─── Helpers ──────────────────────────────────────────────────────────────
-//   String _fmt(dynamic date) {
-//     if (date == null || date.toString().isEmpty) return '-';
-//     try {
-//       final d = DateTime.parse(date.toString());
-//       return '${d.day.toString().padLeft(2, '0')}-'
-//           '${d.month.toString().padLeft(2, '0')}-'
-//           '${d.year}';
-//     } catch (_) {
-//       return date.toString();
-//     }
-//   }
-
-//   // ─── Info field (label + value stacked) ───────────────────────────────────
-//   Widget _infoTile({
-//     required IconData icon,
-//     required String label,
-//     required String value,
-//     int maxLines = 4,
-//   }) {
-//     return Padding(
-//       padding: const EdgeInsets.only(bottom: 14),
-//       child: Row(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           Container(
-//             padding: const EdgeInsets.all(7),
-//             decoration: BoxDecoration(
-//               color: const Color(0xFFF1F5F9),
-//               borderRadius: BorderRadius.circular(8),
-//             ),
-//             child: Icon(icon, size: 16, color: _textMid),
-//           ),
-//           const SizedBox(width: 12),
-//           Expanded(
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 Text(
-//                   label,
-//                   style: const TextStyle(
-//                     fontSize: 11,
-//                     color: _textMid,
-//                     fontWeight: FontWeight.w500,
-//                   ),
-//                 ),
-//                 const SizedBox(height: 3),
-//                 Text(
-//                   value.isEmpty ? '-' : value,
-//                   style: const TextStyle(
-//                     fontSize: 13,
-//                     color: _textDark,
-//                     fontWeight: FontWeight.w600,
-//                   ),
-//                   maxLines: maxLines,
-//                   overflow: TextOverflow.visible,
-//                   softWrap: true,
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   // ─── Section header ────────────────────────────────────────────────────────
-//   Widget _sectionHeader(IconData icon, String title, Color color) {
-//     return Padding(
-//       padding: const EdgeInsets.only(bottom: 16),
-//       child: Row(
-//         children: [
-//           Container(
-//             padding: const EdgeInsets.all(8),
-//             decoration: BoxDecoration(
-//               color: color.withOpacity(0.1),
-//               borderRadius: BorderRadius.circular(8),
-//             ),
-//             child: Icon(icon, color: color, size: 18),
-//           ),
-//           const SizedBox(width: 10),
-//           Text(
-//             title,
-//             style: const TextStyle(
-//               fontSize: 15,
-//               fontWeight: FontWeight.w700,
-//               color: _textDark,
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   // ─── Card wrapper ──────────────────────────────────────────────────────────
-//   Widget _sectionCard({required Widget child}) {
-//     return Container(
-//       margin: const EdgeInsets.only(bottom: 12),
-//       padding: const EdgeInsets.all(16),
-//       decoration: BoxDecoration(
-//         color: _card,
-//         borderRadius: BorderRadius.circular(14),
-//         border: Border.all(color: _border),
-//         boxShadow: [
-//           BoxShadow(
-//             color: Colors.black.withOpacity(0.04),
-//             blurRadius: 8,
-//             offset: const Offset(0, 2),
-//           ),
-//         ],
-//       ),
-//       child: child,
-//     );
-//   }
-
-//   // ─── Profile header ────────────────────────────────────────────────────────
-//   Widget _profileHeader(BuildContext context) {
-//     final name =
-//         '${request['first_name'] ?? ''} ${request['mid_name'] ?? ''} ${request['last_name'] ?? ''}'
-//             .trim();
-//     final isNew = request['request_type'] == 'NEW';
-
-//     return Container(
-//       padding: const EdgeInsets.all(20),
-//       decoration: BoxDecoration(
-//         gradient: const LinearGradient(
-//           colors: [_primary, _primaryDk],
-//           begin: Alignment.topLeft,
-//           end: Alignment.bottomRight,
-//         ),
-//         borderRadius: BorderRadius.circular(16),
-//         boxShadow: [
-//           BoxShadow(
-//             color: _primary.withOpacity(0.3),
-//             blurRadius: 16,
-//             offset: const Offset(0, 6),
-//           ),
-//         ],
-//       ),
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           Row(
-//             children: [
-//               Container(
-//                 width: 64,
-//                 height: 64,
-//                 decoration: BoxDecoration(
-//                   color: Colors.white.withOpacity(0.2),
-//                   shape: BoxShape.circle,
-//                   border: Border.all(
-//                     color: Colors.white.withOpacity(0.5),
-//                     width: 2,
-//                   ),
-//                 ),
-//                 child: Center(
-//                   child: Text(
-//                     name.isNotEmpty ? name[0].toUpperCase() : '?',
-//                     style: const TextStyle(
-//                       fontSize: 26,
-//                       fontWeight: FontWeight.bold,
-//                       color: Colors.white,
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//               const SizedBox(width: 16),
-//               Expanded(
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Text(
-//                       name.isEmpty ? 'Unknown' : name,
-//                       style: const TextStyle(
-//                         fontSize: 19,
-//                         fontWeight: FontWeight.bold,
-//                         color: Colors.white,
-//                       ),
-//                     ),
-//                     const SizedBox(height: 4),
-//                     Text(
-//                       '${request['department_name'] ?? 'N/A'}  ·  ${request['role_name'] ?? 'N/A'}',
-//                       style: TextStyle(
-//                         fontSize: 13,
-//                         color: Colors.white.withOpacity(0.85),
-//                       ),
-//                     ),
-//                     const SizedBox(height: 2),
-//                     Text(
-//                       request['email_id'] ?? '',
-//                       style: TextStyle(
-//                         fontSize: 12,
-//                         color: Colors.white.withOpacity(0.7),
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//             ],
-//           ),
-//           const SizedBox(height: 14),
-//           Container(
-//             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-//             decoration: BoxDecoration(
-//               color: Colors.white.withOpacity(0.2),
-//               borderRadius: BorderRadius.circular(20),
-//               border: Border.all(color: Colors.white.withOpacity(0.3)),
-//             ),
-//             child: Row(
-//               mainAxisSize: MainAxisSize.min,
-//               children: [
-//                 Icon(
-//                   isNew ? Icons.person_add_rounded : Icons.edit_rounded,
-//                   size: 14,
-//                   color: Colors.white,
-//                 ),
-//                 const SizedBox(width: 6),
-//                 Text(
-//                   isNew ? 'New Employee Request' : 'Update Request',
-//                   style: const TextStyle(
-//                     color: Colors.white,
-//                     fontWeight: FontWeight.w600,
-//                     fontSize: 12,
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   // ─── Education section ────────────────────────────────────────────────────
-//   Widget _educationSection(List educations) {
-//     return _sectionCard(
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           _sectionHeader(
-//             Icons.school_rounded,
-//             'Education Details',
-//             const Color(0xFF0E9F6E),
-//           ),
-//           if (educations.isEmpty)
-//             const Text('-', style: TextStyle(color: _textMid))
-//           else
-//             ...educations.map((e) {
-//               const levelColors = {
-//                 '10': Color(0xFF6366F1),
-//                 '12': Color(0xFF8B5CF6),
-//                 'Diploma': Color(0xFFF59E0B),
-//                 'UG': Color(0xFF0E9F6E),
-//                 'PG': Color(0xFF1A56DB),
-//                 'PhD': Color(0xFFEF4444),
-//               };
-//               final level = e['education_level']?.toString() ?? '';
-//               final badgeColor = levelColors[level] ?? _textMid;
-
-//               return Container(
-//                 width: double.infinity,
-//                 margin: const EdgeInsets.only(bottom: 10),
-//                 padding: const EdgeInsets.all(14),
-//                 decoration: BoxDecoration(
-//                   color: badgeColor.withOpacity(0.04),
-//                   borderRadius: BorderRadius.circular(10),
-//                   border: Border.all(color: badgeColor.withOpacity(0.2)),
-//                 ),
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Row(
-//                       children: [
-//                         Container(
-//                           padding: const EdgeInsets.symmetric(
-//                             horizontal: 10,
-//                             vertical: 3,
-//                           ),
-//                           decoration: BoxDecoration(
-//                             color: badgeColor.withOpacity(0.1),
-//                             borderRadius: BorderRadius.circular(20),
-//                             border: Border.all(
-//                               color: badgeColor.withOpacity(0.3),
-//                             ),
-//                           ),
-//                           child: Text(
-//                             level,
-//                             style: TextStyle(
-//                               fontSize: 11,
-//                               fontWeight: FontWeight.w700,
-//                               color: badgeColor,
-//                             ),
-//                           ),
-//                         ),
-//                         const SizedBox(width: 8),
-//                         if (e['stream'] != null &&
-//                             e['stream'].toString().isNotEmpty)
-//                           Text(
-//                             e['stream'].toString(),
-//                             style: const TextStyle(
-//                               fontSize: 13,
-//                               fontWeight: FontWeight.w600,
-//                               color: _textDark,
-//                             ),
-//                           ),
-//                       ],
-//                     ),
-//                     const SizedBox(height: 8),
-//                     Wrap(
-//                       spacing: 16,
-//                       runSpacing: 4,
-//                       children: [
-//                         _eduChip(
-//                           Icons.percent_rounded,
-//                           'Score: ${e['score']?.toString() ?? '-'}',
-//                         ),
-//                         _eduChip(
-//                           Icons.calendar_today_rounded,
-//                           'Year: ${e['year_of_passout']?.toString() ?? '-'}',
-//                         ),
-//                         if (e['university'] != null &&
-//                             e['university'].toString().isNotEmpty)
-//                           _eduChip(
-//                             Icons.school_outlined,
-//                             e['university'].toString(),
-//                           ),
-//                         if (e['college_name'] != null &&
-//                             e['college_name'].toString().isNotEmpty)
-//                           _eduChip(
-//                             Icons.account_balance_rounded,
-//                             e['college_name'].toString(),
-//                           ),
-//                       ],
-//                     ),
-//                   ],
-//                 ),
-//               );
-//             }).toList(),
-//         ],
-//       ),
-//     );
-//   }
-
-//   Widget _eduChip(IconData icon, String label) {
-//     return Row(
-//       mainAxisSize: MainAxisSize.min,
-//       children: [
-//         Icon(icon, size: 12, color: _textMid),
-//         const SizedBox(width: 4),
-//         Text(label, style: const TextStyle(fontSize: 12, color: _textMid)),
-//       ],
-//     );
-//   }
-
-//   // ─── Auto-rejected dialog ──────────────────────────────────────────────────
-//   Future<void> _showAutoRejectedDialog(BuildContext context, String reason) {
-//     return showDialog(
-//       context: context,
-//       barrierDismissible: false,
-//       builder: (_) => AlertDialog(
-//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-//         title: Row(
-//           children: [
-//             Icon(Icons.block_rounded, color: Colors.orange[800], size: 24),
-//             const SizedBox(width: 10),
-//             const Expanded(
-//               child: Text(
-//                 'Auto-Rejected',
-//                 style: TextStyle(
-//                   fontWeight: FontWeight.bold,
-//                   color: Color(0xFFEA580C),
-//                   fontSize: 17,
-//                 ),
-//               ),
-//             ),
-//           ],
-//         ),
-//         content: Column(
-//           mainAxisSize: MainAxisSize.min,
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             Text(
-//               'This request was automatically rejected due to duplicate data:',
-//               style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-//             ),
-//             const SizedBox(height: 10),
-//             Container(
-//               width: double.infinity,
-//               padding: const EdgeInsets.all(12),
-//               decoration: BoxDecoration(
-//                 color: const Color(0xFFFFF7ED),
-//                 border: Border.all(color: Colors.orange),
-//                 borderRadius: BorderRadius.circular(8),
-//               ),
-//               child: Text(
-//                 reason,
-//                 style: const TextStyle(
-//                   fontSize: 14,
-//                   fontWeight: FontWeight.w500,
-//                   color: Color(0xFF9A3412),
-//                 ),
-//               ),
-//             ),
-//             const SizedBox(height: 10),
-//             Text(
-//               'The requester must fix the duplicate data and resubmit.',
-//               style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-//             ),
-//           ],
-//         ),
-//         actions: [
-//           ElevatedButton(
-//             style: ElevatedButton.styleFrom(
-//               backgroundColor: const Color(0xFF0F766E),
-//               foregroundColor: Colors.white,
-//               shape: RoundedRectangleBorder(
-//                 borderRadius: BorderRadius.circular(8),
-//               ),
-//             ),
-//             onPressed: () {
-//               Navigator.of(context).pop();
-//               Navigator.of(context).pop(true);
-//             },
-//             child: const Text('OK, Go Back'),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   // ─── Approve ───────────────────────────────────────────────────────────────
-//   Future<void> _approve(BuildContext context) async {
-//     showDialog(
-//       context: context,
-//       barrierDismissible: false,
-//       builder: (_) =>
-//           const Center(child: CircularProgressIndicator(color: _primary)),
-//     );
-
-//     final res = await http.post(
-//       Uri.parse('$baseUrl/admin/approve-request'),
-//       headers: {'Content-Type': 'application/json'},
-//       body: jsonEncode({'request_id': request['request_id']}),
-//     );
-
-//     if (context.mounted) Navigator.of(context).pop();
-//     if (!context.mounted) return;
-
-//     final data = jsonDecode(res.body);
-
-//     if (res.statusCode == 409) {
-//       await _showAutoRejectedDialog(
-//         context,
-//         data['error'] ?? 'Duplicate data found. Request was auto-rejected.',
-//       );
-//       return;
-//     }
-
-//     if (res.statusCode == 200 || res.statusCode == 201) {
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(
-//           content: Text(data['message'] ?? 'Approved successfully'),
-//           backgroundColor: const Color(0xFF059669),
-//           behavior: SnackBarBehavior.floating,
-//           shape: RoundedRectangleBorder(
-//             borderRadius: BorderRadius.circular(10),
-//           ),
-//         ),
-//       );
-//       Navigator.pop(context, true);
-//       return;
-//     }
-
-//     showDialog(
-//       context: context,
-//       builder: (_) => AlertDialog(
-//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-//         title: const Text('Approval Failed'),
-//         content: Text(
-//           data['error'] ?? 'Something went wrong. Please try again.',
-//         ),
-//         actions: [
-//           TextButton(
-//             onPressed: () => Navigator.pop(context),
-//             child: const Text('OK'),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   // ─── Reject ────────────────────────────────────────────────────────────────
-//   void _reject(BuildContext context) {
-//     final ctrl = TextEditingController();
-//     showDialog(
-//       context: context,
-//       builder: (_) => AlertDialog(
-//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-//         title: Row(
-//           children: [
-//             Container(
-//               padding: const EdgeInsets.all(7),
-//               decoration: BoxDecoration(
-//                 color: const Color(0xFFFEF2F2),
-//                 borderRadius: BorderRadius.circular(8),
-//               ),
-//               child: const Icon(
-//                 Icons.cancel_outlined,
-//                 color: Color(0xFFDC2626),
-//                 size: 18,
-//               ),
-//             ),
-//             const SizedBox(width: 10),
-//             const Text(
-//               'Reject Request',
-//               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-//             ),
-//           ],
-//         ),
-//         content: Column(
-//           mainAxisSize: MainAxisSize.min,
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             Text(
-//               'Please provide a reason for rejection:',
-//               style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-//             ),
-//             const SizedBox(height: 10),
-//             TextField(
-//               controller: ctrl,
-//               maxLines: 3,
-//               decoration: InputDecoration(
-//                 hintText: 'Enter reject reason...',
-//                 border: OutlineInputBorder(
-//                   borderRadius: BorderRadius.circular(8),
-//                 ),
-//                 focusedBorder: OutlineInputBorder(
-//                   borderRadius: BorderRadius.circular(8),
-//                   borderSide: const BorderSide(color: _primary, width: 2),
-//                 ),
-//                 contentPadding: const EdgeInsets.all(12),
-//               ),
-//             ),
-//           ],
-//         ),
-//         actions: [
-//           TextButton(
-//             onPressed: () => Navigator.pop(context),
-//             child: const Text('Cancel', style: TextStyle(color: _textMid)),
-//           ),
-//           ElevatedButton.icon(
-//             icon: const Icon(Icons.cancel_rounded, size: 16),
-//             label: const Text('Reject'),
-//             style: ElevatedButton.styleFrom(
-//               backgroundColor: const Color(0xFFDC2626),
-//               foregroundColor: Colors.white,
-//               shape: RoundedRectangleBorder(
-//                 borderRadius: BorderRadius.circular(8),
-//               ),
-//             ),
-//             onPressed: () async {
-//               if (ctrl.text.trim().isEmpty) return;
-//               await http.post(
-//                 Uri.parse('$baseUrl/admin/reject-request'),
-//                 headers: {'Content-Type': 'application/json'},
-//                 body: jsonEncode({
-//                   'request_id': request['request_id'],
-//                   'reject_reason': ctrl.text,
-//                 }),
-//               );
-//               Navigator.pop(context);
-//               Navigator.pop(context, true);
-//             },
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final isMobile = MediaQuery.of(context).size.width < 600;
-//     final hasRejectReason =
-//         request['reject_reason'] != null &&
-//         request['reject_reason'].toString().isNotEmpty;
-
-//     return Scaffold(
-//       backgroundColor: _surface,
-//       appBar: AppBar(
-//         flexibleSpace: Container(
-//           decoration: const BoxDecoration(
-//             gradient: LinearGradient(
-//               colors: [_primary, _primaryDk],
-//               begin: Alignment.topLeft,
-//               end: Alignment.bottomRight,
-//             ),
-//           ),
-//         ),
-//         backgroundColor: Colors.transparent,
-//         elevation: 0,
-//         foregroundColor: Colors.white,
-//         title: const Text(
-//           'Request Details',
-//           style: TextStyle(
-//             fontWeight: FontWeight.w700,
-//             fontSize: 18,
-//             color: Colors.white,
-//           ),
-//         ),
-//       ),
-//       body: SingleChildScrollView(
-//         padding: EdgeInsets.all(isMobile ? 16 : 20),
-//         child: Center(
-//           child: ConstrainedBox(
-//             constraints: const BoxConstraints(maxWidth: 900),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 // ── Profile header ────────────────────────────────────
-//                 _profileHeader(context),
-//                 const SizedBox(height: 14),
-
-//                 // ── Previous rejection banner ─────────────────────────
-//                 if (hasRejectReason)
-//                   Container(
-//                     margin: const EdgeInsets.only(bottom: 12),
-//                     padding: const EdgeInsets.all(14),
-//                     decoration: BoxDecoration(
-//                       color: const Color(0xFFFEF2F2),
-//                       borderRadius: BorderRadius.circular(12),
-//                       border: Border.all(color: const Color(0xFFFCA5A5)),
-//                     ),
-//                     child: Row(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         const Icon(
-//                           Icons.warning_amber_rounded,
-//                           color: Color(0xFFDC2626),
-//                           size: 20,
-//                         ),
-//                         const SizedBox(width: 10),
-//                         Expanded(
-//                           child: Column(
-//                             crossAxisAlignment: CrossAxisAlignment.start,
-//                             children: [
-//                               const Text(
-//                                 'Previous Rejection Reason',
-//                                 style: TextStyle(
-//                                   fontWeight: FontWeight.w700,
-//                                   color: Color(0xFFDC2626),
-//                                   fontSize: 13,
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 4),
-//                               Text(
-//                                 request['reject_reason'].toString(),
-//                                 style: const TextStyle(
-//                                   color: Color(0xFFB91C1C),
-//                                   fontSize: 13,
-//                                   height: 1.4,
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                       ],
-//                     ),
-//                   ),
-
-//                 // ── Personal Info ──────────────────────────────────────
-//                 _sectionCard(
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       _sectionHeader(
-//                         Icons.person_outline_rounded,
-//                         'Personal Information',
-//                         const Color(0xFF1A56DB),
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.badge_outlined,
-//                         label: 'Employee ID',
-//                         value: request['emp_id']?.toString() ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.wc_rounded,
-//                         label: 'Gender',
-//                         value: request['gender'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.cake_outlined,
-//                         label: 'Date of Birth',
-//                         value: _fmt(request['date_of_birth']),
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.person_outline_rounded,
-//                         label: 'Father Name',
-//                         value: request['father_name'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.phone_android_rounded,
-//                         label: 'Emergency Contact',
-//                         value: request['emergency_contact'] ?? '-',
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-
-//                 // ── Contact ────────────────────────────────────────────
-//                 _sectionCard(
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       _sectionHeader(
-//                         Icons.contact_mail_outlined,
-//                         'Contact Information',
-//                         const Color(0xFF7C3AED),
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.email_outlined,
-//                         label: 'Email',
-//                         value: request['email_id'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.phone_outlined,
-//                         label: 'Phone',
-//                         value: request['phone_number'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.home_outlined,
-//                         label: 'Permanent Address',
-//                         value: request['permanent_address'] ?? '-',
-//                         maxLines: 4,
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.location_on_outlined,
-//                         label: 'Communication Address',
-//                         value: request['communication_address'] ?? '-',
-//                         maxLines: 4,
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-
-//                 // ── Employment ─────────────────────────────────────────
-//                 _sectionCard(
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       _sectionHeader(
-//                         Icons.work_outline_rounded,
-//                         'Employment Information',
-//                         const Color(0xFFF59E0B),
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.business_outlined,
-//                         label: 'Department',
-//                         value: request['department_name'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.badge_outlined,
-//                         label: 'Role',
-//                         value: request['role_name'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.calendar_today_outlined,
-//                         label: 'Date of Joining',
-//                         value: _fmt(request['date_of_joining']),
-//                       ),
-//                       if (request['date_of_relieving'] != null &&
-//                           request['date_of_relieving'].toString().isNotEmpty)
-//                         _infoTile(
-//                           icon: Icons.event_busy_outlined,
-//                           label: 'Date of Relieving',
-//                           value: _fmt(request['date_of_relieving']),
-//                         ),
-//                       _infoTile(
-//                         icon: Icons.category_outlined,
-//                         label: 'Employment Type',
-//                         value: request['employment_type'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.access_time_outlined,
-//                         label: 'Work Type',
-//                         value: request['work_type'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.timeline_rounded,
-//                         label: 'Years of Experience',
-//                         value: request['years_experience']?.toString() ?? '-',
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-
-//                 // ── Education ──────────────────────────────────────────
-//                 _educationSection((request['education_list'] as List?) ?? []),
-
-//                 // ── Documents ──────────────────────────────────────────
-//                 _sectionCard(
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       _sectionHeader(
-//                         Icons.description_outlined,
-//                         'Documents & Statutory',
-//                         const Color(0xFFEF4444),
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.credit_card_outlined,
-//                         label: 'Aadhar Number',
-//                         value: request['aadhar_number'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.assignment_outlined,
-//                         label: 'PAN Number',
-//                         value: request['pan_number'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.airplanemode_active_outlined,
-//                         label: 'Passport Number',
-//                         value: request['passport_number'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.account_balance_rounded,
-//                         label: 'PF Number',
-//                         value: request['pf_number'] ?? '-',
-//                       ),
-//                       _infoTile(
-//                         icon: Icons.health_and_safety_outlined,
-//                         label: 'ESIC Number',
-//                         value: request['esic_number'] ?? '-',
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-
-//                 // ── Edit reason (UPDATE only) ──────────────────────────
-//                 if (request['edit_reason'] != null &&
-//                     request['edit_reason'].toString().isNotEmpty)
-//                   _sectionCard(
-//                     child: Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         _sectionHeader(
-//                           Icons.edit_note_rounded,
-//                           'Edit Reason',
-//                           const Color(0xFF2563EB),
-//                         ),
-//                         Container(
-//                           width: double.infinity,
-//                           padding: const EdgeInsets.all(12),
-//                           decoration: BoxDecoration(
-//                             color: const Color(0xFFEFF6FF),
-//                             borderRadius: BorderRadius.circular(8),
-//                             border: Border.all(color: const Color(0xFFBFDBFE)),
-//                           ),
-//                           child: Text(
-//                             request['edit_reason'].toString(),
-//                             style: const TextStyle(
-//                               fontSize: 13,
-//                               color: _textDark,
-//                               height: 1.5,
-//                             ),
-//                           ),
-//                         ),
-//                       ],
-//                     ),
-//                   ),
-
-//                 const SizedBox(height: 8),
-
-//                 // ── Action buttons ─────────────────────────────────────
-//                 Row(
-//                   children: [
-//                     Expanded(
-//                       child: ElevatedButton.icon(
-//                         icon: const Icon(
-//                           Icons.check_circle_outline_rounded,
-//                           size: 18,
-//                         ),
-//                         label: const Text(
-//                           'APPROVE',
-//                           style: TextStyle(
-//                             fontWeight: FontWeight.bold,
-//                             letterSpacing: 0.5,
-//                           ),
-//                         ),
-//                         style: ElevatedButton.styleFrom(
-//                           backgroundColor: _primary,
-//                           foregroundColor: Colors.white,
-//                           padding: const EdgeInsets.symmetric(vertical: 14),
-//                           shape: RoundedRectangleBorder(
-//                             borderRadius: BorderRadius.circular(10),
-//                           ),
-//                           elevation: 0,
-//                         ),
-//                         onPressed: () => _approve(context),
-//                       ),
-//                     ),
-//                     const SizedBox(width: 12),
-//                     Expanded(
-//                       child: ElevatedButton.icon(
-//                         icon: const Icon(Icons.cancel_outlined, size: 18),
-//                         label: const Text(
-//                           'REJECT',
-//                           style: TextStyle(
-//                             fontWeight: FontWeight.bold,
-//                             letterSpacing: 0.5,
-//                           ),
-//                         ),
-//                         style: ElevatedButton.styleFrom(
-//                           backgroundColor: const Color(0xFFDC2626),
-//                           foregroundColor: Colors.white,
-//                           padding: const EdgeInsets.symmetric(vertical: 14),
-//                           shape: RoundedRectangleBorder(
-//                             borderRadius: BorderRadius.circular(10),
-//                           ),
-//                           elevation: 0,
-//                         ),
-//                         onPressed: () => _reject(context),
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//                 const SizedBox(height: 24),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -1531,20 +283,57 @@ class _AdminApprovalPageState extends State<AdminApprovalPage> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Request Card (list item)
+// Request Card (list item) - NOW WITH PHOTO
 // ─────────────────────────────────────────────────────────────────────────────
-class _RequestCard extends StatelessWidget {
+class _RequestCard extends StatefulWidget {
   final Map request;
   final VoidCallback onRefresh;
   const _RequestCard({required this.request, required this.onRefresh});
 
   @override
+  State<_RequestCard> createState() => _RequestCardState();
+}
+
+class _RequestCardState extends State<_RequestCard> {
+  late final Future<http.Response> _photoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final requestId = widget.request['request_id'];
+    final empId = widget.request['emp_id'];
+    final isUpdate = widget.request['request_type'] == 'UPDATE';
+
+    _photoFuture = _resolvePhoto(requestId, empId, isUpdate);
+  }
+
+  Future<http.Response> _resolvePhoto(
+    dynamic requestId,
+    dynamic empId,
+    bool isUpdate,
+  ) async {
+    if (requestId != null) {
+      final res = await http.get(
+        Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+      );
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) return res;
+    }
+    // Fallback to master table for UPDATE requests
+    if (isUpdate && empId != null) {
+      return http.get(Uri.parse('$baseUrl/employees/$empId/photo'));
+    }
+    return http.Response('', 404);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final name = '${request['first_name'] ?? ''} ${request['last_name'] ?? ''}'
-        .trim();
-    final isNew = request['request_type'] == 'NEW';
+    final name =
+        '${widget.request['first_name'] ?? ''} ${widget.request['last_name'] ?? ''}'
+            .trim();
+    final isNew = widget.request['request_type'] == 'NEW';
     final typeColor = isNew ? _accent : _primary;
     final typeBg = isNew ? const Color(0xFFECFDF5) : const Color(0xFFEEF2FF);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1566,37 +355,57 @@ class _RequestCard extends StatelessWidget {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ApprovalDetailPage(request: request),
+              builder: (_) => ApprovalDetailPage(request: widget.request),
             ),
           );
-          if (result == true) onRefresh();
+          if (result == true) widget.onRefresh();
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Avatar — blue gradient initials square
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+              // Avatar with photo support
+              FutureBuilder<http.Response>(
+                future: _photoFuture,
+                builder: (context, snap) {
+                  final hasPhoto =
+                      snap.hasData &&
+                      snap.data!.statusCode == 200 &&
+                      snap.data!.bodyBytes.isNotEmpty;
+
+                  return Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: hasPhoto
+                          ? null
+                          : const LinearGradient(
+                              colors: [Color(0xFF1A56DB), Color(0xFF1E3A8A)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: hasPhoto
+                          ? Image.memory(
+                              snap.data!.bodyBytes,
+                              fit: BoxFit.cover,
+                            )
+                          : Center(
+                              child: Text(
+                                initial,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 14),
               // Info
@@ -1614,7 +423,10 @@ class _RequestCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      [request['department_name'], request['role_name']]
+                      [
+                            widget.request['department_name'],
+                            widget.request['role_name'],
+                          ]
                           .where((e) => e != null && e.toString().isNotEmpty)
                           .join('  ·  '),
                       style: const TextStyle(fontSize: 12, color: _textMid),
@@ -1622,7 +434,7 @@ class _RequestCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      request['email_id'] ?? '',
+                      widget.request['email_id'] ?? '',
                       style: const TextStyle(fontSize: 12, color: _textLight),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1657,7 +469,7 @@ class _RequestCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          request['request_type']?.toString() ?? '',
+                          widget.request['request_type']?.toString() ?? '',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -1686,10 +498,44 @@ class _RequestCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 //  DETAIL / APPROVAL PAGE
 // ─────────────────────────────────────────────────────────────────────────────
-class ApprovalDetailPage extends StatelessWidget {
+class ApprovalDetailPage extends StatefulWidget {
   final Map request;
   const ApprovalDetailPage({super.key, required this.request});
+  @override
+  State<ApprovalDetailPage> createState() => _ApprovalDetailPageState();
+}
 
+class _ApprovalDetailPageState extends State<ApprovalDetailPage> {
+  late final Future<http.Response> _photoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final requestId = widget.request['request_id'];
+    final empId = widget.request['emp_id'];
+    final isUpdate = widget.request['request_type'] == 'UPDATE';
+
+    _photoFuture = _resolvePhoto(requestId, empId, isUpdate);
+  }
+
+  Future<http.Response> _resolvePhoto(
+    dynamic requestId,
+    dynamic empId,
+    bool isUpdate,
+  ) async {
+    if (requestId != null) {
+      final res = await http.get(
+        Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+      );
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) return res;
+    }
+    if (isUpdate && empId != null) {
+      return http.get(Uri.parse('$baseUrl/employees/$empId/photo'));
+    }
+    return http.Response('', 404);
+  }
+
+  // ... all existing methods moved here, replacing `request` with `widget.request`
   // ── Helpers ──────────────────────────────────────────────────────────────
   String _fmt(dynamic date) {
     if (date == null || date.toString().isEmpty) return '-';
@@ -1833,11 +679,12 @@ class ApprovalDetailPage extends StatelessWidget {
   // ── Hero card ─────────────────────────────────────────────────────────────
   Widget _profileHero() {
     final name = [
-      request['first_name'],
-      request['mid_name'],
-      request['last_name'],
+      widget.request['first_name'],
+      widget.request['mid_name'],
+      widget.request['last_name'],
     ].where((e) => e != null && e.toString().trim().isNotEmpty).join(' ');
-    final isNew = request['request_type'] == 'NEW';
+    final isNew = widget.request['request_type'] == 'NEW';
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
     return Container(
       decoration: BoxDecoration(
@@ -1857,7 +704,6 @@ class ApprovalDetailPage extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative circle
           Positioned(
             top: -30,
             right: -30,
@@ -1878,28 +724,45 @@ class ApprovalDetailPage extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        color: Colors.white.withOpacity(0.15),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                          width: 2,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                    // ── Photo-aware avatar ──────────────────────────────
+                    FutureBuilder<http.Response>(
+                      future: _photoFuture,
+                      builder: (context, snap) {
+                        final hasPhoto =
+                            snap.hasData &&
+                            snap.data!.statusCode == 200 &&
+                            snap.data!.bodyBytes.isNotEmpty;
+                        return Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            color: Colors.white.withOpacity(0.15),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 2,
+                            ),
                           ),
-                        ),
-                      ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: hasPhoto
+                                ? Image.memory(
+                                    snap.data!.bodyBytes,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Center(
+                                    child: Text(
+                                      initial,
+                                      style: const TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -1917,7 +780,7 @@ class ApprovalDetailPage extends StatelessWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            request['role_name'] ?? '',
+                            widget.request['role_name'] ?? '',
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.8),
                               fontSize: 13,
@@ -1925,14 +788,13 @@ class ApprovalDetailPage extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            request['department_name'] ?? '',
+                            widget.request['department_name'] ?? '',
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.55),
                               fontSize: 12,
                             ),
                           ),
                           const SizedBox(height: 10),
-                          // Type badge
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
@@ -1974,26 +836,27 @@ class ApprovalDetailPage extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Stats strip
                 const SizedBox(height: 16),
                 Container(height: 1, color: Colors.white.withOpacity(0.12)),
                 const SizedBox(height: 14),
                 Row(
                   children: [
                     _heroStat(
-                      request['request_type'] == 'NEW'
+                      widget.request['request_type'] == 'NEW'
                           ? 'NEW'
-                          : (request['emp_id']?.toString() ?? '-'),
-                      request['request_type'] == 'NEW' ? 'REQUEST' : 'EMP ID',
+                          : (widget.request['emp_id']?.toString() ?? '-'),
+                      widget.request['request_type'] == 'NEW'
+                          ? 'REQUEST'
+                          : 'EMP ID',
                     ),
                     _heroVDiv(),
                     _heroStat(
-                      _shorten(request['employment_type']?.toString()),
+                      _shorten(widget.request['employment_type']?.toString()),
                       'TYPE',
                     ),
                     _heroVDiv(),
                     _heroStat(
-                      _shorten(request['work_type']?.toString()),
+                      _shorten(widget.request['work_type']?.toString()),
                       'WORK',
                     ),
                   ],
@@ -2024,8 +887,10 @@ class ApprovalDetailPage extends StatelessWidget {
       children: [
         Text(
           v,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis, // ← ADD THIS
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 13, // ← reduce from 14 to 13
             fontWeight: FontWeight.w800,
             color: Colors.white,
           ),
@@ -2043,7 +908,6 @@ class ApprovalDetailPage extends StatelessWidget {
       ],
     ),
   );
-
   Widget _heroVDiv() =>
       Container(width: 1, height: 28, color: Colors.white.withOpacity(0.12));
 
@@ -2318,7 +1182,7 @@ class ApprovalDetailPage extends StatelessWidget {
     final res = await http.post(
       Uri.parse('$baseUrl/admin/approve-request'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'request_id': request['request_id']}),
+      body: jsonEncode({'request_id': widget.request['request_id']}),
     );
     if (context.mounted) Navigator.of(context).pop();
     if (!context.mounted) return;
@@ -2499,7 +1363,7 @@ class ApprovalDetailPage extends StatelessWidget {
                 Uri.parse('$baseUrl/admin/reject-request'),
                 headers: {'Content-Type': 'application/json'},
                 body: jsonEncode({
-                  'request_id': request['request_id'],
+                  'request_id': widget.request['request_id'],
                   'reject_reason': ctrl.text,
                 }),
               );
@@ -2519,11 +1383,11 @@ class ApprovalDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasRejectReason =
-        request['reject_reason'] != null &&
-        request['reject_reason'].toString().isNotEmpty;
+        widget.request['reject_reason'] != null &&
+        widget.request['reject_reason'].toString().isNotEmpty;
     final hasEditReason =
-        request['edit_reason'] != null &&
-        request['edit_reason'].toString().isNotEmpty;
+        widget.request['edit_reason'] != null &&
+        widget.request['edit_reason'].toString().isNotEmpty;
 
     return Scaffold(
       backgroundColor: _surface,
@@ -2630,7 +1494,7 @@ class ApprovalDetailPage extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                request['reject_reason'].toString(),
+                                widget.request['reject_reason'].toString(),
                                 style: const TextStyle(
                                   color: Color(0xFFB91C1C),
                                   fontSize: 13,
@@ -2659,36 +1523,37 @@ class ApprovalDetailPage extends StatelessWidget {
                       _infoTile(
                         icon: Icons.badge_outlined,
                         label: 'Employee ID',
-                        value: request['emp_id']?.toString() ?? '-',
+                        value: widget.request['emp_id']?.toString() ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.wc_rounded,
                         label: 'Gender',
-                        value: request['gender'] ?? '-',
+                        value: widget.request['gender'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.cake_outlined,
                         label: 'Date of Birth',
-                        value: _fmt(request['date_of_birth']),
+                        value: _fmt(widget.request['date_of_birth']),
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.person_outline_rounded,
                         label: 'Father Name',
-                        value: request['father_name'] ?? '-',
+                        value: widget.request['father_name'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.phone_android_rounded,
                         label: 'Emergency Contact',
-                        value: request['emergency_contact'] ?? '-',
+                        value: widget.request['emergency_contact'] ?? '-',
                       ),
                       _infoTile(
                         icon: Icons.phone_android_rounded,
                         label: 'Emergency Contact relation ',
-                        value: request['emergency_contact_relation'] ?? '-',
+                        value:
+                            widget.request['emergency_contact_relation'] ?? '-',
                       ),
                     ],
                   ),
@@ -2708,27 +1573,27 @@ class ApprovalDetailPage extends StatelessWidget {
                       _infoTile(
                         icon: Icons.email_outlined,
                         label: 'Email',
-                        value: request['email_id'] ?? '-',
+                        value: widget.request['email_id'] ?? '-',
                         valueColor: _primary,
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.phone_outlined,
                         label: 'Phone',
-                        value: request['phone_number'] ?? '-',
+                        value: widget.request['phone_number'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.home_outlined,
                         label: 'Permanent Address',
-                        value: request['permanent_address'] ?? '-',
+                        value: widget.request['permanent_address'] ?? '-',
                         maxLines: 4,
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.location_on_outlined,
                         label: 'Communication Address',
-                        value: request['communication_address'] ?? '-',
+                        value: widget.request['communication_address'] ?? '-',
                         maxLines: 4,
                       ),
                     ],
@@ -2749,55 +1614,58 @@ class ApprovalDetailPage extends StatelessWidget {
                       _infoTile(
                         icon: Icons.business_outlined,
                         label: 'Department',
-                        value: request['department_name'] ?? '-',
+                        value: widget.request['department_name'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.badge_outlined,
                         label: 'Role',
-                        value: request['role_name'] ?? '-',
+                        value: widget.request['role_name'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.calendar_today_outlined,
                         label: 'Date of Joining',
-                        value: _fmt(request['date_of_joining']),
+                        value: _fmt(widget.request['date_of_joining']),
                       ),
-                      if (request['date_of_relieving'] != null &&
-                          request['date_of_relieving']
+                      if (widget.request['date_of_relieving'] != null &&
+                          widget.request['date_of_relieving']
                               .toString()
                               .isNotEmpty) ...[
                         _dividerRow(),
                         _infoTile(
                           icon: Icons.event_busy_outlined,
                           label: 'Date of Relieving',
-                          value: _fmt(request['date_of_relieving']),
+                          value: _fmt(widget.request['date_of_relieving']),
                         ),
                       ],
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.category_outlined,
                         label: 'Employment Type',
-                        value: request['employment_type'] ?? '-',
+                        value: widget.request['employment_type'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.access_time_outlined,
                         label: 'Work Type',
-                        value: request['work_type'] ?? '-',
+                        value: widget.request['work_type'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.timeline_rounded,
                         label: 'Experience',
-                        value: '${request['years_experience'] ?? '-'} yrs',
+                        value:
+                            '${widget.request['years_experience'] ?? '-'} yrs',
                       ),
                     ],
                   ),
                 ),
 
                 // ── Education ────────────────────────────────────────
-                _educationSection((request['education_list'] as List?) ?? []),
+                _educationSection(
+                  (widget.request['education_list'] as List?) ?? [],
+                ),
 
                 // ── Documents ────────────────────────────────────────
                 _sectionCard(
@@ -2813,31 +1681,31 @@ class ApprovalDetailPage extends StatelessWidget {
                       _infoTile(
                         icon: Icons.credit_card_outlined,
                         label: 'Aadhar Number',
-                        value: request['aadhar_number'] ?? '-',
+                        value: widget.request['aadhar_number'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.assignment_outlined,
                         label: 'PAN Number',
-                        value: request['pan_number'] ?? '-',
+                        value: widget.request['pan_number'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.airplanemode_active_outlined,
                         label: 'Passport Number',
-                        value: request['passport_number'] ?? '-',
+                        value: widget.request['passport_number'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.account_balance_rounded,
                         label: 'PF Number',
-                        value: request['pf_number'] ?? '-',
+                        value: widget.request['pf_number'] ?? '-',
                       ),
                       _dividerRow(),
                       _infoTile(
                         icon: Icons.health_and_safety_outlined,
                         label: 'ESIC Number',
-                        value: request['esic_number'] ?? '-',
+                        value: widget.request['esic_number'] ?? '-',
                       ),
                     ],
                   ),
@@ -2868,7 +1736,7 @@ class ApprovalDetailPage extends StatelessWidget {
                               ),
                             ),
                             child: Text(
-                              request['edit_reason'].toString(),
+                              widget.request['edit_reason'].toString(),
                               style: const TextStyle(
                                 fontSize: 13,
                                 color: _textDark,
