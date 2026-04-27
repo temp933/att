@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/asign_location.dart';
 import '../services/asign_location_services.dart';
+import '../providers/api_client.dart';
 
 class AdminAssignLocation extends StatefulWidget {
   final String role;
@@ -282,9 +282,7 @@ class _AdminAssignLocationState extends State<AdminAssignLocation>
             if (isLoadingLocations && locations.isEmpty) {
               Future.microtask(() async {
                 try {
-                  final response = await http
-                      .get(Uri.parse("http://192.168.29.216:3000/locations"))
-                      .timeout(const Duration(seconds: 15));
+                  final response = await ApiClient.get('/locations');
                   if (response.statusCode == 200) {
                     final data = jsonDecode(response.body) as List<dynamic>;
                     setDialogState(() {
@@ -323,7 +321,7 @@ class _AdminAssignLocationState extends State<AdminAssignLocation>
                     isLoadingLocations
                         ? const Center(child: CircularProgressIndicator())
                         : DropdownButtonFormField<int>(
-                            value: selectedLocationId,
+                            initialValue: selectedLocationId,
                             onChanged: (val) {
                               setDialogState(() {
                                 selectedLocationId = val;

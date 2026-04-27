@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'responsive_utils.dart';
 import 'emp_holiday_view.dart';
-
-const String baseUrl = 'http://192.168.29.216:3000';
+import '../providers/api_client.dart';
 
 class TL_HR_LeaveScreen extends StatefulWidget {
   final String employeeId;
@@ -64,9 +62,9 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
       errorMessage = null;
     });
     try {
-      final res = await http.get(
-        Uri.parse('$baseUrl/employees/${widget.employeeId}/leaves'),
-      );
+      // ✅ REPLACE the http.get call with:
+      final res = await ApiClient.get('/employees/${widget.employeeId}/leaves');
+
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data['success'] == true) {
@@ -103,7 +101,9 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
   Future<void> _fetchPersonName(String id) async {
     if (_personNames.containsKey(id)) return;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/employee-user/$id'));
+      // ✅ REPLACE the http.get call with:
+      final res = await ApiClient.get('/employee-user/$id');
+
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         if (data['success'] == true) {
@@ -128,27 +128,23 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
 
   Future<void> submitLeave() async {
     if (leaveType == null || fromDate == null || toDate == null) return;
-    final url = editingLeaveId != null
-        ? '$baseUrl/leave/$editingLeaveId'
-        : '$baseUrl/employees/${widget.employeeId}/apply-leave';
+
     try {
-      final body = jsonEncode({
+      final bodyMap = {
         'leave_type': leaveType,
         'leave_start_date': fromDate!.toIso8601String().split('T')[0],
         'leave_end_date': toDate!.toIso8601String().split('T')[0],
         'reason': reason ?? '',
-      });
+      };
+
+      // ✅ REPLACE the http calls with ApiClient:
       final res = editingLeaveId != null
-          ? await http.put(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: body,
-            )
-          : await http.post(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: body,
+          ? await ApiClient.put('/leave/$editingLeaveId', bodyMap)
+          : await ApiClient.post(
+              '/employees/${widget.employeeId}/apply-leave',
+              bodyMap,
             );
+
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
         _showSnack(data['message'], success: true);
@@ -165,11 +161,11 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
 
   Future<void> cancelLeave(int id, String cancelReason) async {
     try {
-      final res = await http.put(
-        Uri.parse('$baseUrl/leave/$id/cancel'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'cancel_reason': cancelReason}),
-      );
+      // ✅ REPLACE the http.put call with:
+      final res = await ApiClient.put('/leave/$id/cancel', {
+        'cancel_reason': cancelReason,
+      });
+
       final data = jsonDecode(res.body);
       _showSnack(data['message'], success: data['success'] == true);
       if (data['success'] == true) fetchLeaves();
@@ -218,7 +214,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
   // ─── Summary computations ──────────────────────────────────────────────────
   int get _approvedDays => leaves
       .where((e) => e['status'] == 'Approved')
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
+      .fold<int>(0, (s, e) => s + (e['number_of_days'] ?? 0) as int);
 
   int get _remainingDays =>
       (_totalAllowed - _approvedDays).clamp(0, _totalAllowed);
@@ -1524,7 +1520,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             ),
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
-              value: leaveType,
+              initialValue: leaveType,
               decoration: InputDecoration(
                 labelText: 'Leave Type *',
                 filled: true,

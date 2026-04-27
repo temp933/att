@@ -137,7 +137,7 @@ class _EmployeeAssignmentsScreenState extends State<EmployeeAssignmentsScreen>
       final raw = await ApiService.getSites();
       if (!mounted) return;
       final now = DateTime.now();
-      final sites = (raw as List)
+      final sites = (raw)
           .map((e) => SiteModel.fromJson(e as Map<String, dynamic>))
           .where((s) {
             if (s.endDate == null) return true;

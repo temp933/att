@@ -4,13 +4,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart' as xl;
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:file_saver/file_saver.dart';
 
-const String _baseUrl = 'http://192.168.29.216:3000';
+import '../providers/api_client.dart';
 
 const Color _primary = Color(0xFF1A56DB);
 const Color _accent = Color(0xFF0E9F6E);
@@ -131,10 +130,9 @@ class _ReportService {
     DateTime to,
   ) async {
     try {
-      final url = Uri.parse(
-        '$_baseUrl/holidays/range?from=${_fmt(from)}&to=${_fmt(to)}',
+      final res = await ApiClient.get(
+        '/holidays/range?from=${_fmt(from)}&to=${_fmt(to)}',
       );
-      final res = await http.get(url);
       if (res.statusCode != 200) return [];
       final body = jsonDecode(res.body);
       final List rows = body['data'] ?? [];
@@ -156,10 +154,9 @@ class _ReportService {
     DateTime to,
   ) async {
     try {
-      final url = Uri.parse(
-        '$_baseUrl/leaves/approved-range?from=${_fmt(from)}&to=${_fmt(to)}',
+      final res = await ApiClient.get(
+        '/leaves/approved-range?from=${_fmt(from)}&to=${_fmt(to)}',
       );
-      final res = await http.get(url);
       if (res.statusCode != 200) return [];
       final body = jsonDecode(res.body);
       final List rows = body['data'] ?? [];
@@ -190,10 +187,10 @@ class _ReportService {
       d = d.add(const Duration(days: 1))
     ) {
       try {
-        final url = Uri.parse(
-          '$_baseUrl/attendance/by-date-detail?date=${_fmt(d)}',
+        final res = await ApiClient.get(
+          '/attendance/by-date-detail?date=${_fmt(d)}',
         );
-        final res = await http.get(url);
+
         if (res.statusCode != 200) continue;
 
         final body = jsonDecode(res.body);
@@ -449,12 +446,15 @@ class _ExcelBuilder {
       'Check Out',
       'Total Hrs',
     ];
-    for (int c = 0; c < headers.length; c++)
+    for (int c = 0; c < headers.length; c++) {
       _setCell(sheet, 1, c, headers[c], _hdrStyle());
+    }
     sheet.setRowHeight(1, 22);
 
     final widths = [6.0, 9.0, 22.0, 13.0, 22.0, 12.0, 12.0, 12.0, 18.0];
-    for (int c = 0; c < widths.length; c++) sheet.setColumnWidth(c, widths[c]);
+    for (int c = 0; c < widths.length; c++) {
+      sheet.setColumnWidth(c, widths[c]);
+    }
 
     int sno = 1, row = 2;
     data.sort((a, b) {
@@ -610,8 +610,9 @@ class _ExcelBuilder {
     final sheet = excel[sheetName];
 
     final List<DateTime> dates = [];
-    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1)))
+    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
       dates.add(d);
+    }
 
     final Set<String> holidayDates = holidays
         .map((h) => _fmtDate(h.date))
@@ -662,8 +663,9 @@ class _ExcelBuilder {
     sheet.setRowHeight(0, 28);
 
     final fixedHeaders = ['S.No', 'Emp ID', 'Employee Name', 'Site Name'];
-    for (int c = 0; c < fixedHeaders.length; c++)
+    for (int c = 0; c < fixedHeaders.length; c++) {
       _setCell(sheet, 1, c, fixedHeaders[c], _hdrStyle());
+    }
 
     for (int di = 0; di < dates.length; di++) {
       final isHoliday = holidayDates.contains(_fmtDate(dates[di]));
@@ -793,8 +795,9 @@ class _ExcelBuilder {
         _setCell(sheet, row, 0, 'Total — $name (ID: $empId)', _totalStyle());
         for (int di = 0; di < dates.length; di++) {
           int dayTotal = 0;
-          for (final site in sortedSites)
+          for (final site in sortedSites) {
             dayTotal += empSiteDate[empId]![site]![_fmtDate(dates[di])] ?? 0;
+          }
           _setCell(
             sheet,
             row,
@@ -1122,7 +1125,9 @@ class _AdminAttendanceReportScreenState
 
   List<String> get _allSites {
     final sites = <String>{};
-    for (final d in _data) for (final v in d.visits) sites.add(v.locationName);
+    for (final d in _data) for (final v in d.visits) {
+      sites.add(v.locationName);
+    }
     return ['All', ...sites.toList()..sort()];
   }
 
@@ -2630,8 +2635,9 @@ class _MonthlyPreviewState extends State<_MonthlyPreview> {
     }
 
     final List<DateTime> dates = [];
-    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1)))
+    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
       dates.add(d);
+    }
 
     final Set<String> holidayDates = holidays
         .map((h) => _fmtDate(h.date))

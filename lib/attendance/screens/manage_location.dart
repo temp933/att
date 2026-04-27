@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'add_location_dialog.dart';
+import '../providers/api_client.dart';
 
 class ManageLocationPage extends StatefulWidget {
   const ManageLocationPage({super.key});
@@ -15,8 +15,6 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
   List<Map<String, dynamic>> sites = [];
   bool loading = true;
 
-  final String baseUrl = "http://192.168.29.216:3000";
-
   @override
   void initState() {
     super.initState();
@@ -28,7 +26,7 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
   // ─────────────────────────────
   Future<void> loadSites() async {
     try {
-      final res = await http.get(Uri.parse("$baseUrl/sites"));
+      final res = await ApiClient.get('/sites');
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -67,11 +65,14 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
       "end_date": end.toIso8601String().split("T")[0],
     });
 
-    await http.post(
-      Uri.parse("$baseUrl/sites"),
-      headers: {"Content-Type": "application/json"},
-      body: body,
-    );
+    await ApiClient.post('/sites', {
+      "site_name": name,
+      "polygon_json": closedPoints
+          .map((e) => {"lat": e.latitude, "lng": e.longitude})
+          .toList(),
+      "start_date": start.toIso8601String().split("T")[0],
+      "end_date": end.toIso8601String().split("T")[0],
+    });
 
     loadSites();
   }
@@ -101,12 +102,14 @@ class _ManageLocationPageState extends State<ManageLocationPage> {
       "end_date": end.toIso8601String().split("T")[0],
     });
 
-    await http.put(
-      Uri.parse("$baseUrl/sites/$id"),
-      headers: {"Content-Type": "application/json"},
-      body: body,
-    );
-
+    await ApiClient.put('/sites/$id', {
+      "site_name": name,
+      "polygon_json": closedPoints
+          .map((e) => {"lat": e.latitude, "lng": e.longitude})
+          .toList(),
+      "start_date": start.toIso8601String().split("T")[0],
+      "end_date": end.toIso8601String().split("T")[0],
+    });
     loadSites();
   }
 

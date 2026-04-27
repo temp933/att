@@ -56,10 +56,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     startSessionGuard();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
 
   // ── Pages ──────────────────────────────────────────────────────────────────
   List<Widget> get pages => [

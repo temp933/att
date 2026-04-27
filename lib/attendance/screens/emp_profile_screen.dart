@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'responsive_utils.dart';
+import 'package:http/http.dart' as http;
+import '../providers/api_client.dart';
 
 class EmployeeProfileScreen extends StatefulWidget {
   final String employeeId;
@@ -57,10 +58,9 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
       errorMessage = null;
     });
     try {
-      const base = 'http://192.168.29.216:3000';
       final results = await Future.wait([
-        http.get(Uri.parse('$base/employees/${widget.employeeId}')),
-        http.get(Uri.parse('$base/employees/${widget.employeeId}/education')),
+        ApiClient.get('/employees/${widget.employeeId}'),
+        ApiClient.get('/employees/${widget.employeeId}/education'),
       ]);
       if (results[0].statusCode == 200) {
         setState(() => employeeData = jsonDecode(results[0].body));
@@ -86,11 +86,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
       if (employeeData != null) _animCtrl.forward();
       if (employeeData != null) {
         _animCtrl.forward();
-        _photoFuture = http.get(
-          Uri.parse(
-            'http://192.168.29.216:3000/employees/${widget.employeeId}/photo',
-          ),
-        );
+        _photoFuture = ApiClient.get('/employees/${widget.employeeId}/photo');
       }
     }
   }
@@ -458,10 +454,8 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen>
                     // Avatar
                     // Avatar with photo
                     FutureBuilder<http.Response>(
-                      future: http.get(
-                        Uri.parse(
-                          'http://192.168.29.216:3000/employees/${widget.employeeId}/photo',
-                        ),
+                      future: ApiClient.get(
+                        '/employees/${widget.employeeId}/photo',
                       ),
                       builder: (context, snap) {
                         final hasPhoto =

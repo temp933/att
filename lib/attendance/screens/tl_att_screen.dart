@@ -403,7 +403,7 @@ class _TLAttendanceScreenState extends State<TLAttendanceScreen> {
   );
 
   Widget _statusDrop() => DropdownButtonFormField<String>(
-    value: _selectedStatus,
+    initialValue: _selectedStatus,
     isExpanded: true,
     style: const TextStyle(color: _textDark, fontSize: 13),
     decoration: _dropDec('Status'),
@@ -422,7 +422,7 @@ class _TLAttendanceScreenState extends State<TLAttendanceScreen> {
   );
 
   Widget _dateDrop() => DropdownButtonFormField<String>(
-    value: _selectedDateFilter,
+    initialValue: _selectedDateFilter,
     isExpanded: true,
     style: const TextStyle(color: _textDark, fontSize: 13),
     decoration: _dropDec('Date'),

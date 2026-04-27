@@ -484,8 +484,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
               hide: _hideConfirm,
               onToggle: () => setState(() => _hideConfirm = !_hideConfirm),
               validator: (v) {
-                if (v == null || v.isEmpty)
+                if (v == null || v.isEmpty) {
                   return 'Please confirm your password';
+                }
                 if (v != _newPwCtrl.text) return 'Passwords do not match';
                 return null;
               },

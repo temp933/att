@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../providers/api_client.dart';
 import 'package:http/http.dart' as http;
-
-const String baseUrl = 'http://192.168.29.103:3000';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design Tokens — identical to EmployeeProfileScreen & LeaveApprovalScreen
@@ -44,8 +43,9 @@ class _AdminApprovalPageState extends State<AdminApprovalPage> {
       _error = null;
     });
     try {
-      final res = await http.get(Uri.parse('$baseUrl/admin/pending-requests'));
+      final res = await ApiClient.get('/admin/pending-requests');
       if (res.statusCode == 200) {
+        
         setState(() => _requests = jsonDecode(res.body));
       } else {
         setState(() => _error = 'Server error (${res.statusCode})');
@@ -313,14 +313,12 @@ class _RequestCardState extends State<_RequestCard> {
     bool isUpdate,
   ) async {
     if (requestId != null) {
-      final res = await http.get(
-        Uri.parse('$baseUrl/pending-request/$requestId/photo'),
-      );
+      final res = await ApiClient.get('/pending-request/$requestId/photo');
       if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) return res;
     }
     // Fallback to master table for UPDATE requests
     if (isUpdate && empId != null) {
-      return http.get(Uri.parse('$baseUrl/employees/$empId/photo'));
+      return ApiClient.get('/employees/$empId/photo');
     }
     return http.Response('', 404);
   }
@@ -524,13 +522,11 @@ class _ApprovalDetailPageState extends State<ApprovalDetailPage> {
     bool isUpdate,
   ) async {
     if (requestId != null) {
-      final res = await http.get(
-        Uri.parse('$baseUrl/pending-request/$requestId/photo'),
-      );
+      final res = await ApiClient.get('/pending-request/$requestId/photo');
       if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) return res;
     }
     if (isUpdate && empId != null) {
-      return http.get(Uri.parse('$baseUrl/employees/$empId/photo'));
+      return ApiClient.get('/employees/$empId/photo');
     }
     return http.Response('', 404);
   }
@@ -1179,11 +1175,9 @@ class _ApprovalDetailPageState extends State<ApprovalDetailPage> {
         child: CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
       ),
     );
-    final res = await http.post(
-      Uri.parse('$baseUrl/admin/approve-request'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'request_id': widget.request['request_id']}),
-    );
+    final res = await ApiClient.post('/admin/approve-request', {
+      'request_id': widget.request['request_id'],
+    });
     if (context.mounted) Navigator.of(context).pop();
     if (!context.mounted) return;
 
@@ -1359,14 +1353,10 @@ class _ApprovalDetailPageState extends State<ApprovalDetailPage> {
             ),
             onPressed: () async {
               if (ctrl.text.trim().isEmpty) return;
-              await http.post(
-                Uri.parse('$baseUrl/admin/reject-request'),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode({
-                  'request_id': widget.request['request_id'],
-                  'reject_reason': ctrl.text,
-                }),
-              );
+              await ApiClient.post('/admin/reject-request', {
+                'request_id': widget.request['request_id'],
+                'reject_reason': ctrl.text,
+              });
               Navigator.pop(context);
               Navigator.pop(context, true);
             },

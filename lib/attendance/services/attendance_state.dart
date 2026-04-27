@@ -1,5 +1,4 @@
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
 enum DayStatus { notStarted, inProgress }
@@ -7,7 +6,8 @@ enum DayStatus { notStarted, inProgress }
 class AttendanceState {
   AttendanceState._();
   static final AttendanceState instance = AttendanceState._();
-
+  bool compoffGranted = false;
+  String? compoffWorkType;
   DayStatus dayStatus = DayStatus.notStarted;
   bool isInsideSite = false;
   String currentSiteName = '';
@@ -15,6 +15,7 @@ class AttendanceState {
   int sessionCountToday = 0;
   DateTime? currentSessionStart;
   int _empId = -1;
+  bool locationVerified = false;
   bool isLate = false;
   int lateMinutes = 0;
   double lateHours = 0.0;
@@ -30,9 +31,12 @@ class AttendanceState {
       if (status == 'in_progress') {
         currentSessionId = data['session_id'] as int?;
         sessionCountToday = data['session_number'] as int? ?? 1;
+        locationVerified =
+            (data['location_verified'] as int? ?? 0) == 1; // ← ADD
         dayStatus = DayStatus.inProgress;
       } else {
         sessionCountToday = data['sessions_today'] as int? ?? 0;
+        locationVerified = false; // ← ADD
         dayStatus = DayStatus.notStarted;
         isInsideSite = false;
         currentSiteName = '';
@@ -64,16 +68,18 @@ class AttendanceState {
     isInsideSite = false;
     currentSiteName = '';
 
-    // BEFORE: final sessionId = await ApiService.startSession(empId);
-    // AFTER:
     final data = await ApiService.startSession(empId);
     currentSessionId = data['session_id'] as int?;
 
-    // Capture late entry info from server response
+    // Late entry info
     isLate = data['is_late'] == true;
     lateMinutes = (data['late_minutes'] as num?)?.toInt() ?? 0;
     lateHours = (data['late_hours'] as num?)?.toDouble() ?? 0.0;
     lateText = data['late_text'] as String?;
+
+    // ── AUTO COMP-OFF info from server ─────────────────────────────────────────
+    compoffGranted = data['compoff_granted'] == true;
+    compoffWorkType = data['compoff_work_type'] as String?;
 
     dayStatus = DayStatus.inProgress;
   }
@@ -85,10 +91,13 @@ class AttendanceState {
     currentSiteName = '';
     currentSessionId = null;
     currentSessionStart = null;
-    isLate = false; // ADD
-    lateMinutes = 0; // ADD
-    lateHours = 0.0; // ADD
-    lateText = null; // ADD
+    locationVerified = false; // ← ADD
+    isLate = false;
+    lateMinutes = 0;
+    lateHours = 0.0;
+    lateText = null;
+    compoffGranted = false;
+    compoffWorkType = null;
   }
 
   Future<void> cancelStart(int empId) async {
@@ -104,10 +113,11 @@ class AttendanceState {
       currentSiteName = '';
       currentSessionId = null;
       currentSessionStart = null;
-      isLate = false; // ADD
-      lateMinutes = 0; // ADD
-      lateHours = 0.0; // ADD
-      lateText = null; // ADD
+      locationVerified = false; // ← ADD
+      isLate = false;
+      lateMinutes = 0;
+      lateHours = 0.0;
+      lateText = null;
       if (sessionCountToday > 0) sessionCountToday -= 1;
     }
   }

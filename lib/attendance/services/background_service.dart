@@ -998,7 +998,7 @@ void onServiceStart(ServiceInstance service) async {
   }
 
   await SiteCache.init();
-  String _workDate = _todayStr();
+  String workDate = _todayStr();
   _fire(SyncWorker.flush());
 
   final syncTimer = Timer.periodic(
@@ -1084,25 +1084,25 @@ void onServiceStart(ServiceInstance service) async {
   });
 
   // ── GPS smoothing ──────────────────────────────────────────────────────────
-  final List<({double lat, double lng})> _hist = [];
+  final List<({double lat, double lng})> hist = [];
 
-  ({double lat, double lng}) _smooth(Position pos) {
-    _hist.add((lat: pos.latitude, lng: pos.longitude));
-    if (_hist.length > 3) _hist.removeAt(0);
+  ({double lat, double lng}) smooth(Position pos) {
+    hist.add((lat: pos.latitude, lng: pos.longitude));
+    if (hist.length > 3) hist.removeAt(0);
     double ls = 0, ns = 0, ws = 0;
-    for (int i = 0; i < _hist.length; i++) {
+    for (int i = 0; i < hist.length; i++) {
       final w = (i + 1).toDouble();
-      ls += _hist[i].lat * w;
-      ns += _hist[i].lng * w;
+      ls += hist[i].lat * w;
+      ns += hist[i].lng * w;
       ws += w;
     }
     return (lat: ls / ws, lng: ns / ws);
   }
 
-  double? _lastLat, _lastLng;
-  bool _movedEnough(double lat, double lng) {
-    if (_lastLat == null) return true;
-    return Geolocator.distanceBetween(_lastLat!, _lastLng!, lat, lng) > 8;
+  double? lastLat, lastLng;
+  bool movedEnough(double lat, double lng) {
+    if (lastLat == null) return true;
+    return Geolocator.distanceBetween(lastLat!, lastLng!, lat, lng) > 8;
   }
 
   // ── Location settings ──────────────────────────────────────────────────────
@@ -1136,11 +1136,11 @@ void onServiceStart(ServiceInstance service) async {
     (Position pos) async {
       if (pos.accuracy > 150) return;
 
-      final s = _smooth(pos);
+      final s = smooth(pos);
 
       // Midnight rollover
       final today = _todayStr();
-      if (today != _workDate) {
+      if (today != workDate) {
         print('[Service] Midnight rollover');
         if (currentSiteId != null) {
           await LocalDB.writeEvent(
@@ -1157,10 +1157,10 @@ void onServiceStart(ServiceInstance service) async {
           employeeId: empId,
           sessionId: sessionId,
         );
-        _hist.clear();
-        _lastLat = null;
-        _lastLng = null;
-        _workDate = today;
+        hist.clear();
+        lastLat = null;
+        lastLng = null;
+        workDate = today;
         _fire(SiteCache.sync());
         _fire(SyncWorker.flush());
       }
@@ -1172,9 +1172,9 @@ void onServiceStart(ServiceInstance service) async {
         'good': pos.accuracy <= 50,
       });
 
-      if (!_movedEnough(s.lat, s.lng)) return;
-      _lastLat = s.lat;
-      _lastLng = s.lng;
+      if (!movedEnough(s.lat, s.lng)) return;
+      lastLat = s.lat;
+      lastLng = s.lng;
 
       // Geofence check
       final result = SiteCache.checkLocation(s.lat, s.lng);

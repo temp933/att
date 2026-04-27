@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'responsive_utils.dart'; 
-
-// ─── Base URL — same as EmployeeService ──────────────────────────────────────
-const String _base = 'http://192.168.29.216:3000';
+import 'responsive_utils.dart';
+import '../providers/api_client.dart';
+import '../providers/api_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODEL
@@ -57,7 +56,7 @@ class SessionUser {
 // ─────────────────────────────────────────────────────────────────────────────
 class _SessionService {
   static Future<List<SessionUser>> fetchAll() async {
-    final res = await http.get(Uri.parse('$_base/admin/sessions'));
+    final res = await ApiClient.get('/admin/sessions');
     if (res.statusCode == 200) {
       final body = jsonDecode(res.body);
       if (body['success'] == true) {
@@ -71,9 +70,9 @@ class _SessionService {
 
   static Future<void> forceLogout(int loginId, {int? empId}) async {
     // Backend now handles attendance + session close in one call
-    final res = await http.post(
-      Uri.parse('$_base/admin/sessions/$loginId/force-logout'),
-      headers: {'Content-Type': 'application/json'},
+    final res = await ApiClient.post(
+      '/admin/sessions/$loginId/force-logout',
+      {},
     );
     final body = jsonDecode(res.body);
     if (res.statusCode != 200 || body['success'] != true) {
@@ -82,9 +81,9 @@ class _SessionService {
   }
 
   static Future<void> forceLogoutAll(int empId) async {
-    final res = await http.post(
-      Uri.parse('$_base/admin/sessions/force-logout-all/$empId'),
-      headers: {'Content-Type': 'application/json'},
+    final res = await ApiClient.post(
+      '/admin/sessions/force-logout-all/$empId',
+      {},
     );
     final body = jsonDecode(res.body);
     if (res.statusCode != 200 || body['success'] != true) {
@@ -839,7 +838,7 @@ class _AdminSessionManagementScreenState
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '${user.username}',
+                        user.username,
                         style: const TextStyle(color: _textMid, fontSize: 12),
                       ),
                     ],
@@ -1002,8 +1001,8 @@ class _AdminSessionManagementScreenState
   Future<void> _handleResetPassword(SessionUser user) async {
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
-    bool _obscureNew = true;
-    bool _obscureConfirm = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1060,7 +1059,7 @@ class _AdminSessionManagementScreenState
               // ── New password ────────────────────────────────────────────
               TextField(
                 controller: passwordController,
-                obscureText: _obscureNew,
+                obscureText: obscureNew,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   labelText: 'New Password',
@@ -1070,12 +1069,12 @@ class _AdminSessionManagementScreenState
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureNew
+                      obscureNew
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
                       size: 18,
                     ),
-                    onPressed: () => setDlg(() => _obscureNew = !_obscureNew),
+                    onPressed: () => setDlg(() => obscureNew = !obscureNew),
                   ),
                 ),
               ),
@@ -1084,7 +1083,7 @@ class _AdminSessionManagementScreenState
               // ── Confirm password ────────────────────────────────────────
               TextField(
                 controller: confirmController,
-                obscureText: _obscureConfirm,
+                obscureText: obscureConfirm,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   labelText: 'Confirm Password',
@@ -1094,13 +1093,13 @@ class _AdminSessionManagementScreenState
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureConfirm
+                      obscureConfirm
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
                       size: 18,
                     ),
                     onPressed: () =>
-                        setDlg(() => _obscureConfirm = !_obscureConfirm),
+                        setDlg(() => obscureConfirm = !obscureConfirm),
                   ),
                 ),
               ),
@@ -1157,15 +1156,11 @@ class _AdminSessionManagementScreenState
     setState(() => _actionLoading = true);
 
     try {
-      final res = await http.post(
-        Uri.parse('$_base/auth/reset-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'emp_id': user.empId,
-          'new_password': newPass,
-          'confirm_password': confirmPass,
-        }),
-      );
+      final res = await ApiClient.post('/auth/reset-password', {
+        'emp_id': user.empId,
+        'new_password': newPass,
+        'confirm_password': confirmPass,
+      });
 
       final body = jsonDecode(res.body);
 

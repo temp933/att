@@ -280,7 +280,7 @@ class SiteCache {
             math.pow(math.sin(dLng / 2), 2);
     return r *
         2 *
-        math.atan2(math.sqrt(a as double), math.sqrt(1 - a as double));
+        math.atan2(math.sqrt(a), math.sqrt(1 - a));
   }
 
   static String _todayStr() {

@@ -6,7 +6,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/api_service.dart';
-import '../services/background_service.dart';
 import 'login.dart';
 
 class EmployeeHome extends StatefulWidget {

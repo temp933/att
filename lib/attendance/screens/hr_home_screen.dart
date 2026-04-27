@@ -57,15 +57,14 @@ class _HrHomeScreenState extends State<HrHomeScreen> {
 
       setState(() {
         hrName = fullName;
-
-        // ✅ SET DASHBOARD VALUES FROM API
-        totalEmployees = dashboard['totalEmployees'];
-        presentCount = dashboard['present'];
-        absentCount = dashboard['absent'];
-        lateEntryCount = dashboard['lateEntry'];
-        onSiteCount = dashboard['onSiteToday'];
-        pendingCount = dashboard['pendingRequests'];
-
+        totalEmployees = (dashboard['totalEmployees'] as num?)?.toInt() ?? 0;
+        presentCount = (dashboard['present'] as num?)?.toInt() ?? 0;
+        absentCount = (dashboard['absent'] as num?)?.toInt() ?? 0;
+        lateEntryCount = (dashboard['lateEntry'] as num?)?.toInt() ?? 0;
+        onSiteCount =
+            (dashboard['activeSites'] as num?)?.toInt() ??
+            0; // ← 'onSiteToday' → 'activeSites'
+        pendingCount = (dashboard['pendingRequests'] as num?)?.toInt() ?? 0;
         isLoading = false;
       });
     } catch (e) {

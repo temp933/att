@@ -20,6 +20,11 @@ class LeaveModel {
   final String? recommendedAt;
   final String? createdAt;
   final String? updatedAt;
+  final bool isHalfDay;
+  final String? halfDayPeriod; // 'AM' | 'PM'
+  final double? allocatedDays;
+  final double? usedDays;
+  final double? pendingDays;
 
   LeaveModel({
     this.leaveId,
@@ -43,6 +48,11 @@ class LeaveModel {
     this.recommendedAt,
     this.createdAt,
     this.updatedAt,
+    this.isHalfDay = false,
+    this.halfDayPeriod,
+    this.allocatedDays,
+    this.usedDays,
+    this.pendingDays,
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -103,6 +113,8 @@ class LeaveModel {
       recommendedAt: json['recommended_at']?.toString(),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
+      isHalfDay: (json['is_half_day'] == 1 || json['is_half_day'] == true),
+      halfDayPeriod: json['half_day_period']?.toString(),
     );
   }
 
@@ -131,6 +143,8 @@ class LeaveModel {
       rejectionReason: json['rejection_reason']?.toString(),
       cancelReason: json['cancel_reason']?.toString(),
       recommendedByName: recommendedByName,
+      isHalfDay: (json['is_half_day'] == 1 || json['is_half_day'] == true),
+      halfDayPeriod: json['half_day_period']?.toString(),
     );
   }
 }

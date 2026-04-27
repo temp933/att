@@ -4,14 +4,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart' as xl;
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:file_saver/file_saver.dart';
 
-// CONFIG
-const String _baseUrl = 'http://192.168.29.216:3000';
+import '../providers/api_client.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
@@ -145,7 +143,7 @@ class _LeaveRecord {
 // SERVICE
 class _LeaveReportService {
   static Future<List<_LeaveRecord>> fetchAllHistory() async {
-    final res = await http.get(Uri.parse('$_baseUrl/leaves/all-history'));
+    final res = await ApiClient.get('/leaves/all-history');
     if (res.statusCode != 200) {
       throw Exception('Server error ${res.statusCode}');
     }

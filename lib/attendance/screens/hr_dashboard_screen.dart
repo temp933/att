@@ -6,7 +6,6 @@ import 'admin_hr_attendance_screen.dart';
 import 'login_screen.dart';
 import 'hr_home_screen.dart';
 import 'emp_attendance_screen.dart';
-import 'emp_leave_screen.dart';
 import 'tl_hr_leave_screen.dart';
 import '../services/location_services.dart';
 import 'emp_profile_screen.dart';

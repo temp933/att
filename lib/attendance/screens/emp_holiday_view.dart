@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-
-const String _baseUrl = 'http://192.168.29.216:3000';
+import '../providers/api_client.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const Color _primary = Color(0xFF1A56DB);
@@ -65,9 +63,7 @@ class _EmpHolidayViewState extends State<EmpHolidayView> {
       _error = null;
     });
     try {
-      final res = await http.get(
-        Uri.parse('$_baseUrl/holidays?year=$_selectedYear'),
-      );
+      final res = await ApiClient.get('/holidays?year=$_selectedYear');
       if (res.statusCode != 200) throw Exception('Server error');
       final body = jsonDecode(res.body);
       if (mounted) {
@@ -577,13 +573,10 @@ class _EmpHolidayViewState extends State<EmpHolidayView> {
                         ),
                         if (recurring) ...[
                           const SizedBox(width: 6),
-                          const Tooltip(
-                            message: 'Recurring annually',
-                            child: Icon(
-                              Icons.repeat_rounded,
-                              size: 13,
-                              color: _textLight,
-                            ),
+                          const Icon(
+                            Icons.repeat_rounded,
+                            size: 13,
+                            color: _textLight,
                           ),
                         ],
                       ],

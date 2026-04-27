@@ -38,12 +38,8 @@ class SiteVisitModel {
           : null,
       workedMinutes: json['worked_minutes'] as int?,
       status: json['status'] ?? '',
-      latitude: (json['latitude'] ?? json['lat']) != null
-          ? (json['latitude'] ?? json['lat']).toDouble()
-          : null,
-      longitude: (json['longitude'] ?? json['lng']) != null
-          ? (json['longitude'] ?? json['lng']).toDouble()
-          : null,
+      latitude: (json['latitude'] ?? json['lat'])?.toDouble(),
+      longitude: (json['longitude'] ?? json['lng'])?.toDouble(),
     );
   }
   String get workedFormatted {

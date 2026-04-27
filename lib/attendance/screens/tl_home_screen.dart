@@ -50,19 +50,21 @@ class _TlHomeScreenState extends State<TlHomeScreen> {
       );
 
       String fullName = employee.firstName ?? "";
-      if ((employee.midName ?? "").isNotEmpty)
+      if ((employee.midName ?? "").isNotEmpty) {
         fullName += " ${employee.midName}";
-      if ((employee.lastName ?? "").isNotEmpty)
+      }
+      if ((employee.lastName ?? "").isNotEmpty) {
         fullName += " ${employee.lastName}";
+      }
 
       setState(() {
         tlName = fullName;
-        totalEmployees = dashboard['totalEmployees'];
-        presentCount = dashboard['present'];
-        absentCount = dashboard['absent'];
-        lateEntryCount = dashboard['lateEntry'];
-        onSiteCount = dashboard['onSiteToday'];
-        pendingCount = dashboard['pendingRequests'];
+        totalEmployees = (dashboard['totalEmployees'] as num?)?.toInt() ?? 0;
+        presentCount = (dashboard['present'] as num?)?.toInt() ?? 0;
+        absentCount = (dashboard['absent'] as num?)?.toInt() ?? 0;
+        lateEntryCount = (dashboard['lateEntry'] as num?)?.toInt() ?? 0;
+        onSiteCount = (dashboard['onSiteToday'] as num?)?.toInt() ?? 0;
+        pendingCount = (dashboard['pendingRequests'] as num?)?.toInt() ?? 0;
         isLoading = false;
       });
     } catch (e) {

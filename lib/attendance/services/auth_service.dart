@@ -3,6 +3,9 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import '../providers/api_config.dart';
+
+const String baseUrl = ApiConfig.baseUrl;
 
 class AuthService {
   // ── Prefs keys ───────────────────────────────────────────────────────────────
@@ -12,8 +15,6 @@ class AuthService {
   static const _kUsername = 'username';
   static const _kToken = 'session_token';
   static const _kDeviceId = 'device_id';
-
-  static const String _baseUrl = 'http://192.168.29.216:3000';
 
   /// Returns a stable, persistent device ID (stored in SharedPreferences).
   static Future<String> getDeviceId() async {
@@ -102,8 +103,8 @@ class AuthService {
     try {
       final response = await http
           .post(
-            Uri.parse('$_baseUrl/auth/validate-session'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse('$baseUrl/auth/validate-session'),
+            headers: ApiConfig.headers,
             body: jsonEncode({
               'login_id': session['loginId'],
               'session_token': session['session_token'],
@@ -138,8 +139,8 @@ class AuthService {
     try {
       response = await http
           .post(
-            Uri.parse('$_baseUrl/auth/login'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse('$baseUrl/auth/login'),
+            headers: ApiConfig.headers,
             body: jsonEncode({
               'username': username,
               'password': password,
@@ -198,8 +199,8 @@ class AuthService {
     try {
       response = await http
           .post(
-            Uri.parse('$_baseUrl/auth/change-password'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse('$baseUrl/auth/change-password'),
+            headers: ApiConfig.headers,
             body: jsonEncode({
               'login_id': loginId,
               'new_password': newPassword,
@@ -235,8 +236,8 @@ class AuthService {
     required String confirmPassword,
   }) async {
     final response = await http.post(
-      Uri.parse('$_baseUrl/auth/reset-password'),
-      headers: {'Content-Type': 'application/json'},
+      Uri.parse('$baseUrl/auth/reset-password'),
+      headers: ApiConfig.headers,
       body: jsonEncode({
         'emp_id': empId,
         'new_password': newPassword,
@@ -267,8 +268,8 @@ class AuthService {
         try {
           await http
               .post(
-                Uri.parse('$_baseUrl/auth/logout'),
-                headers: {'Content-Type': 'application/json'},
+                Uri.parse('$baseUrl/auth/logout'),
+                headers: ApiConfig.headers,
                 body: jsonEncode({'login_id': session['loginId']}),
               )
               .timeout(const Duration(seconds: 5));
@@ -286,8 +287,8 @@ class AuthService {
     try {
       await http
           .post(
-            Uri.parse('$_baseUrl/auth/logout'),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse('$baseUrl/auth/logout'),
+            headers: ApiConfig.headers,
             body: jsonEncode({'login_id': loginId}),
           )
           .timeout(const Duration(seconds: 5));

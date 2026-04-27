@@ -5,10 +5,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../services/employee_service.dart';
-import 'package:http/http.dart' as http;
 import 'shared_form_widgets.dart';
 
-const String baseUrl = 'http://192.168.29.216:3000';
+import 'package:http/http.dart' as http;
+import '../providers/api_client.dart';
+import '../providers/api_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design Tokens
@@ -710,7 +711,7 @@ class ManageUserScreenState extends State<ManageUserScreen> {
   );
 
   Widget _deptFilter() => DropdownButtonFormField<String>(
-    value: departmentList.contains(selectedDepartment)
+    initialValue: departmentList.contains(selectedDepartment)
         ? selectedDepartment
         : 'All',
     isExpanded: true,
@@ -883,9 +884,7 @@ class _EmployeeCardState extends State<_EmployeeCard> {
   void initState() {
     super.initState();
     _photoFuture = (widget.employee.empId != 0)
-        ? http.get(
-            Uri.parse('$baseUrl/employees/${widget.employee.empId}/photo'),
-          )
+        ? ApiClient.get('/employees/${widget.employee.empId}/photo')
         : Future.value(http.Response('', 404));
   }
 
@@ -1582,11 +1581,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       'tl_id': selectedTlId,
     };
     try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/employee-pending-request'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+      final res = await ApiClient.post('/employee-pending-request', body);
       if (!mounted) return;
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
@@ -1595,7 +1590,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           try {
             final photoReq = http.MultipartRequest(
               'POST',
-              Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+              Uri.parse(
+                '${ApiConfig.baseUrl}/pending-request/$requestId/photo',
+              ),
             );
             photoReq.files.add(
               http.MultipartFile.fromBytes(
@@ -1676,18 +1673,16 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
     super.initState();
     _fetchDetails();
     if (widget.source == 'MASTER') {
-      _photoFuture = http.get(
-        Uri.parse('$baseUrl/employees/${widget.id}/photo'),
-      );
+      _photoFuture = ApiClient.get('/employees/${widget.id}/photo');
     }
   }
 
   Future<void> _fetchDetails() async {
-    final url = widget.source == 'MASTER'
-        ? Uri.parse('$baseUrl/employees/${widget.id}')
-        : Uri.parse('$baseUrl/admin/request/${widget.id}');
+    final path = widget.source == 'MASTER'
+        ? '/employees/${widget.id}'
+        : '/admin/request/${widget.id}';
     try {
-      final res = await http.get(url);
+      final res = await ApiClient.get(path);
       if (!mounted) return;
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -1703,10 +1698,10 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
             ? emp['emp_id']
             : emp['request_id'];
         if (eduId != null) {
-          final eduUrl = widget.source == 'MASTER'
-              ? Uri.parse('$baseUrl/employees/$eduId/education')
-              : Uri.parse('$baseUrl/requests/$eduId/education');
-          final er = await http.get(eduUrl);
+          final eduPath = widget.source == 'MASTER'
+              ? '/employees/$eduId/education'
+              : '/requests/$eduId/education';
+          final er = await ApiClient.get(eduPath);
           if (er.statusCode == 200 && mounted) {
             setState(
               () => employeeData!['education'] = jsonDecode(er.body)['data'],
@@ -1755,8 +1750,9 @@ class _EmployeeDetailPageState extends State<EmployeeDetailPage> {
 
   List<Map<String, dynamic>> get _eduList {
     final raw = employeeData?['education'];
-    if (raw is List)
+    if (raw is List) {
       return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
     return [];
   }
 
@@ -3207,12 +3203,9 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
       'tl_id': selectedTlId,
     };
     try {
-      final res = await http.put(
-        Uri.parse(
-          '$baseUrl/admin/resubmit-request/${widget.requestData["request_id"]}',
-        ),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
+      final res = await ApiClient.put(
+        '/admin/resubmit-request/${widget.requestData["request_id"]}',
+        body,
       );
       if (!mounted) return;
       final data = jsonDecode(res.body);
@@ -3222,7 +3215,9 @@ class _EmployeeResubmitPageState extends State<EmployeeResubmitPage> {
           try {
             final photoReq = http.MultipartRequest(
               'POST',
-              Uri.parse('$baseUrl/pending-request/$requestId/photo'),
+              Uri.parse(
+                '${ApiConfig.baseUrl}/pending-request/$requestId/photo',
+              ),
             );
             photoReq.files.add(
               http.MultipartFile.fromBytes(
@@ -3364,8 +3359,8 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
     panCtrl = TextEditingController(text: e.panNumber ?? '');
     passportCtrl = TextEditingController(text: e.passportNumber ?? '');
     selectedTlId = e.tlId;
-    _existingPhotoFuture = http.get(
-      Uri.parse('$baseUrl/employees/${widget.employee.empId}/photo'),
+    _existingPhotoFuture = ApiClient.get(
+      '/employees/${widget.employee.empId}/photo',
     );
     _loadDropdowns();
     _loadExistingEducation();
@@ -3945,7 +3940,9 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       _snack('Please select a role');
       return;
     }
+
     setState(() => _submitting = true);
+
     final body = {
       'emp_id': widget.employee.empId,
       'first_name': firstNameCtrl.text,
@@ -3961,12 +3958,11 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       'work_type': workType,
       'department_id': selectedDeptId,
       'role_id': selectedRoleId,
+      'tl_id': selectedTlId,
       'permanent_address': permAddrCtrl.text,
       'communication_address': commAddrCtrl.text,
       'status': status,
-      'request_type': 'UPDATE',
       'edit_reason': editReasonCtrl.text,
-      'admin_approve': 'PENDING',
       'father_name': fatherCtrl.text,
       'emergency_contact_relation': emergencyRelationCtrl.text,
       'emergency_contact': emergencyCtrl.text,
@@ -3977,35 +3973,43 @@ class _EmployeeEditPageState extends State<EmployeeEditPage> {
       'aadhar_number': aadharCtrl.text,
       'pan_number': panCtrl.text,
       'passport_number': passportCtrl.text,
-      'tl_id': selectedTlId,
     };
+
     try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/employee-edit-request'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+      final res = await ApiClient.post('/employee-edit-request', body);
       if (!mounted) return;
+
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
         final requestId = data['request_id'];
+
+        // ✅ UPLOAD PHOTO IF CHANGED
         if (_selectedPhotoBytes != null && requestId != null) {
-          final photoReq = http.MultipartRequest(
-            'POST',
-            Uri.parse(
-              '$baseUrl/pending-request/$requestId/photo',
-            ), // ✅ pending, not master
-          );
-          photoReq.files.add(
-            http.MultipartFile.fromBytes(
-              'photo',
-              _selectedPhotoBytes!,
-              filename: 'photo.jpg',
-            ),
-          );
-          await photoReq.send();
+          try {
+            final photoReq = http.MultipartRequest(
+              'POST',
+              Uri.parse(
+                '${ApiConfig.baseUrl}/pending-request/$requestId/photo',
+              ),
+            );
+            photoReq.files.add(
+              http.MultipartFile.fromBytes(
+                'photo',
+                _selectedPhotoBytes!,
+                filename: 'photo.jpg',
+              ),
+            );
+            final photoRes = await photoReq.send();
+
+            if (photoRes.statusCode != 200) {
+              print('Photo upload failed: ${photoRes.statusCode}');
+            }
+          } catch (photoErr) {
+            print('Photo upload error: $photoErr');
+          }
         }
-        _snack('Edit request submitted for approval!', ok: true);
+
+        _snack(data['message'] ?? 'Edit request submitted!', ok: true);
         Navigator.pop(context, true);
       } else {
         _snack(data['message'] ?? 'Submission failed');

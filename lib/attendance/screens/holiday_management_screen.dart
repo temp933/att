@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../providers/api_client.dart';
 
 // ─── Design tokens (same palette as LeaveApprovalScreen) ─────────────────────
 const Color _primary = Color(0xFF1A56DB);
@@ -14,8 +14,6 @@ const Color _textDark = Color(0xFF0F172A);
 const Color _textMid = Color(0xFF64748B);
 const Color _textLight = Color(0xFF94A3B8);
 const Color _border = Color(0xFFE2E8F0);
-
-const String _baseUrl = 'http://192.168.29.216:3000';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 class HolidayModel {
@@ -48,7 +46,7 @@ class HolidayModel {
 // ─── Service ──────────────────────────────────────────────────────────────────
 class HolidayService {
   Future<List<HolidayModel>> fetchHolidays(int year) async {
-    final res = await http.get(Uri.parse('$_baseUrl/holidays?year=$year'));
+    final res = await ApiClient.get('/holidays?year=$year');
     if (res.statusCode != 200) throw Exception('Failed to load holidays');
     final body = jsonDecode(res.body);
     return (body['data'] as List).map((e) => HolidayModel.fromJson(e)).toList();
@@ -62,18 +60,14 @@ class HolidayService {
     required bool isRecurring,
     required int loginId,
   }) async {
-    final res = await http.post(
-      Uri.parse('$_baseUrl/holidays'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'holiday_name': name,
-        'holiday_date': date,
-        'holiday_type': type,
-        'description': description,
-        'is_recurring': isRecurring,
-        'login_id': loginId,
-      }),
-    );
+    final res = await ApiClient.post('/holidays', {
+      'holiday_name': name,
+      'holiday_date': date,
+      'holiday_type': type,
+      'description': description,
+      'is_recurring': isRecurring,
+      'login_id': loginId,
+    });
     final body = jsonDecode(res.body);
     if (res.statusCode != 201) throw Exception(body['message'] ?? 'Add failed');
   }
@@ -86,27 +80,25 @@ class HolidayService {
     required String? description,
     required bool isRecurring,
   }) async {
-    final res = await http.put(
-      Uri.parse('$_baseUrl/holidays/$id'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'holiday_name': name,
-        'holiday_date': date,
-        'holiday_type': type,
-        'description': description,
-        'is_recurring': isRecurring,
-      }),
-    );
+    final res = await ApiClient.put('/holidays/$id', {
+      'holiday_name': name,
+      'holiday_date': date,
+      'holiday_type': type,
+      'description': description,
+      'is_recurring': isRecurring,
+    });
     final body = jsonDecode(res.body);
-    if (res.statusCode != 200)
+    if (res.statusCode != 200) {
       throw Exception(body['message'] ?? 'Update failed');
+    }
   }
 
   Future<void> deleteHoliday(int id) async {
-    final res = await http.delete(Uri.parse('$_baseUrl/holidays/$id'));
+    final res = await ApiClient.delete('/holidays/$id');
     final body = jsonDecode(res.body);
-    if (res.statusCode != 200)
+    if (res.statusCode != 200) {
       throw Exception(body['message'] ?? 'Delete failed');
+    }
   }
 
   Future<Map<String, dynamic>> bulkImport(int year, int loginId) async {
@@ -198,11 +190,7 @@ class HolidayService {
       },
     ];
 
-    final res = await http.post(
-      Uri.parse('$_baseUrl/holidays/bulk'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'holidays': holidays}),
-    );
+    final res = await ApiClient.post('/holidays/bulk', {'holidays': holidays});
     return jsonDecode(res.body);
   }
 }
@@ -534,8 +522,9 @@ class _HolidayManagementScreenState extends State<HolidayManagementScreen> {
 
   Widget _buildSummaryRow() {
     final byType = <String, int>{};
-    for (final h in _holidays)
+    for (final h in _holidays) {
       byType[h.holidayType] = (byType[h.holidayType] ?? 0) + 1;
+    }
     return Container(
       color: _card,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -1054,7 +1043,7 @@ class _HolidayManagementScreenState extends State<HolidayManagementScreen> {
                           Switch(
                             value: isRecurring,
                             onChanged: (v) => si(() => isRecurring = v),
-                            activeColor: _primary,
+                            activeThumbColor: _primary,
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -1107,7 +1096,7 @@ class _HolidayManagementScreenState extends State<HolidayManagementScreen> {
                 try {
                   if (isEdit) {
                     await _svc.updateHoliday(
-                      id: holiday!.holidayId,
+                      id: holiday.holidayId,
                       name: name,
                       date: dateStr,
                       type: selType,

@@ -125,3 +125,164 @@ class _SplashRouterState extends State<SplashRouter> {
     return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
+
+// import 'package:camera/camera.dart';
+// import 'package:flutter/material.dart';
+// import 'package:http/http.dart' as http;
+// import 'dart:convert';
+
+// late List<CameraDescription> cameras;
+
+// const String SERVER = "http://192.168.29.103:3000";
+
+// Future<void> main() async {
+//   WidgetsFlutterBinding.ensureInitialized();
+//   cameras = await availableCameras();
+//   runApp(const MyApp());
+// }
+
+// class MyApp extends StatelessWidget {
+//   const MyApp({super.key});
+//   @override
+//   Widget build(BuildContext context) {
+//     return const MaterialApp(
+//       debugShowCheckedModeBanner: false,
+//       home: CameraScreen(),
+//     );
+//   }
+// }
+
+// class CameraScreen extends StatefulWidget {
+//   const CameraScreen({super.key});
+//   @override
+//   State<CameraScreen> createState() => _CameraScreenState();
+// }
+
+// class _CameraScreenState extends State<CameraScreen> {
+//   late CameraController _controller;
+//   bool _ready = false;
+//   bool _loading = false;
+//   bool? _matched;
+//   double? _distance;
+//   String? _message; // info/error message
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _initCamera();
+//   }
+
+//   Future<void> _initCamera() async {
+//     final front = cameras.firstWhere(
+//       (c) => c.lensDirection == CameraLensDirection.front,
+//     );
+//     _controller = CameraController(
+//       front,
+//       ResolutionPreset.high,
+//       enableAudio: false,
+//     );
+//     await _controller.initialize();
+//     if (mounted) setState(() => _ready = true);
+//   }
+
+//   @override
+//   void dispose() {
+//     _controller.dispose();
+//     super.dispose();
+//   }
+
+//   Future<void> _captureAndCompare() async {
+//     if (!_controller.value.isInitialized) return;
+
+//     setState(() {
+//       _loading = true;
+//       _matched = null;
+//       _distance = null;
+//       _message = null;
+//     });
+
+//     try {
+//       final img = await _controller.takePicture();
+//       final req = http.MultipartRequest(
+//         'POST',
+//         Uri.parse("$SERVER/api/compare"),
+//       );
+//       req.files.add(await http.MultipartFile.fromPath('image', img.path));
+
+//       final res = await req.send();
+//       final body = jsonDecode(await res.stream.bytesToString());
+
+//       if (body['error'] != null) {
+//         // Face not detected clearly
+//         setState(() => _message = body['error']);
+//       } else {
+//         setState(() {
+//           _matched = body['match'] == true;
+//           _distance = (body['distance'] as num?)?.toDouble();
+//           _message = null;
+//         });
+//       }
+//     } catch (e) {
+//       setState(() => _message = 'Connection error: $e');
+//     }
+
+//     setState(() => _loading = false);
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(title: const Text('Face Capture')),
+//       body: Column(
+//         children: [
+//           // Camera
+//           Expanded(
+//             child: _ready
+//                 ? CameraPreview(_controller)
+//                 : const Center(child: CircularProgressIndicator()),
+//           ),
+
+//           const SizedBox(height: 20),
+
+//           // Button
+//           ElevatedButton(
+//             onPressed: _loading ? null : _captureAndCompare,
+//             child: _loading
+//                 ? const SizedBox(
+//                     width: 20,
+//                     height: 20,
+//                     child: CircularProgressIndicator(strokeWidth: 2),
+//                   )
+//                 : const Text('Capture & Compare'),
+//           ),
+
+//           const SizedBox(height: 16),
+
+//           // Result
+//           if (_message != null)
+//             Padding(
+//               padding: const EdgeInsets.symmetric(horizontal: 16),
+//               child: Text(
+//                 '⚠️ $_message',
+//                 style: const TextStyle(color: Colors.orange, fontSize: 15),
+//                 textAlign: TextAlign.center,
+//               ),
+//             )
+//           else if (_matched != null)
+//             Text(
+//               _matched!
+//                   ? '✅ MATCH (distance: ${_distance?.toStringAsFixed(4)})'
+//                   : '❌ NOT MATCH (distance: ${_distance?.toStringAsFixed(4)})',
+//               style: TextStyle(
+//                 fontSize: 18,
+//                 fontWeight: FontWeight.bold,
+//                 color: _matched! ? Colors.green : Colors.red,
+//               ),
+//             ),
+
+//           const SizedBox(height: 24),
+//         ],
+//       ),
+//     );
+//   }
+// }

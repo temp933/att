@@ -5,6 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'add_location_dialog.dart';
 import 'login.dart'; // 👈 your login screen
+import '../providers/api_config.dart';
+
+const String _baseUrl = ApiConfig.baseUrl;
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -17,7 +20,7 @@ class _AdminHomeState extends State<AdminHome> {
   List<Map<String, dynamic>> sites = [];
   bool loading = true;
 
-  final String baseUrl = "http://192.168.29.103:3000:3000/sites";
+  final String baseUrl = "$_baseUrl/sites";
 
   @override
   void initState() {

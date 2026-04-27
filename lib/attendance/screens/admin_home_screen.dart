@@ -42,8 +42,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         int.parse(widget.employeeId),
       );
 
-      final dashboard =
-          await EmployeeService.fetchDashboardData(); // ✅ CALL API
+      final dashboard = await EmployeeService.fetchDashboardData();
+      final onSite = await EmployeeService.fetchOnSiteToday();
+      print("ON SITE VALUE FROM API: $onSite");
 
       String fullName = employee.firstName ?? "";
 
@@ -57,15 +58,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
       setState(() {
         AdminName = fullName;
-
-        // ✅ SET DASHBOARD VALUES FROM API
-        totalEmployees = dashboard['totalEmployees'];
-        presentCount = dashboard['present'];
-        absentCount = dashboard['absent'];
-        lateEntryCount = dashboard['lateEntry'];
-        onSiteCount = dashboard['onSiteToday'];
-        pendingCount = dashboard['pendingRequests'];
-
+        totalEmployees = (dashboard['totalEmployees'] as num?)?.toInt() ?? 0;
+        presentCount = (dashboard['present'] as num?)?.toInt() ?? 0;
+        absentCount = (dashboard['absent'] as num?)?.toInt() ?? 0;
+        lateEntryCount = (dashboard['lateEntry'] as num?)?.toInt() ?? 0;
+        onSiteCount =
+            (dashboard['activeSites'] as num?)?.toInt() ??
+            0; // ← was 'onSite', API sends 'activeSites'
+        pendingCount = (dashboard['pendingRequests'] as num?)?.toInt() ?? 0;
         isLoading = false;
       });
     } catch (e) {

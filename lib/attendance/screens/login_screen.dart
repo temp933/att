@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'change_password_screen.dart';
-import 'package:flutter/material.dart';
+
 import 'emp_dashboard_screen.dart';
 import 'admin_dashboard.dart';
 import 'hr_dashboard_screen.dart';
-import '../services/employee_service.dart';
 
 import '../services/biometric_service.dart';
 import 'team_lead_dashboard.dart';
@@ -37,11 +36,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkBio() async {
     final available = await BiometricService.isAvailable();
     final enabled = await BiometricService.isBioEnabled();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _bioAvailable = available;
         _bioEnabled = enabled;
       });
+    }
   }
 
   Future<void> _loginWithBio() async {

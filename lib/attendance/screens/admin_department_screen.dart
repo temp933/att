@@ -315,12 +315,14 @@ class _AdminDepartmentsScreenState extends State<AdminDepartmentsScreen> {
       body: FutureBuilder<List<DepartmentModel>>(
         future: futureDepts,
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
 
           final depts = snapshot.data!;
-          if (depts.isEmpty)
+          if (depts.isEmpty) {
             return const Center(child: Text("No departments found"));
+          }
 
           return ListView.builder(
             itemCount: depts.length,
@@ -446,12 +448,14 @@ class _DepartmentEmployeesScreenState extends State<DepartmentEmployeesScreen> {
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: futureEmployees,
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
 
           final emps = snapshot.data!;
-          if (emps.isEmpty)
+          if (emps.isEmpty) {
             return const Center(child: Text("No employees in this department"));
+          }
 
           return ListView.builder(
             itemCount: emps.length,

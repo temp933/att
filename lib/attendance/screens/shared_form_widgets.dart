@@ -1430,7 +1430,7 @@ class FormDropdownString extends StatelessWidget {
     return Padding(
       padding: padding,
       child: DropdownButtonFormField<String>(
-        value: (value != null && value!.isNotEmpty) ? value : null,
+        initialValue: (value != null && value!.isNotEmpty) ? value : null,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: label,
@@ -1476,7 +1476,7 @@ class FormDropdownMap extends StatelessWidget {
     return Padding(
       padding: padding,
       child: DropdownButtonFormField<int>(
-        value: value,
+        initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: label,
@@ -1664,7 +1664,7 @@ class EducationFormSectionState extends State<EducationFormSection> {
           if (!mounted) return;
           setState(() {
             if (isEdit) {
-              _entries[existingIndex!] = entry;
+              _entries[existingIndex] = entry;
             } else {
               _entries.add(entry);
             }
@@ -1950,7 +1950,7 @@ class _EduDialogState extends State<_EduDialog> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         DropdownButtonFormField<String>(
-                          value: _level,
+                          initialValue: _level,
                           isExpanded: true,
                           decoration: _dec("Education Level *"),
                           items: widget.availableLevels

@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'responsive_utils.dart';
 import 'emp_holiday_view.dart';
-
-const String baseUrl = 'http://192.168.29.216:3000';
+import '../providers/api_client.dart';
 
 class MGLeaveScreen extends StatefulWidget {
   final String employeeId;
@@ -64,9 +62,7 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
     });
     try {
       // ✅ FIX: correct endpoint + no trailing spaces
-      final res = await http.get(
-        Uri.parse('$baseUrl/employees/${widget.employeeId}/leaves'),
-      );
+      final res = await ApiClient.get('/employees/${widget.employeeId}/leaves');
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data['success'] == true) {
@@ -91,26 +87,18 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
     // ✅ Manager applies leave → server auto-approves (role_id = 8)
     // Edit is not needed for manager since leaves are instantly Approved
     // but kept for safety if editingLeaveId is ever set
-    final url = editingLeaveId != null
-        ? '$baseUrl/leave/$editingLeaveId'
-        : '$baseUrl/employees/${widget.employeeId}/apply-leave';
     try {
-      final body = jsonEncode({
+      final bodyMap = {
         'leave_type': leaveType,
         'leave_start_date': fromDate!.toIso8601String().split('T')[0],
         'leave_end_date': toDate!.toIso8601String().split('T')[0],
         'reason': reason ?? '',
-      });
+      };
       final res = editingLeaveId != null
-          ? await http.put(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: body,
-            )
-          : await http.post(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: body,
+          ? await ApiClient.put('/leave/$editingLeaveId', bodyMap)
+          : await ApiClient.post(
+              '/employees/${widget.employeeId}/apply-leave',
+              bodyMap,
             );
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
@@ -1096,7 +1084,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             ),
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
-              value: leaveType,
+              initialValue: leaveType,
               decoration: InputDecoration(
                 labelText: 'Leave Type *',
                 filled: true,
@@ -1235,13 +1223,16 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                   ),
                 ),
                 onPressed: () {
-                  if (leaveType == null)
+                  if (leaveType == null) {
                     return _snack('Please select leave type');
-                  if (fromDate == null)
+                  }
+                  if (fromDate == null) {
                     return _snack('Please select from date');
+                  }
                   if (toDate == null) return _snack('Please select to date');
-                  if (reason.trim().isEmpty)
+                  if (reason.trim().isEmpty) {
                     return _snack('Please enter a reason');
+                  }
                   widget.onSubmit(leaveType!, fromDate!, toDate!, reason);
                 },
                 child: const Text(
