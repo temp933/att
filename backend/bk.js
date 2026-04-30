@@ -738,313 +738,210 @@ app.put("/leave/:leaveId/cancel", async (req, res) => {
 });
 
 async function getCompoffBalance(empId) {
-  const rows = await dbAll(
-    `
-    SELECT SUM(days) as total
-    FROM compoff_transactions
-    WHERE emp_id = ?
-      AND type = 'EARNED'
-      AND status = 'Approved'
-      AND (use_date IS NULL)
-      AND expiry_date >= DATE('now')
-  `,
+  const earned = await dbGet(
+    `SELECT IFNULL(SUM(days_earned), 0) AS total 
+     FROM compoff_transactions 
+     WHERE emp_id = ? AND status = 'Approved' 
+       AND (expiry_date IS NULL OR expiry_date >= CURDATE())`,
     [empId],
   );
-
-  return rows[0]?.total || 0;
+  const used = await dbGet(
+    `SELECT IFNULL(SUM(days_used), 0) AS total 
+     FROM compoff_availed 
+     WHERE emp_id = ? AND status = 'Approved'`,
+    [empId],
+  );
+  // ✅ Also count leave_master Comp-Off usage
+  const leaveUsed = await dbGet(
+    `SELECT IFNULL(SUM(number_of_days), 0) AS total
+     FROM leave_master
+     WHERE emp_id = ? AND leave_type = 'Comp-Off' AND status = 'Approved'`,
+    [empId],
+  );
+  const totalEarned = parseFloat(earned.total) || 0;
+  const totalUsed = parseFloat(used.total) || 0;
+  const totalLeaveUsed = parseFloat(leaveUsed.total) || 0;
+  return {
+    totalEarned,
+    totalUsed: totalUsed + totalLeaveUsed,
+    available: +(totalEarned - totalUsed - totalLeaveUsed).toFixed(1),
+  };
 }
-// ─── APPLY LEAVE ──────────────────────────────────────────────────────────────
-// Single unified endpoint (replaces both old apply-leave and apply-leave-v2)
-// app.post("/employees/:empId/apply-leave", async (req, res) => {
-//   const {
-//     leave_type,
-//     leave_start_date,
-//     leave_end_date,
-//     reason,
-//     is_half_day = false,
-//     half_day_period,
-//   } = req.body;
-
-//   if (!leave_type || !leave_start_date || !leave_end_date)
-//     return res.status(400).json({
-//       success: false,
-//       message: "leave_type, leave_start_date, leave_end_date are required",
-//     });
-
-//   if (is_half_day && !["AM", "PM"].includes(half_day_period))
-//     return res.status(400).json({
-//       success: false,
-//       message: "half_day_period must be 'AM' or 'PM' for half-day leave",
-//     });
-
-//   try {
-//     const employee = await dbGet(
-//       `SELECT role_id FROM employee_master WHERE emp_id=?`,
-//       [req.params.empId],
-//     );
-//     if (!employee)
-//       return res
-//         .status(404)
-//         .json({ success: false, message: "Employee not found" });
-
-//     // ── Comp-Off leave path ──────────────────────────────────────────────
-//     if (leave_type === "Comp-Off") {
-//       const balance = await getCompoffBalance(req.params.empId);
-//       const daysNeeded = is_half_day ? 0.5 : 1.0;
-
-//       if (balance.available < daysNeeded)
-//         return res.status(400).json({
-//           success: false,
-//           message: `Insufficient comp-off balance. Available: ${balance.available}, Requested: ${daysNeeded}`,
-//           available: balance.available,
-//           requested: daysNeeded,
-//         });
-
-//       // Find oldest valid comp-off to deduct from
-//       const oldest = await dbGet(
-//         `SELECT ce.compoff_id FROM compoff_earned ce
-//          WHERE ce.emp_id=? AND ce.status='Approved'
-//            AND (ce.expiry_date IS NULL OR ce.expiry_date >= CURDATE())
-//            AND (ce.days_earned - IFNULL(
-//              (SELECT SUM(ca.days_used) FROM compoff_availed ca
-//               WHERE ca.compoff_id=ce.compoff_id AND ca.status='Approved'),0
-//            )) >= ?
-//          ORDER BY ce.expiry_date ASC, ce.worked_date ASC LIMIT 1`,
-//         [req.params.empId, daysNeeded],
-//       );
-
-//       if (!oldest)
-//         return res.status(400).json({
-//           success: false,
-//           message: "No single comp-off record with sufficient balance",
-//         });
-
-//       let status;
-//       switch (employee.role_id) {
-//         case 1:
-//           status = "Pending_TL";
-//           break;
-//         case 2:
-//         case 3:
-//           status = "Pending_Manager";
-//           break;
-//         case 8:
-//           status = "Approved";
-//           break;
-//         default:
-//           status = "Pending_TL";
-//       }
-
-//       await dbRun(
-//         `INSERT INTO compoff_availed
-//          (emp_id, compoff_id, avail_date, days_used, reason, status, created_at, updated_at)
-//          VALUES (?,?,?,?,?,?,NOW(),NOW())`,
-//         [
-//           req.params.empId,
-//           oldest.compoff_id,
-//           leave_start_date,
-//           daysNeeded,
-//           reason || null,
-//           status,
-//         ],
-//       );
-
-//       // Also write to leave_master for unified history view
-//       await dbRun(
-//         `INSERT INTO leave_master
-//    (emp_id, leave_type, leave_start_date, leave_end_date,
-//     is_half_day, half_day_period, reason, status, created_at, updated_at)
-//    VALUES (?,?,?,?,?,?,?,?,NOW(),NOW())`,
-//         [
-//           req.params.empId,
-//           leave_type,
-//           leave_start_date,
-//           leave_end_date,
-//           is_half_day ? 1 : 0,
-//           is_half_day ? half_day_period : null,
-//           reason || "",
-//           status,
-//         ],
-//       );
-
-//       return res.json({
-//         success: true,
-//         working_days: daysNeeded,
-//         is_half_day,
-//         half_day_period: is_half_day ? half_day_period : null,
-//         status,
-//         message:
-//           status === "Approved"
-//             ? "Comp-off leave approved (self-approved)"
-//             : status === "Pending_Manager"
-//               ? "Comp-off leave sent to Manager for approval"
-//               : "Comp-off leave submitted to Team Lead for review",
-//       });
-//     }
-
-//     // ── Regular leave path ───────────────────────────────────────────────
-//     if (is_half_day) {
-//       const policy = await dbGet(
-//         `SELECT half_day_allowed FROM leave_policy WHERE leave_type=? AND is_active=1`,
-//         [leave_type],
-//       );
-//       if (policy && !policy.half_day_allowed)
-//         return res.status(400).json({
-//           success: false,
-//           message: `Half-day leave is not allowed for ${leave_type}`,
-//         });
-//     }
-
-//     let workingDays;
-//     if (is_half_day) {
-//       workingDays = 0.5;
-//     } else {
-//       workingDays = await countWorkingDays(leave_start_date, leave_end_date);
-//       if (workingDays === 0)
-//         return res.status(400).json({
-//           success: false,
-//           message: "Selected range has no working days (all weekends/holidays)",
-//         });
-//     }
-
-//     const year = new Date(leave_start_date).getFullYear();
-//     await ensureLeaveBalance(req.params.empId, leave_type, year);
-//     await syncLeaveBalance(req.params.empId, leave_type, year);
-
-//     const balance = await dbGet(
-//       `SELECT (allocated_days + carry_forward - used_days - pending_days) AS remaining
-//        FROM leave_balance WHERE emp_id=? AND leave_type=? AND year=?`,
-//       [req.params.empId, leave_type, year],
-//     );
-
-//     if (balance && balance.remaining < workingDays)
-//       return res.status(400).json({
-//         success: false,
-//         message: `Insufficient leave balance. Requested: ${workingDays}, Available: ${balance.remaining}`,
-//         requested: workingDays,
-//         available: balance.remaining,
-//       });
-
-//     let status;
-//     switch (employee.role_id) {
-//       case 1:
-//         status = "Pending_TL";
-//         break;
-//       case 2:
-//       case 3:
-//         status = "Pending_Manager";
-//         break;
-//       case 8:
-//         status = "Approved";
-//         break;
-//       default:
-//         status = "Pending_TL";
-//     }
-
-//     await dbRun(
-//       `INSERT INTO leave_master
-//        (emp_id, leave_type, leave_start_date, leave_end_date,
-//         number_of_days, is_half_day, half_day_period, reason, status, created_at, updated_at)
-//        VALUES (?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
-//       [
-//         req.params.empId,
-//         leave_type,
-//         leave_start_date,
-//         leave_end_date,
-//         workingDays,
-//         is_half_day ? 1 : 0,
-//         is_half_day ? half_day_period : null,
-//         reason || "",
-//         status,
-//       ],
-//     );
-
-//     await syncLeaveBalance(req.params.empId, leave_type, year);
-
-//     return res.json({
-//       success: true,
-//       working_days: workingDays,
-//       is_half_day,
-//       half_day_period: is_half_day ? half_day_period : null,
-//       status,
-//       message:
-//         status === "Approved"
-//           ? "Leave approved (self-approved)"
-//           : status === "Pending_Manager"
-//             ? "Leave sent to Manager for approval"
-//             : "Leave submitted to Team Lead for review",
-//     });
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// });
 
 app.post("/employees/:empId/apply-leave", async (req, res) => {
   const { empId } = req.params;
-  const { leave_type, leave_start_date, leave_end_date, reason } = req.body;
+  const {
+    leave_type,
+    leave_start_date,
+    leave_end_date,
+    reason,
+    is_half_day = false,
+    half_day_period,
+  } = req.body;
 
-  const workingDays = calculateWorkingDays(leave_start_date, leave_end_date);
+  if (!leave_type || !leave_start_date || !leave_end_date) {
+    return res.status(400).json({
+      success: false,
+      message: "leave_type, leave_start_date, leave_end_date are required",
+    });
+  }
 
-  // 🔴 RULE 1: Casual + Sick limit (1 per month)
-  if (leave_type === "Casual" || leave_type === "Sick") {
-    const used = await dbGet(
-      `
-      SELECT SUM(total_days) as used
-      FROM leaves
-      WHERE emp_id = ?
-        AND strftime('%Y-%m', leave_start_date) = strftime('%Y-%m', 'now')
-        AND leave_type IN ('Casual', 'Sick')
-        AND status != 'Rejected'
-    `,
+  try {
+    const policy = await dbGet(
+      `SELECT * FROM leave_policy WHERE leave_type = ? AND is_active = 1`,
+      [leave_type],
+    );
+
+    if (!policy) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid leave type" });
+    }
+
+    const employee = await dbGet(
+      `SELECT role_id FROM employee_master WHERE emp_id = ? AND status = 'Active'`,
       [empId],
     );
-
-    const usedDays = used?.used || 0;
-
-    if (usedDays + workingDays > 1) {
-      return res.json({
-        success: false,
-        message: "Only 1 Casual/Sick leave allowed per month",
-      });
+    if (!employee) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Employee not found" });
     }
-  }
 
-  // 🔴 RULE 2: Comp-Off validation
-  if (leave_type === "Comp-Off") {
-    const balance = await getCompoffBalance(empId);
+    // ── Calculate days requested ───────────────────────────────────────────
+    const requestedDays = is_half_day
+      ? 0.5
+      : await countWorkingDays(leave_start_date, leave_end_date);
 
-    if (balance < workingDays) {
-      return res.json({
+    if (!is_half_day && requestedDays === 0) {
+      return res.status(400).json({
         success: false,
-        message: "Insufficient comp-off balance",
+        message: "Selected dates have no working days (weekends/holidays only)",
       });
     }
 
-    // Deduct comp-off
+    // ── CASUAL / SICK: max 1 day per month ────────────────────────────────
+    if (leave_type === "Casual" || leave_type === "Sick") {
+      // Only 1 day (or 0.5) per month allowed
+      const monthlyLimit = parseFloat(policy.monthly_limit ?? 1);
+
+      const usedThisMonth = await dbGet(
+        `SELECT IFNULL(SUM(number_of_days), 0) AS used
+         FROM leave_master
+         WHERE emp_id = ?
+           AND leave_type = ?
+           AND YEAR(leave_start_date) = YEAR(CURDATE())
+           AND MONTH(leave_start_date) = MONTH(CURDATE())
+           AND status NOT IN ('Cancelled', 'Rejected_By_Manager')`,
+        [empId, leave_type],
+      );
+      const alreadyUsed = parseFloat(usedThisMonth?.used ?? 0);
+
+      if (alreadyUsed + requestedDays > monthlyLimit) {
+        return res.json({
+          success: false,
+          message: `Only ${monthlyLimit} day(s) of ${leave_type} leave allowed per month. You have already used ${alreadyUsed} day(s) this month.`,
+          monthly_limit: monthlyLimit,
+          already_used: alreadyUsed,
+          requested: requestedDays,
+          remaining: Math.max(monthlyLimit - alreadyUsed, 0),
+        });
+      }
+
+      // Cannot apply for more than monthly limit in one shot
+      if (requestedDays > monthlyLimit) {
+        return res.json({
+          success: false,
+          message: `Cannot apply more than ${monthlyLimit} day(s) of ${leave_type} leave at once.`,
+        });
+      }
+    }
+
+    // ── PAID: unlimited but max 1 day per application ─────────────────────
+    if (leave_type === "Paid") {
+      // Paid is unlimited but restrict single application to reasonable days
+      // No hard cap — just allow it through
+    }
+
+    // ── COMP-OFF: strictly cannot exceed available balance ────────────────
+    if (leave_type === "Comp-Off") {
+      const balRow = await dbGet(
+        `SELECT IFNULL(SUM(days), 0) AS earned
+         FROM compoff_transactions
+         WHERE emp_id = ?
+           AND type = 'EARNED'
+           AND status = 'Approved'
+           AND use_date IS NULL
+           AND expiry_date >= CURDATE()`,
+        [empId],
+      );
+      const available = parseFloat(balRow?.earned ?? 0);
+
+      if (available <= 0) {
+        return res.json({
+          success: false,
+          message: "You have no comp-off balance available.",
+          available: 0,
+        });
+      }
+
+      if (requestedDays > available) {
+        return res.json({
+          success: false,
+          message: `Cannot apply for ${requestedDays} comp-off day(s). You only have ${available} day(s) available.`,
+          available: available,
+          requested: requestedDays,
+        });
+      }
+    }
+
+    // ── Determine approval status based on role ───────────────────────────
+    let status;
+    switch (employee.role_id) {
+      case 2:
+      case 3:
+        status = "Pending_Manager";
+        break;
+      case 8:
+        status = "Approved";
+        break;
+      default:
+        status = "Pending_TL";
+    }
+
+    // ── Insert leave (number_of_days is STORED GENERATED — do not insert) ─
     await dbRun(
-      `
-      UPDATE compoff_transactions
-      SET use_date = DATE('now')
-      WHERE emp_id = ?
-        AND type = 'EARNED'
-        AND status = 'Approved'
-        AND use_date IS NULL
-      LIMIT ?
-    `,
-      [empId, workingDays],
+      `INSERT INTO leave_master
+         (emp_id, leave_type, leave_start_date, leave_end_date,
+          is_half_day, half_day_period, reason, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        empId,
+        leave_type,
+        leave_start_date,
+        leave_end_date,
+        is_half_day ? 1 : 0,
+        is_half_day && half_day_period ? half_day_period : null,
+        reason || "",
+        status,
+      ],
     );
+
+    return res.json({
+      success: true,
+      status,
+      requested_days: requestedDays,
+      message:
+        status === "Approved"
+          ? "Leave approved successfully"
+          : status === "Pending_Manager"
+            ? "Leave sent to Manager for approval"
+            : "Leave submitted to Team Lead for review",
+    });
+  } catch (err) {
+    console.error("[apply-leave]", err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  // 🟢 Insert leave
-  await dbRun(
-    `
-    INSERT INTO leaves (emp_id, leave_type, leave_start_date, leave_end_date, total_days, status, reason)
-    VALUES (?, ?, ?, ?, ?, 'Pending', ?)
-  `,
-    [empId, leave_type, leave_start_date, leave_end_date, workingDays, reason],
-  );
-
-  res.json({ success: true, message: "Leave applied successfully" });
 });
 // ─── LEAVE PENDING TL ─────────────────────────────────────────────────────────
 app.get("/leaves/pending-tl", async (req, res) => {
@@ -1315,32 +1212,320 @@ app.get("/leaves/all-pending", async (req, res) => {
           l.leave_type,
           DATE_FORMAT(l.leave_start_date, '%Y-%m-%d') AS leave_start_date,
           DATE_FORMAT(l.leave_end_date,   '%Y-%m-%d') AS leave_end_date,
-          l.number_of_days, l.reason, l.status,
+          CAST(l.number_of_days AS DECIMAL(4,1)) AS number_of_days,
+          l.reason, l.status,
           l.recommended_by, l.recommended_at,
-          IFNULL(SUM(CASE WHEN lm2.status='Approved' THEN lm2.number_of_days END), 0) AS taken_days,
-          IFNULL(lp.total_days, 12)                                                    AS total_allowed,
-          (IFNULL(lp.total_days, 12)
-            - IFNULL(SUM(CASE WHEN lm2.status='Approved' THEN lm2.number_of_days END), 0)
-          )                                                                             AS remaining_days
+          lp.monthly_limit,
+          lp.is_unlimited,
+          CAST(IFNULL(SUM(CASE WHEN lm2.status='Approved' 
+            THEN lm2.number_of_days END), 0) AS DECIMAL(4,1)) AS taken_days
        FROM leave_master l
        JOIN employee_master e      ON l.emp_id        = e.emp_id
        LEFT JOIN department_master d  ON e.department_id = d.department_id
        LEFT JOIN role_master r        ON e.role_id       = r.role_id
-       LEFT JOIN leave_policy lp      ON l.leave_type    = lp.leave_type AND lp.is_active = 1
+       LEFT JOIN leave_policy lp      ON l.leave_type    = lp.leave_type 
+                                     AND lp.is_active    = 1
        LEFT JOIN leave_master lm2
          ON lm2.emp_id     = l.emp_id
         AND lm2.leave_type = l.leave_type
         AND lm2.status     = 'Approved'
-       WHERE l.status IN ('Pending_TL', 'Pending_HR', 'Pending_Manager')
-       GROUP BY l.leave_id
+       WHERE l.status IN ('Pending_TL', 'Pending_Manager')
+       GROUP BY l.leave_id, lp.monthly_limit, lp.is_unlimited
        ORDER BY l.created_at ASC`,
     );
-    res.json({ success: true, data: rows });
+
+    // Parse decimals safely
+    const data = rows.map((r) => ({
+      ...r,
+      number_of_days: parseFloat(r.number_of_days ?? 0),
+      taken_days: parseFloat(r.taken_days ?? 0),
+      monthly_limit: parseFloat(r.monthly_limit ?? 0),
+      is_unlimited: r.is_unlimited === 1,
+    }));
+
+    res.json({ success: true, data });
   } catch (err) {
+    console.error("[all-pending]", err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
+// ─── ADD THIS ENDPOINT TO YOUR server.js ─────────────────────────────────────
+app.get("/attendance/month-report/:empId", async (req, res) => {
+  const { empId } = req.params;
+  const year = parseInt(req.query.year || new Date().getFullYear());
+  const month = parseInt(req.query.month || new Date().getMonth() + 1);
+
+  if (!empId || isNaN(year) || isNaN(month)) {
+    return res
+      .status(400)
+      .json({ success: false, message: "empId, year, month required" });
+  }
+
+  try {
+    // ── 1. All tracking sessions for the month (single query) ────────────
+    const sessions = await dbAll(
+      `SELECT
+          ts.id            AS session_id,
+          ts.work_date,
+          ts.session_number,
+          DATE_FORMAT(ts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+          DATE_FORMAT(ts.ended_at,   '%Y-%m-%d %H:%i:%s') AS ended_at,
+          ts.is_late,
+          ts.late_minutes,
+          ts.late_hours_text,
+          TIMESTAMPDIFF(MINUTE, ts.started_at, IFNULL(ts.ended_at, NOW())) AS session_minutes
+       FROM tracking_sessions ts
+       WHERE ts.employee_id = ?
+         AND YEAR(ts.work_date)  = ?
+         AND MONTH(ts.work_date) = ?
+       ORDER BY ts.work_date ASC, ts.session_number ASC`,
+      [empId, year, month],
+    );
+
+    // ── 2. All site visits for the month (single query) ──────────────────
+    const visits = await dbAll(
+      `SELECT
+          a.id         AS visit_id,
+          a.session_id,
+          a.site_id,
+          s.site_name,
+          DATE_FORMAT(a.work_date,  '%Y-%m-%d')          AS work_date,
+          DATE_FORMAT(a.in_time,    '%Y-%m-%d %H:%i:%s') AS in_time,
+          DATE_FORMAT(a.out_time,   '%Y-%m-%d %H:%i:%s') AS out_time,
+          a.status,
+          TIMESTAMPDIFF(MINUTE, a.in_time, IFNULL(a.out_time, NOW())) AS worked_minutes
+       FROM employee_site_attendance a
+       JOIN sites s ON a.site_id = s.id
+       WHERE a.employee_id = ?
+         AND YEAR(a.work_date)  = ?
+         AND MONTH(a.work_date) = ?
+       ORDER BY a.work_date ASC, a.in_time ASC`,
+      [empId, year, month],
+    );
+
+    // ── 3. Holidays for the month ─────────────────────────────────────────
+    const holidays = await dbAll(
+      `SELECT
+          DATE_FORMAT(holiday_date, '%Y-%m-%d') AS date,
+          holiday_name,
+          holiday_type
+       FROM holiday_master
+       WHERE YEAR(holiday_date)  = ?
+         AND MONTH(holiday_date) = ?
+       ORDER BY holiday_date ASC`,
+      [year, month],
+    );
+
+    // ── 4. Approved/Pending leaves overlapping this month ────────────────
+    const leaves = await dbAll(
+      `SELECT
+          DATE_FORMAT(leave_start_date, '%Y-%m-%d') AS from_date,
+          DATE_FORMAT(leave_end_date,   '%Y-%m-%d') AS to_date,
+          leave_type,
+          number_of_days,
+          status,
+          is_half_day,
+          half_day_period
+       FROM leave_master
+       WHERE emp_id = ?
+         AND status IN ('Approved', 'Pending_TL', 'Pending_Manager')
+         AND leave_start_date <= LAST_DAY(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'))
+         AND leave_end_date   >= CONCAT(?, '-', LPAD(?, 2, '0'), '-01')
+       ORDER BY leave_start_date ASC`,
+      [empId, year, month, year, month],
+    );
+
+    // ── 5. Comp-offs earned this month ────────────────────────────────────
+    const compoffs = await dbAll(
+      `SELECT
+          DATE_FORMAT(work_date, '%Y-%m-%d') AS date,
+          reason,
+          status,
+          days AS days_earned
+       FROM compoff_transactions
+       WHERE emp_id  = ?
+         AND type    = 'EARNED'
+         AND YEAR(work_date)  = ?
+         AND MONTH(work_date) = ?
+         AND status  = 'Approved'
+       ORDER BY work_date ASC`,
+      [empId, year, month],
+    );
+
+    // ── 6. Aggregate per day ──────────────────────────────────────────────
+    // Group visits by session_id
+    const visitsBySession = {};
+    for (const v of visits) {
+      const key = v.session_id ?? `nosession`;
+      if (!visitsBySession[key]) visitsBySession[key] = [];
+      visitsBySession[key].push(v);
+    }
+
+    // Group sessions by work_date
+    const sessionsByDate = {};
+    for (const s of sessions) {
+      const d = String(s.started_at).slice(0, 10);
+      if (!sessionsByDate[d]) sessionsByDate[d] = [];
+      const sessVisits = visitsBySession[s.session_id] || [];
+      const siteMinutes = sessVisits.reduce(
+        (sum, v) => sum + (v.worked_minutes || 0),
+        0,
+      );
+      sessionsByDate[d].push({
+        session_id: s.session_id,
+        session_number: s.session_number,
+        started_at: s.started_at,
+        ended_at: s.ended_at,
+        session_minutes: s.session_minutes,
+        site_minutes: siteMinutes,
+        is_late: s.is_late === 1,
+        late_minutes: s.late_minutes || 0,
+        late_text: s.late_hours_text || null,
+        visits: sessVisits,
+      });
+    }
+
+    // Build holiday/leave/compoff maps
+    const holidayMap = {};
+    for (const h of holidays) holidayMap[h.date] = h;
+
+    const compoffMap = {};
+    for (const c of compoffs) compoffMap[c.date] = c;
+
+    // Helper: check if date is in a leave range
+    function getLeaveForDate(dateStr) {
+      for (const l of leaves) {
+        if (dateStr >= l.from_date && dateStr <= l.to_date) return l;
+      }
+      return null;
+    }
+
+    // ── 7. Build daily summary for entire month ───────────────────────────
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const today = new Date().toISOString().slice(0, 10);
+    const days = [];
+
+    let presentCount = 0,
+      absentCount = 0,
+      lateCount = 0,
+      totalOnSiteMinutes = 0,
+      leaveCount = 0,
+      holidayCount = 0,
+      compoffCount = 0,
+      weekendCount = 0;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const dayOfWeek = new Date(dateStr + "T00:00:00").getDay(); // 0=Sun
+      const isSunday = dayOfWeek === 0;
+      const isSaturday = dayOfWeek === 6;
+      const isWeekend = isSunday;
+      const isFuture = dateStr > today;
+      const isToday = dateStr === today;
+
+      const holiday = holidayMap[dateStr] || null;
+      const leave = getLeaveForDate(dateStr);
+      const compoff = compoffMap[dateStr] || null;
+      const daySession = sessionsByDate[dateStr] || [];
+      const isPresent = daySession.length > 0;
+
+      // Calculate totals for the day
+      const dayTotalMinutes = daySession.reduce(
+        (s, sess) => s + (sess.site_minutes || 0),
+        0,
+      );
+      const isLate = daySession.some((s) => s.is_late);
+      const lateText = daySession.find((s) => s.late_text)?.late_text || null;
+      const firstIn = daySession[0]?.started_at || null;
+      const lastOut = daySession[daySession.length - 1]?.ended_at || null;
+
+      // Determine status label
+      let status;
+      if (isFuture) status = "future";
+      else if (compoff) status = "compoff";
+      else if (isPresent) status = isLate ? "late" : "present";
+      else if (isWeekend) status = "weekend";
+      else if (holiday) status = "holiday";
+      else if (leave) status = "leave";
+      else status = "absent";
+
+      // Count for summary (only past/today non-future days)
+      if (!isFuture) {
+        if (status === "present" || status === "late") {
+          presentCount++;
+          totalOnSiteMinutes += dayTotalMinutes;
+          if (isLate) lateCount++;
+        } else if (status === "absent") {
+          absentCount++;
+        } else if (status === "leave") {
+          leaveCount++;
+        } else if (status === "holiday") {
+          holidayCount++;
+        } else if (status === "compoff") {
+          compoffCount++;
+        } else if (status === "weekend") {
+          weekendCount++;
+        }
+      }
+
+      days.push({
+        date: dateStr,
+        day: d,
+        day_of_week: dayOfWeek,
+        is_today: isToday,
+        is_future: isFuture,
+        is_weekend: isWeekend,
+        is_sunday: isSunday,
+        is_saturday: isSaturday,
+        status,
+        is_present: isPresent,
+        is_late: isLate,
+        late_text: lateText,
+        total_minutes: dayTotalMinutes,
+        first_in: firstIn,
+        last_out: lastOut,
+        sessions: daySession,
+        holiday: holiday,
+        leave: leave,
+        compoff: compoff,
+      });
+    }
+
+    const workingDaysInMonth = days.filter(
+      (d) => !d.is_future && !d.is_weekend && !d.holiday,
+    ).length;
+
+    const attendanceRate =
+      presentCount + leaveCount + holidayCount + compoffCount > 0
+        ? Math.round(
+            (presentCount / Math.max(presentCount + absentCount, 1)) * 100,
+          )
+        : 0;
+
+    res.json({
+      success: true,
+      year,
+      month,
+      summary: {
+        present_days: presentCount,
+        absent_days: absentCount,
+        late_days: lateCount,
+        leave_days: leaveCount,
+        holiday_days: holidayCount,
+        compoff_days: compoffCount,
+        weekend_days: weekendCount,
+        total_on_site_minutes: totalOnSiteMinutes,
+        working_days_in_month: workingDaysInMonth,
+        attendance_rate: attendanceRate,
+      },
+      days,
+    });
+  } catch (err) {
+    console.error("[month-report]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 // ─── ALL LEAVE HISTORY ────────────────────────────────────────────────────────
 app.get("/leaves/all-history", async (req, res) => {
   try {
@@ -1489,7 +1674,7 @@ async function _autoCreateCompoff(empId, workDate) {
 
     // 2. Check if already exists (IMPORTANT!)
     const existing = await dbGet(
-      `SELECT compoff_id FROM compoff_earned 
+      `SELECT compoff_id FROM compoff_transactions 
        WHERE emp_id = ? AND worked_date = ?`,
       [empId, workDate],
     );
@@ -1532,7 +1717,7 @@ async function _autoCreateCompoff(empId, workDate) {
       : "Worked on weekend";
 
     await dbRun(
-      `INSERT INTO compoff_earned
+      `INSERT INTO compoff_transactions
        (emp_id, worked_date, worked_hours, reason, day_type, days_earned, 
         status, expiry_date, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, 'Approved', ?, NOW(), NOW())`,
@@ -2739,6 +2924,347 @@ app.get("/attendance/today-summary/:empId", async (req, res) => {
   }
 });
 
+//  ─── GET OPEN / UNCLOSED SESSIONS FOR A DATE ─────────────────────────────────
+app.get("/attendance/open-sessions", async (req, res) => {
+  const { date } = req.query;
+  if (!date)
+    return res.status(400).json({ success: false, message: "date required" });
+
+  try {
+    // 1. Open tracking sessions (ended_at IS NULL)
+    const openSessions = await dbAll(
+      `SELECT
+          ts.id            AS session_id,
+          ts.employee_id,
+          ts.session_number,
+          DATE_FORMAT(ts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+          ts.is_late,
+          ts.late_hours_text,
+          TIMESTAMPDIFF(MINUTE, ts.started_at, NOW()) AS open_minutes,
+          TRIM(CONCAT(e.first_name, ' ',
+            IFNULL(e.mid_name, ''), ' ', e.last_name)) AS emp_name,
+          e.emp_id,
+          d.department_name,
+          r.role_name
+       FROM tracking_sessions ts
+       JOIN employee_master e  ON ts.employee_id = e.emp_id
+       LEFT JOIN department_master d ON e.department_id = d.department_id
+       LEFT JOIN role_master r       ON e.role_id       = r.role_id
+       WHERE ts.work_date = ?
+         AND ts.ended_at IS NULL
+       ORDER BY ts.started_at ASC`,
+      [date],
+    );
+
+    // 2. Open site visits for each open session
+    const openVisits = await dbAll(
+      `SELECT
+          a.id         AS visit_id,
+          a.employee_id,
+          a.session_id,
+          a.site_id,
+          s.site_name,
+          DATE_FORMAT(a.in_time, '%Y-%m-%d %H:%i:%s') AS in_time,
+          TIMESTAMPDIFF(MINUTE, a.in_time, NOW()) AS open_minutes
+       FROM employee_site_attendance a
+       JOIN sites s ON a.site_id = s.id
+       WHERE a.work_date = ?
+         AND a.out_time IS NULL
+       ORDER BY a.in_time ASC`,
+      [date],
+    );
+
+    // Map visits by employee_id
+    const visitsByEmp = {};
+    for (const v of openVisits) {
+      if (!visitsByEmp[v.employee_id]) visitsByEmp[v.employee_id] = [];
+      visitsByEmp[v.employee_id].push(v);
+    }
+
+    // Attach open visits to each session
+    const result = openSessions.map((s) => ({
+      ...s,
+      open_visits: visitsByEmp[s.employee_id] || [],
+    }));
+
+    res.json({
+      success: true,
+      date,
+      count: result.length,
+      data: result,
+    });
+  } catch (err) {
+    console.error("[open-sessions]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── ADMIN FORCE-CLOSE SESSION ────────────────────────────────────────────────
+app.post("/attendance/admin-force-close", async (req, res) => {
+  const {
+    employee_id,
+    session_id,
+    close_time,
+    reason,
+    closed_by_login_id,
+    work_date,
+  } = req.body;
+
+  if (!employee_id || !reason || !closed_by_login_id || !work_date) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "employee_id, reason, closed_by_login_id, work_date are required",
+    });
+  }
+
+  try {
+    const closer = await dbGet(
+      `SELECT lm.login_id, r.role_name
+       FROM login_master lm
+       JOIN role_master r ON lm.role_id = r.role_id
+       WHERE lm.login_id = ? AND lm.status = 'Active'`,
+      [closed_by_login_id],
+    );
+    if (!closer) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized user" });
+    }
+    const allowedRoles = [
+      "Admin",
+      "Manager",
+      "HR",
+      "Team Lead",
+      "TL",
+      "TeamLead",
+      "Team_Lead",
+    ];
+    if (
+      !allowedRoles.some((r) =>
+        closer.role_name?.toLowerCase().includes(r.toLowerCase()),
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Admin / Manager / HR can force-close sessions",
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  let closeTs;
+  if (close_time) {
+    // Flutter sends ISO without timezone — treat as IST (UTC+5:30)
+    // If it already has 'Z' or '+', parse normally; else append IST offset
+    const hasTimezone = /[Z+]/.test(close_time.slice(10)); // after date part
+    closeTs = hasTimezone
+      ? new Date(close_time)
+      : new Date(close_time + "+05:30");
+  } else {
+    closeTs = new Date();
+  }
+  if (closeTs > new Date()) {
+    return res.status(400).json({
+      success: false,
+      message: "Close time cannot be in the future",
+    });
+  }
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+  const istDate = new Date(closeTs.getTime() + istOffset);
+  const closeTsStr = istDate.toISOString().slice(0, 19).replace("T", " ");
+
+  try {
+    let sessionsUpdated = 0,
+      visitsUpdated = 0;
+
+    if (session_id) {
+      // ── Fix: truncate end_reason to 100 chars ──
+      const endReason = `admin_force_close: ${reason}`.substring(0, 100);
+
+      const r1 = await dbRun(
+        `UPDATE tracking_sessions
+         SET ended_at = ?, end_reason = ?, updated_at = NOW()
+         WHERE id = ? AND employee_id = ? AND ended_at IS NULL`,
+        [closeTsStr, endReason, session_id, employee_id],
+      );
+      sessionsUpdated = r1.affectedRows;
+
+      const r2 = await dbRun(
+        `UPDATE employee_site_attendance
+         SET out_time = ?, updated_at = NOW(), status = 'completed'
+         WHERE session_id = ? AND employee_id = ? AND out_time IS NULL`,
+        [closeTsStr, session_id, employee_id],
+      );
+      visitsUpdated = r2.affectedRows;
+    } else {
+      // ── Fix: truncate end_reason to 100 chars ──
+      const endReason = `admin_force_close: ${reason}`.substring(0, 100);
+
+      const r1 = await dbRun(
+        `UPDATE tracking_sessions
+         SET ended_at = ?, end_reason = ?, updated_at = NOW()
+         WHERE employee_id = ? AND work_date = ? AND ended_at IS NULL`,
+        [closeTsStr, endReason, employee_id, work_date],
+      );
+      sessionsUpdated = r1.affectedRows;
+
+      const r2 = await dbRun(
+        `UPDATE employee_site_attendance
+         SET out_time = ?, updated_at = NOW(), status = 'completed'
+         WHERE employee_id = ? AND work_date = ? AND out_time IS NULL`,
+        [closeTsStr, employee_id, work_date],
+      );
+      visitsUpdated = r2.affectedRows;
+    }
+
+    await dbRun(
+      `INSERT INTO login_logs
+         (emp_id, username, status, ip_address, device_info, failure_reason, login_time)
+       VALUES (?, ?, 'ADMIN_FORCE_CLOSE', 'server', ?, ?, NOW())`,
+      [
+        employee_id,
+        "admin_action",
+        `closed_by:${closed_by_login_id}`,
+        `session_id:${session_id ?? "all"} | date:${work_date} | reason:${reason} | close_time:${closeTsStr}`,
+      ],
+    );
+
+    res.json({
+      success: true,
+      message: "Session closed successfully",
+      sessions_closed: sessionsUpdated,
+      visits_closed: visitsUpdated,
+      closed_at: closeTsStr,
+    });
+  } catch (err) {
+    console.error("[admin-force-close]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/attendance/admin-force-close-all", async (req, res) => {
+  const { work_date, close_time, reason, closed_by_login_id } = req.body;
+
+  if (!work_date || !reason || !closed_by_login_id) {
+    return res.status(400).json({
+      success: false,
+      message: "work_date, reason, closed_by_login_id are required",
+    });
+  }
+
+  let closeTs;
+  if (close_time) {
+    // Flutter sends ISO without timezone — treat as IST (UTC+5:30)
+    // If it already has 'Z' or '+', parse normally; else append IST offset
+    const hasTimezone = /[Z+]/.test(close_time.slice(10)); // after date part
+    closeTs = hasTimezone
+      ? new Date(close_time)
+      : new Date(close_time + "+05:30");
+  } else {
+    closeTs = new Date();
+  }
+  if (closeTs > new Date()) {
+    return res.status(400).json({
+      success: false,
+      message: "Close time cannot be in the future",
+    });
+  }
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+  const istDate = new Date(closeTs.getTime() + istOffset);
+  const closeTsStr = istDate.toISOString().slice(0, 19).replace("T", " ");
+
+  try {
+    // ── Fix: truncate end_reason to 100 chars ──
+    const endReason = `bulk_admin_close: ${reason}`.substring(0, 100);
+
+    const r1 = await dbRun(
+      `UPDATE tracking_sessions
+       SET ended_at = ?, end_reason = ?, updated_at = NOW()
+       WHERE work_date = ? AND ended_at IS NULL`,
+      [closeTsStr, endReason, work_date],
+    );
+
+    const r2 = await dbRun(
+      `UPDATE employee_site_attendance
+       SET out_time = ?, updated_at = NOW(), status = 'completed'
+       WHERE work_date = ? AND out_time IS NULL`,
+      [closeTsStr, work_date],
+    );
+
+    res.json({
+      success: true,
+      message: `All open sessions closed for ${work_date}`,
+      sessions_closed: r1.affectedRows,
+      visits_closed: r2.affectedRows,
+      closed_at: closeTsStr,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── ADMIN FORCE-CLOSE ALL OPEN SESSIONS FOR A DATE ──────────────────────────
+
+app.post("/attendance/admin-force-close-all", async (req, res) => {
+  const { work_date, close_time, reason, closed_by_login_id } = req.body;
+
+  if (!work_date || !reason || !closed_by_login_id) {
+    return res.status(400).json({
+      success: false,
+      message: "work_date, reason, closed_by_login_id are required",
+    });
+  }
+
+  let closeTs;
+  if (close_time) {
+    // Flutter sends ISO without timezone — treat as IST (UTC+5:30)
+    // If it already has 'Z' or '+', parse normally; else append IST offset
+    const hasTimezone = /[Z+]/.test(close_time.slice(10)); // after date part
+    closeTs = hasTimezone
+      ? new Date(close_time)
+      : new Date(close_time + "+05:30");
+  } else {
+    closeTs = new Date();
+  }
+  if (closeTs > new Date()) {
+    return res.status(400).json({
+      success: false,
+      message: "Close time cannot be in the future",
+    });
+  }
+
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+  const istDate = new Date(closeTs.getTime() + istOffset);
+  const closeTsStr = istDate.toISOString().slice(0, 19).replace("T", " ");
+
+  try {
+    const r1 = await dbRun(
+      `UPDATE tracking_sessions
+       SET ended_at = ?, end_reason = ?, updated_at = NOW()
+       WHERE work_date = ? AND ended_at IS NULL`,
+      [closeTsStr, `bulk_admin_close: ${reason}`, work_date],
+    );
+
+    const r2 = await dbRun(
+      `UPDATE employee_site_attendance
+       SET out_time = ?, updated_at = NOW(), status = 'completed'
+       WHERE work_date = ? AND out_time IS NULL`,
+      [closeTsStr, work_date],
+    );
+
+    res.json({
+      success: true,
+      message: `All open sessions closed for ${work_date}`,
+      sessions_closed: r1.affectedRows,
+      visits_closed: r2.affectedRows,
+      closed_at: closeTsStr,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 app.get("/employee-work-hours/:empId", async (req, res) => {
   const { empId } = req.params;
   try {
@@ -4374,20 +4900,31 @@ async function countWorkingDays(from, to) {
 }
 
 async function ensureLeaveBalance(empId, leaveType, year) {
+  // Skip Comp-Off — handled separately
+  if (leaveType === "Comp-Off") return null;
+
   const existing = await dbGet(
     `SELECT * FROM leave_balance WHERE emp_id=? AND leave_type=? AND year=?`,
     [empId, leaveType, year],
   );
   if (existing) return existing;
+
+  // Use monthly_limit * 12 for yearly allocation, 0 for unlimited
   const policy = await dbGet(
-    `SELECT total_days FROM leave_policy WHERE leave_type=? AND is_active=1`,
+    `SELECT monthly_limit, is_unlimited FROM leave_policy WHERE leave_type=? AND is_active=1`,
     [leaveType],
   );
-  const allocated = policy?.total_days ?? 12;
+
+  const allocated = policy?.is_unlimited
+    ? 0 // unlimited types store 0, handled at display level
+    : parseFloat(policy?.monthly_limit ?? 1) * 12;
+
   await dbRun(
-    `INSERT IGNORE INTO leave_balance (emp_id, leave_type, year, allocated_days) VALUES (?, ?, ?, ?)`,
+    `INSERT IGNORE INTO leave_balance (emp_id, leave_type, year, allocated_days)
+     VALUES (?, ?, ?, ?)`,
     [empId, leaveType, year, allocated],
   );
+
   return dbGet(
     `SELECT * FROM leave_balance WHERE emp_id=? AND leave_type=? AND year=?`,
     [empId, leaveType, year],
@@ -4395,49 +4932,122 @@ async function ensureLeaveBalance(empId, leaveType, year) {
 }
 
 async function syncLeaveBalance(empId, leaveType, year) {
+  // Skip Comp-Off — handled separately
+  if (leaveType === "Comp-Off") return;
+
   const usedRow = await dbGet(
-    `SELECT IFNULL(SUM(number_of_days),0) AS v FROM leave_master WHERE emp_id=? AND leave_type=? AND YEAR(leave_start_date)=? AND status='Approved'`,
+    `SELECT IFNULL(SUM(number_of_days), 0) AS v
+     FROM leave_master
+     WHERE emp_id=?
+       AND leave_type=?
+       AND YEAR(leave_start_date)=?
+       AND status='Approved'`,
     [empId, leaveType, year],
   );
+
   const pendingRow = await dbGet(
-    `SELECT IFNULL(SUM(number_of_days),0) AS v FROM leave_master WHERE emp_id=? AND leave_type=? AND YEAR(leave_start_date)=? AND status IN ('Pending_TL','Pending_Manager')`,
+    `SELECT IFNULL(SUM(number_of_days), 0) AS v
+     FROM leave_master
+     WHERE emp_id=?
+       AND leave_type=?
+       AND YEAR(leave_start_date)=?
+       AND status IN ('Pending_TL','Pending_Manager')`,
     [empId, leaveType, year],
   );
+
+  // Only update if the row exists (ensureLeaveBalance must be called first)
   await dbRun(
-    `UPDATE leave_balance SET used_days=?, pending_days=?, updated_at=NOW() WHERE emp_id=? AND leave_type=? AND year=?`,
+    `UPDATE leave_balance
+     SET used_days=?, pending_days=?, updated_at=NOW()
+     WHERE emp_id=? AND leave_type=? AND year=?`,
     [usedRow.v, pendingRow.v, empId, leaveType, year],
   );
 }
-
 // ─── LEAVE BALANCE API ────────────────────────────────────────────────────────
+// Replace the entire GET /employees/:empId/leave-balance endpoint with this:
 app.get("/employees/:empId/leave-balance", async (req, res) => {
+  const { empId } = req.params;
   const year = parseInt(req.query.year) || new Date().getFullYear();
-  const empId = parseInt(req.params.empId);
+
   try {
     const policies = await dbAll(
-      `SELECT leave_type FROM leave_policy WHERE is_active=1`,
+      `SELECT * FROM leave_policy WHERE is_active = 1`,
     );
-    for (const p of policies) {
-      await ensureLeaveBalance(empId, p.leave_type, year);
-      await syncLeaveBalance(empId, p.leave_type, year);
+
+    if (!policies || policies.length === 0) {
+      return res.json({ success: true, data: [] });
     }
-    const rows = await dbAll(
-      `SELECT lb.leave_type, lb.year, lb.allocated_days, lb.carry_forward AS carried_forward,
-              (lb.allocated_days + lb.carry_forward) AS total_available,
-              lb.used_days, lb.pending_days,
-              (lb.allocated_days + lb.carry_forward - lb.used_days - lb.pending_days) AS remaining_days,
-              lp.half_day_allowed
-       FROM leave_balance lb
-       LEFT JOIN leave_policy lp ON lb.leave_type = lp.leave_type AND lp.is_active = 1
-       WHERE lb.emp_id=? AND lb.year=? ORDER BY lb.leave_type`,
-      [empId, year],
-    );
-    res.json({ success: true, year, data: rows });
+
+    const result = [];
+
+    for (const policy of policies) {
+      const leaveType = policy.leave_type;
+      if (leaveType === "Comp-Off") continue;
+
+      const usedRow = await dbGet(
+        `SELECT IFNULL(SUM(number_of_days), 0) AS used
+         FROM leave_master
+         WHERE emp_id = ? AND leave_type = ?
+           AND YEAR(leave_start_date) = ?
+           AND status = 'Approved'`,
+        [empId, leaveType, year],
+      );
+
+      const pendingRow = await dbGet(
+        `SELECT IFNULL(SUM(number_of_days), 0) AS pending
+         FROM leave_master
+         WHERE emp_id = ? AND leave_type = ?
+           AND YEAR(leave_start_date) = ?
+           AND status IN ('Pending_TL','Pending_Manager')`,
+        [empId, leaveType, year],
+      );
+
+      // This month usage — for Casual/Sick monthly cap display
+      const thisMonthRow = await dbGet(
+        `SELECT IFNULL(SUM(number_of_days), 0) AS used_month
+         FROM leave_master
+         WHERE emp_id = ? AND leave_type = ?
+           AND YEAR(leave_start_date) = YEAR(CURDATE())
+           AND MONTH(leave_start_date) = MONTH(CURDATE())
+           AND status NOT IN ('Cancelled','Rejected_By_Manager')`,
+        [empId, leaveType],
+      );
+
+      const used = parseFloat(usedRow?.used ?? 0);
+      const pending = parseFloat(pendingRow?.pending ?? 0);
+      const usedThisMonth = parseFloat(thisMonthRow?.used_month ?? 0);
+      const monthlyLimit = parseFloat(policy.monthly_limit ?? 0);
+      const isUnlimited = policy.is_unlimited === 1;
+
+      const yearlyAllowed = isUnlimited ? null : monthlyLimit * 12;
+      const remaining = isUnlimited
+        ? null
+        : Math.max((yearlyAllowed ?? 0) - used - pending, 0);
+      const remainingThisMonth = isUnlimited
+        ? null
+        : Math.max(monthlyLimit - usedThisMonth, 0);
+
+      result.push({
+        leave_type: leaveType,
+        is_unlimited: isUnlimited,
+        monthly_limit: monthlyLimit,
+        allocated_days: yearlyAllowed,
+        total_available: yearlyAllowed,
+        used_days: used,
+        pending_days: pending,
+        remaining_days: remaining,
+        used_this_month: usedThisMonth,
+        remaining_this_month: remainingThisMonth,
+        half_day_allowed: 1,
+      });
+    }
+
+    return res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error("❌ Leave balance error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.get("/employees/:empId/leave-balance/:type", async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const { empId, type } = req.params;
@@ -4836,9 +5446,8 @@ app.put("/regularization/:regId/manager-action", async (req, res) => {
 
   try {
     const reg = await dbGet(
-      `SELECT * FROM regularization_request WHERE reg_id=? AND status = 'Pending_Manager'`[
-        req.params.regId
-      ],
+      `SELECT * FROM regularization_request WHERE reg_id = ? AND status = 'Pending_Manager'`,
+      [req.params.regId], // ← was being used as array index, not params!
     );
     if (!reg)
       return res.status(404).json({
@@ -4873,7 +5482,6 @@ app.put("/regularization/:regId/manager-action", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
 app.put("/regularization/:regId/cancel", async (req, res) => {
   const { emp_id } = req.body;
   if (!emp_id)
@@ -5017,10 +5625,10 @@ async function autoGrantCompoff(db, empId, workDate, sessionId) {
     [empId, dateStr, reason, sessionId],
   );
 
-  // ── 5. Credit comp-off balance (upsert into compoff_balance) ─────────────
+  // ── 5. Credit comp-off balance (upsert into compoff_transactions) ─────────────
   //  If you maintain a balance table:
   await db.query(
-    `INSERT INTO compoff_balance (emp_id, available_days, updated_at)
+    `INSERT INTO compoff_transactions (emp_id, available_days, updated_at)
        VALUES (?, 1.00, NOW())
      ON DUPLICATE KEY UPDATE
        available_days = available_days + 1.00,
@@ -5126,36 +5734,6 @@ async function getCompoffPolicy() {
   );
 }
 
-async function getCompoffBalance(empId) {
-  const earned = await dbGet(
-    `SELECT IFNULL(SUM(days_earned), 0) AS total FROM compoff_earned WHERE emp_id = ? AND status = 'Approved' AND (expiry_date IS NULL OR expiry_date >= CURDATE())`,
-    [empId],
-  );
-  const used = await dbGet(
-    `SELECT IFNULL(SUM(days_used), 0) AS total FROM compoff_availed WHERE emp_id = ? AND status = 'Approved'`,
-    [empId],
-  );
-  const pending_earned = await dbGet(
-    `SELECT IFNULL(SUM(days_earned), 0) AS total FROM compoff_earned WHERE emp_id = ? AND status IN ('Pending_TL', 'Pending_Manager')`,
-    [empId],
-  );
-  const pending_used = await dbGet(
-    `SELECT IFNULL(SUM(days_used), 0) AS total FROM compoff_availed WHERE emp_id = ? AND status IN ('Pending_TL', 'Pending_Manager')`,
-    [empId],
-  );
-  const totalEarned = parseFloat(earned.total) || 0;
-  const totalUsed = parseFloat(used.total) || 0;
-  const pendingEarned = parseFloat(pending_earned.total) || 0;
-  const pendingUsed = parseFloat(pending_used.total) || 0;
-  return {
-    totalEarned,
-    totalUsed,
-    available: +(totalEarned - totalUsed).toFixed(1),
-    pendingEarned,
-    pendingUsed,
-  };
-}
-
 async function getDateType(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const dow = d.getDay();
@@ -5222,7 +5800,7 @@ app.get("/employees/:empId/compoff-balance", async (req, res) => {
     const balance = await getCompoffBalance(req.params.empId);
     const expiring = await dbAll(
       `SELECT compoff_id, worked_date, days_earned, expiry_date, DATEDIFF(expiry_date, CURDATE()) AS days_until_expiry
-       FROM compoff_earned WHERE emp_id=? AND status='Approved' AND expiry_date IS NOT NULL AND expiry_date >= CURDATE() AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) ORDER BY expiry_date ASC`,
+       FROM compoff_transactions WHERE emp_id=? AND status='Approved' AND expiry_date IS NOT NULL AND expiry_date >= CURDATE() AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) ORDER BY expiry_date ASC`,
       [req.params.empId],
     );
     res.json({ success: true, balance, expiring_soon: expiring });
@@ -5258,7 +5836,7 @@ app.post("/compoff/earn", async (req, res) => {
       });
 
     const duplicate = await dbGet(
-      `SELECT compoff_id, status FROM compoff_earned WHERE emp_id=? AND worked_date=?`,
+      `SELECT compoff_id, status FROM compoff_transactions WHERE emp_id=? AND worked_date=?`,
       [emp_id, worked_date],
     );
     if (duplicate)
@@ -5288,7 +5866,7 @@ app.post("/compoff/earn", async (req, res) => {
 
     const status = compoffInitialStatus(employee.role_id);
     const result = await dbRun(
-      `INSERT INTO compoff_earned (emp_id, worked_date, worked_hours, reason, day_type, days_earned, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
+      `INSERT INTO compoff_transactions (emp_id, worked_date, worked_hours, reason, day_type, days_earned, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
       [
         emp_id,
         worked_date,
@@ -5304,7 +5882,7 @@ app.post("/compoff/earn", async (req, res) => {
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + policy.expiry_days);
       await dbRun(
-        `UPDATE compoff_earned SET expiry_date=? WHERE compoff_id=?`,
+        `UPDATE compoff_transactions SET expiry_date=? WHERE compoff_id=?`,
         [expiryDate.toISOString().slice(0, 10), result.insertId],
       );
     }
@@ -5332,7 +5910,7 @@ app.get("/compoff/earn", async (req, res) => {
   if (!emp_id)
     return res.status(400).json({ success: false, message: "emp_id required" });
   try {
-    let sql = `SELECT c.*, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date, DATEDIFF(c.expiry_date, CURDATE()) AS days_until_expiry FROM compoff_earned c WHERE c.emp_id=?`;
+    let sql = `SELECT c.*, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date, DATEDIFF(c.expiry_date, CURDATE()) AS days_until_expiry FROM compoff_transactions c WHERE c.emp_id=?`;
     const params = [emp_id];
     if (status) {
       sql += " AND c.status=?";
@@ -5352,7 +5930,7 @@ app.put("/compoff/earn/:compoffId/cancel", async (req, res) => {
     return res.status(400).json({ success: false, message: "emp_id required" });
   try {
     const result = await dbRun(
-      `UPDATE compoff_earned SET status='Cancelled', updated_at=NOW() WHERE compoff_id=? AND emp_id=? AND status IN ('Pending_TL','Pending_Manager')`,
+      `UPDATE compoff_transactions SET status='Cancelled', updated_at=NOW() WHERE compoff_id=? AND emp_id=? AND status IN ('Pending_TL','Pending_Manager')`,
       [req.params.compoffId, emp_id],
     );
     if (result.affectedRows === 0)
@@ -5382,7 +5960,7 @@ app.put("/compoff/earn/:compoffId/tl-action", async (req, res) => {
       .json({ success: false, message: "remark required for rejection" });
   try {
     const record = await dbGet(
-      `SELECT * FROM compoff_earned WHERE compoff_id=? AND status='Pending_TL'`,
+      `SELECT * FROM compoff_transactions WHERE compoff_id=? AND status='Pending_TL'`,
       [req.params.compoffId],
     );
     if (!record)
@@ -5393,7 +5971,7 @@ app.put("/compoff/earn/:compoffId/tl-action", async (req, res) => {
     const newStatus =
       action === "approve" ? "Pending_Manager" : "Rejected_By_TL";
     await dbRun(
-      `UPDATE compoff_earned SET status=?, tl_action_by=?, tl_action_at=NOW(), tl_remark=?, updated_at=NOW() WHERE compoff_id=?`,
+      `UPDATE compoff_transactions SET status=?, tl_action_by=?, tl_action_at=NOW(), tl_remark=?, updated_at=NOW() WHERE compoff_id=?`,
       [newStatus, login_id, remark || null, req.params.compoffId],
     );
     res.json({ success: true, status: newStatus });
@@ -5418,7 +5996,7 @@ app.put("/compoff/earn/:compoffId/manager-action", async (req, res) => {
       .json({ success: false, message: "remark required for rejection" });
   try {
     const record = await dbGet(
-      `SELECT * FROM compoff_earned WHERE compoff_id=? AND status IN ('Pending_Manager','Pending_TL')`,
+      `SELECT * FROM compoff_transactions WHERE compoff_id=? AND status IN ('Pending_Manager','Pending_TL')`,
       [req.params.compoffId],
     );
     if (!record)
@@ -5428,7 +6006,7 @@ app.put("/compoff/earn/:compoffId/manager-action", async (req, res) => {
       });
     if (action === "reject") {
       await dbRun(
-        `UPDATE compoff_earned SET status='Rejected_By_Manager', mgr_action_by=?, mgr_action_at=NOW(), mgr_remark=?, updated_at=NOW() WHERE compoff_id=?`,
+        `UPDATE compoff_transactions SET status='Rejected_By_Manager', mgr_action_by=?, mgr_action_at=NOW(), mgr_remark=?, updated_at=NOW() WHERE compoff_id=?`,
         [login_id, remark, req.params.compoffId],
       );
       return res.json({ success: true, status: "Rejected_By_Manager" });
@@ -5438,7 +6016,7 @@ app.put("/compoff/earn/:compoffId/manager-action", async (req, res) => {
     expiryDate.setDate(expiryDate.getDate() + policy.expiry_days);
     const expiryStr = expiryDate.toISOString().slice(0, 10);
     await dbRun(
-      `UPDATE compoff_earned SET status='Approved', mgr_action_by=?, mgr_action_at=NOW(), mgr_remark=?, expiry_date=?, updated_at=NOW() WHERE compoff_id=?`,
+      `UPDATE compoff_transactions SET status='Approved', mgr_action_by=?, mgr_action_at=NOW(), mgr_remark=?, expiry_date=?, updated_at=NOW() WHERE compoff_id=?`,
       [login_id, remark || null, expiryStr, req.params.compoffId],
     );
     res.json({
@@ -5467,7 +6045,7 @@ app.get("/compoff/earn/pending-tl", async (req, res) => {
       return res.status(404).json({ success: false, message: "TL not found" });
     const rows = await dbAll(
       `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date
-       FROM compoff_earned c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
+       FROM compoff_transactions c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
        WHERE c.status='Pending_TL' AND e.tl_id=? ORDER BY c.worked_date DESC`,
       [tlUser.emp_id],
     );
@@ -5481,7 +6059,7 @@ app.get("/compoff/earn/pending-manager", async (req, res) => {
   try {
     const rows = await dbAll(
       `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date
-       FROM compoff_earned c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
+       FROM compoff_transactions c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
        WHERE c.status='Pending_Manager' ORDER BY c.created_at ASC`,
     );
     res.json({ success: true, data: rows });
@@ -5542,7 +6120,7 @@ app.post("/compoff/avail", async (req, res) => {
     let resolvedCompoffId = compoff_id || null;
     if (compoff_id) {
       const earnRecord = await dbGet(
-        `SELECT compoff_id, days_earned, expiry_date FROM compoff_earned WHERE compoff_id=? AND emp_id=? AND status='Approved' AND (expiry_date IS NULL OR expiry_date >= CURDATE())`,
+        `SELECT compoff_id, days_earned, expiry_date FROM compoff_transactions WHERE compoff_id=? AND emp_id=? AND status='Approved' AND (expiry_date IS NULL OR expiry_date >= CURDATE())`,
         [compoff_id, emp_id],
       );
       if (!earnRecord)
@@ -5564,7 +6142,7 @@ app.post("/compoff/avail", async (req, res) => {
         });
     } else {
       const oldest = await dbGet(
-        `SELECT ce.compoff_id FROM compoff_earned ce WHERE ce.emp_id=? AND ce.status='Approved' AND (ce.expiry_date IS NULL OR ce.expiry_date >= CURDATE()) AND (ce.days_earned - IFNULL((SELECT SUM(ca.days_used) FROM compoff_availed ca WHERE ca.compoff_id=ce.compoff_id AND ca.status='Approved'),0)) >= ? ORDER BY ce.expiry_date ASC, ce.worked_date ASC LIMIT 1`,
+        `SELECT ce.compoff_id FROM compoff_transactions ce WHERE ce.emp_id=? AND ce.status='Approved' AND (ce.expiry_date IS NULL OR ce.expiry_date >= CURDATE()) AND (ce.days_earned - IFNULL((SELECT SUM(ca.days_used) FROM compoff_availed ca WHERE ca.compoff_id=ce.compoff_id AND ca.status='Approved'),0)) >= ? ORDER BY ce.expiry_date ASC, ce.worked_date ASC LIMIT 1`,
         [emp_id, days_used],
       );
       if (!oldest)
@@ -5611,7 +6189,7 @@ app.get("/compoff/avail", async (req, res) => {
   if (!emp_id)
     return res.status(400).json({ success: false, message: "emp_id required" });
   try {
-    let sql = `SELECT ca.*, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type, ce.expiry_date FROM compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id WHERE ca.emp_id=?`;
+    let sql = `SELECT ca.*, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type, ce.expiry_date FROM compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id WHERE ca.emp_id=?`;
     const params = [emp_id];
     if (status) {
       sql += " AND ca.status=?";
@@ -5741,7 +6319,7 @@ app.get("/compoff/avail/pending-tl", async (req, res) => {
       return res.status(404).json({ success: false, message: "TL not found" });
     const rows = await dbAll(
       `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type
-       FROM compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
+       FROM compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
        WHERE ca.status='Pending_TL' AND e.tl_id=? ORDER BY ca.avail_date ASC`,
       [tlUser.emp_id],
     );
@@ -5755,7 +6333,7 @@ app.get("/compoff/avail/pending-manager", async (req, res) => {
   try {
     const rows = await dbAll(
       `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type
-       FROM compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
+       FROM compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id
        WHERE ca.status='Pending_Manager' ORDER BY ca.created_at ASC`,
     );
     res.json({ success: true, data: rows });
@@ -5767,7 +6345,7 @@ app.get("/compoff/avail/pending-manager", async (req, res) => {
 app.get("/compoff/earn/all-history", async (req, res) => {
   const { status, from, to, emp_id } = req.query;
   try {
-    let sql = `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date FROM compoff_earned c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id WHERE 1=1`;
+    let sql = `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date FROM compoff_transactions c JOIN employee_master e ON c.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id WHERE 1=1`;
     const params = [];
     if (emp_id) {
       sql += " AND c.emp_id=?";
@@ -5796,7 +6374,7 @@ app.get("/compoff/earn/all-history", async (req, res) => {
 app.get("/compoff/avail/all-history", async (req, res) => {
   const { status, from, to, emp_id } = req.query;
   try {
-    let sql = `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type FROM compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id WHERE 1=1`;
+    let sql = `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, d.department_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type FROM compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id LEFT JOIN department_master d ON e.department_id=d.department_id WHERE 1=1`;
     const params = [];
     if (emp_id) {
       sql += " AND ca.emp_id=?";
@@ -5836,7 +6414,7 @@ app.get("/compoff/earn/tl-history", async (req, res) => {
     if (!tlUser)
       return res.status(404).json({ success: false, message: "TL not found" });
     const rows = await dbAll(
-      `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date FROM compoff_earned c JOIN employee_master e ON c.emp_id=e.emp_id WHERE e.tl_id=? ORDER BY c.worked_date DESC`,
+      `SELECT c.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, DATE_FORMAT(c.worked_date,'%Y-%m-%d') AS worked_date, DATE_FORMAT(c.expiry_date,'%Y-%m-%d') AS expiry_date FROM compoff_transactions c JOIN employee_master e ON c.emp_id=e.emp_id WHERE e.tl_id=? ORDER BY c.worked_date DESC`,
       [tlUser.emp_id],
     );
     res.json({ success: true, data: rows });
@@ -5859,7 +6437,7 @@ app.get("/compoff/avail/tl-history", async (req, res) => {
     if (!tlUser)
       return res.status(404).json({ success: false, message: "TL not found" });
     const rows = await dbAll(
-      `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type FROM compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id WHERE e.tl_id=? ORDER BY ca.avail_date DESC`,
+      `SELECT ca.*, CONCAT(e.first_name,' ',e.last_name) AS employee_name, DATE_FORMAT(ca.avail_date,'%Y-%m-%d') AS avail_date, DATE_FORMAT(ce.worked_date,'%Y-%m-%d') AS worked_date, ce.day_type FROM compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id JOIN employee_master e ON ca.emp_id=e.emp_id WHERE e.tl_id=? ORDER BY ca.avail_date DESC`,
       [tlUser.emp_id],
     );
     res.json({ success: true, data: rows });
@@ -5871,10 +6449,10 @@ app.get("/compoff/avail/tl-history", async (req, res) => {
 app.post("/compoff/expire", async (req, res) => {
   try {
     const result = await dbRun(
-      `UPDATE compoff_earned SET status='Expired', updated_at=NOW() WHERE status='Approved' AND expiry_date IS NOT NULL AND expiry_date < CURDATE()`,
+      `UPDATE compoff_transactions SET status='Expired', updated_at=NOW() WHERE status='Approved' AND expiry_date IS NOT NULL AND expiry_date < CURDATE()`,
     );
     const cancelledAvails = await dbRun(
-      `UPDATE compoff_availed ca JOIN compoff_earned ce ON ca.compoff_id=ce.compoff_id SET ca.status='Cancelled', ca.updated_at=NOW() WHERE ce.status='Expired' AND ca.status IN ('Pending_TL','Pending_Manager')`,
+      `UPDATE compoff_availed ca JOIN compoff_transactions ce ON ca.compoff_id=ce.compoff_id SET ca.status='Cancelled', ca.updated_at=NOW() WHERE ce.status='Expired' AND ca.status IN ('Pending_TL','Pending_Manager')`,
     );
     res.json({
       success: true,
@@ -5890,7 +6468,7 @@ app.post("/compoff/expire", async (req, res) => {
 app.get("/compoff/pending-count", async (req, res) => {
   try {
     const earnRow = await dbGet(
-      `SELECT COUNT(*) AS count FROM compoff_earned WHERE status IN ('Pending_TL','Pending_Manager')`,
+      `SELECT COUNT(*) AS count FROM compoff_transactions WHERE status IN ('Pending_TL','Pending_Manager')`,
     );
     const availRow = await dbGet(
       `SELECT COUNT(*) AS count FROM compoff_availed WHERE status IN ('Pending_TL','Pending_Manager')`,
@@ -5976,18 +6554,126 @@ app.get("/debug/tl-leaves", async (req, res) => {
 
 // ─── CHECK COMP-OFF ELIGIBILITY FOR LEAVE APPLY ───────────────────────────
 app.get("/employees/:empId/compoff-eligible", async (req, res) => {
+  const { empId } = req.params;
   try {
-    const balance = await getCompoffBalance(req.params.empId);
-    res.json({
+    const earnedRow = await dbGet(
+      `SELECT IFNULL(SUM(days), 0) AS total
+       FROM compoff_transactions
+       WHERE emp_id = ?
+         AND type = 'EARNED'
+         AND status = 'Approved'
+         AND (expiry_date IS NULL OR expiry_date >= CURDATE())`,
+      [empId],
+    );
+
+    const usedRow = await dbGet(
+      `SELECT IFNULL(SUM(days), 0) AS total
+       FROM compoff_transactions
+       WHERE emp_id = ?
+         AND type = 'USED'
+         AND status = 'Approved'`,
+      [empId],
+    );
+
+    // ✅ Also subtract Comp-Off days used via leave_master
+    const leaveUsedRow = await dbGet(
+      `SELECT IFNULL(SUM(number_of_days), 0) AS total
+       FROM leave_master
+       WHERE emp_id = ?
+         AND leave_type = 'Comp-Off'
+         AND status = 'Approved'`,
+      [empId],
+    );
+
+    const earned = parseFloat(earnedRow?.total ?? 0);
+    const used = parseFloat(usedRow?.total ?? 0);
+    const leaveUsed = parseFloat(leaveUsedRow?.total ?? 0);
+    const available = Math.max(
+      parseFloat((earned - used - leaveUsed).toFixed(1)),
+      0,
+    );
+
+    return res.json({
       success: true,
-      eligible: balance.available > 0,
-      available: balance.available,
+      eligible: available > 0,
+      available: available,
+      earned,
+      used: used + leaveUsed,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error("[compoff-eligible]", err.message);
+    return res.json({ success: true, eligible: false, available: 0 });
   }
 });
 
+// ─── MONTH SUMMARY (holidays + leaves + compoff) ──────────────────────────
+app.get("/attendance/month-summary/:empId", async (req, res) => {
+  const { empId } = req.params;
+  const { year, month } = req.query;
+
+  if (!year || !month) {
+    return res.status(400).json({ message: "year and month required" });
+  }
+
+  try {
+    // ── Holidays ─────────────────────────────────────────────
+    const holidays = await dbAll(
+      `SELECT DATE_FORMAT(holiday_date, '%Y-%m-%d') AS date,
+              holiday_name,
+              holiday_type
+       FROM holiday_master
+       WHERE YEAR(holiday_date) = ?
+         AND MONTH(holiday_date) = ?
+         AND holiday_type IN ('National', 'Public')
+       ORDER BY holiday_date ASC`,
+      [year, month],
+    );
+
+    // ── Leaves (FIXED OVERLAP LOGIC) ─────────────────────────
+    const leaves = await dbAll(
+      `SELECT DATE_FORMAT(leave_start_date, '%Y-%m-%d') AS from_date,
+              DATE_FORMAT(leave_end_date, '%Y-%m-%d') AS to_date,
+              leave_type,
+              number_of_days,
+              status
+       FROM leave_master
+       WHERE emp_id = ?
+         AND status IN ('Approved', 'Pending_TL', 'Pending_Manager')
+         AND leave_start_date <= LAST_DAY(CONCAT(?, '-', ?, '-01'))
+         AND leave_end_date >= CONCAT(?, '-', ?, '-01')
+       ORDER BY leave_start_date ASC`,
+      [empId, year, month, year, month],
+    );
+
+    // ── Comp-offs ───────────────────────────────────────────
+    const compoffs = await dbAll(
+      `SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS date,
+          reason,
+          status,
+          days AS days_earned   -- ✅ mapped correctly
+   FROM compoff_transactions
+   WHERE emp_id = ?
+     AND type = 'EARNED'       -- ✅ IMPORTANT
+     AND YEAR(work_date) = ?
+     AND MONTH(work_date) = ?
+     AND status = 'Approved'
+   ORDER BY work_date ASC`,
+      [empId, year, month],
+    );
+
+    res.json({
+      success: true,
+      holidays,
+      leaves,
+      compoffs,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
 // Runs at 00:01 IST on Jan 1 every year (IST = UTC+5:30, so 18:31 UTC Dec 31)
 cron.schedule(
   "31 18 31 12 *",

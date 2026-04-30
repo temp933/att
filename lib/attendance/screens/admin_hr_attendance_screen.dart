@@ -1,3 +1,4 @@
+import 'admin_force_close_attendance_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'admin_attendance_report.dart';
@@ -37,7 +38,8 @@ class _Screen {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 class AdminHrAttendanceScreen extends StatefulWidget {
-  const AdminHrAttendanceScreen({super.key});
+  final int loginId;
+  const AdminHrAttendanceScreen({super.key, required this.loginId});
   @override
   State<AdminHrAttendanceScreen> createState() =>
       _AdminHrAttendanceScreenState();
@@ -113,6 +115,16 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
     }
   }
 
+  Future<void> _openForceClose() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminForceCloseScreen(loginId: widget.loginId),
+      ),
+    );
+    await _loadAttendance();
+  }
+
   void _applyFilter() {
     final search = _searchCtrl.text.toLowerCase();
     _filteredRecords = _allRecords.where((e) {
@@ -186,6 +198,15 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
                   ],
                 ),
               ),
+              // ── Force Close Sessions button ──────────────────────────────
+              IconButton(
+                tooltip: 'Close Open Sessions',
+                icon: const Icon(
+                  Icons.lock_clock_rounded,
+                  color: Color(0xFFEF4444),
+                ),
+                onPressed: _openForceClose,
+              ),
               IconButton(
                 tooltip: 'Download Report',
                 icon: const Icon(Icons.download_rounded, color: Colors.black),
@@ -202,7 +223,6 @@ class _AdminHrAttendanceScreenState extends State<AdminHrAttendanceScreen>
       ),
     ),
   );
-
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {

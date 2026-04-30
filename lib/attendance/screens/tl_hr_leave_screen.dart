@@ -23,7 +23,6 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
   String? leaveType;
   String? reason;
   int? editingLeaveId;
-
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
 
@@ -211,23 +210,28 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
     );
   }
 
+  static int _parseDays(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.ceil(); // 0.5 → 1, 1.0 → 1
+    if (value is String) {
+      // handles "1", "1.0", "0.5"
+      final d = double.tryParse(value);
+      if (d != null) return d.ceil();
+    }
+    return 0;
+  }
+
   // ─── Summary computations ──────────────────────────────────────────────────
   int get _approvedDays => leaves
       .where((e) => e['status'] == 'Approved')
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] ?? 0) as int);
-
+      .fold<int>(0, (s, e) => s + _parseDays(e['number_of_days']));
   int get _remainingDays =>
       (_totalAllowed - _approvedDays).clamp(0, _totalAllowed);
 
   // Pending = any status still awaiting action (TL or Manager queue)
-  int get _pendingCount => leaves
-      .where(
-        (e) =>
-            e['status'] == 'Pending_TL' ||
-            e['status'] == 'Pending_Manager' ||
-            e['status'] == 'Pending_HR', // legacy records
-      )
-      .length;
+  int get _pendingCount =>
+      leaves.where((e) => e['status'] == 'Pending_Manager').length;
 
   // ─── Root ──────────────────────────────────────────────────────────────────
   @override
@@ -292,10 +296,10 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
               child: _LeaveCard(
                 leave: leaves[i],
                 resolvePerson: _resolvePerson,
-                onEdit: leaves[i]['status'] == 'Pending_TL'
+                onEdit: leaves[i]['status'] == 'Pending_Manager'
                     ? () => _openEdit(leaves[i])
                     : null,
-                onCancel: leaves[i]['status'] == 'Pending_TL'
+                onCancel: leaves[i]['status'] == 'Pending_Manager'
                     ? (r) => cancelLeave(leaves[i]['leave_id'], r)
                     : null,
               ),
@@ -312,10 +316,10 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
       (i) => _LeaveCard(
         leave: leaves[i],
         resolvePerson: _resolvePerson,
-        onEdit: leaves[i]['status'] == 'Pending_TL'
+        onEdit: leaves[i]['status'] == 'Pending_Manager'
             ? () => _openEdit(leaves[i])
             : null,
-        onCancel: leaves[i]['status'] == 'Pending_TL'
+        onCancel: leaves[i]['status'] == 'Pending_Manager'
             ? (r) => cancelLeave(leaves[i]['leave_id'], r)
             : null,
       ),
@@ -369,6 +373,39 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
   );
 
   // ─── Summary Bar ───────────────────────────────────────────────────────────
+  // Widget _buildSummaryBar(Responsive r) => Container(
+  //   color: _primary,
+  //   padding: EdgeInsets.fromLTRB(r.hPad, 0, r.hPad, 20),
+  //   child: Center(
+  //     child: ConstrainedBox(
+  //       constraints: BoxConstraints(maxWidth: r.contentMaxWidth),
+  //       child: Container(
+  //         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+  //         decoration: BoxDecoration(
+  //           color: Colors.white.withOpacity(0.12),
+  //           borderRadius: BorderRadius.circular(14),
+  //           border: Border.all(color: Colors.white.withOpacity(0.15)),
+  //         ),
+  //         child: Row(
+  //           children: [
+  //             _statItem('$_totalAllowed', 'Total', Colors.white),
+  //             _vDiv(),
+  //             _statItem(
+  //               '$_remainingDays',
+  //               'Remaining',
+  //               const Color(0xFF6EE7B7),
+  //             ),
+  //             _vDiv(),
+  //             _statItem('$_approvedDays', 'Used', const Color(0xFFFDE68A)),
+  //             _vDiv(),
+  //             _statItem('$_pendingCount', 'Pending', Colors.white70),
+  //           ],
+  //         ),
+  //       ),
+  //     ),
+  //   ),
+  // );
+
   Widget _buildSummaryBar(Responsive r) => Container(
     color: _primary,
     padding: EdgeInsets.fromLTRB(r.hPad, 0, r.hPad, 20),
@@ -394,7 +431,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
               _vDiv(),
               _statItem('$_approvedDays', 'Used', const Color(0xFFFDE68A)),
               _vDiv(),
-              _statItem('$_pendingCount', 'Pending', Colors.white70),
+              _statItem('${leaves.length}', 'Records', Colors.white70),
             ],
           ),
         ),
@@ -634,6 +671,7 @@ class _TL_HR_LeaveScreenState extends State<TL_HR_LeaveScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _ApplyLeaveSheet(
+        employeeId: widget.employeeId,
         isEdit: editingLeaveId != null,
         initialLeaveType: leaveType,
         initialFromDate: fromDate,
@@ -797,10 +835,22 @@ class _LeaveCardState extends State<_LeaveCard> {
     }
   }
 
+  static int _parseDays(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.ceil(); // 0.5 → 1, 1.0 → 1
+    if (value is String) {
+      // handles "1", "1.0", "0.5"
+      final d = double.tryParse(value);
+      if (d != null) return d.ceil();
+    }
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final leave = widget.leave;
-    final status = leave['status'] as String? ?? 'Pending_TL';
+    final status = leave['status'] as String? ?? 'Pending_Manager';
     final cfg =
         _statusCfg[status] ??
         {
@@ -905,7 +955,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                                   borderRadius: BorderRadius.circular(5),
                                 ),
                                 child: Text(
-                                  '${leave['number_of_days']}d',
+                                  '${_parseDays(leave['number_of_days'])}d',
                                   style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
@@ -1000,7 +1050,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                 iconColor: _primary,
                 title: 'Duration',
                 content:
-                    '${leave['number_of_days']} day${leave['number_of_days'] == 1 ? '' : 's'}'
+                    '${_parseDays(leave['number_of_days'])} day${_parseDays(leave['number_of_days']) == 1 ? '' : 's'}'
                     '  ·  ${_fmtDate(leave['leave_start_date'])}  →  ${_fmtDate(leave['leave_end_date'])}',
               ),
               const SizedBox(height: 10),
@@ -1416,6 +1466,7 @@ class _LeaveCardState extends State<_LeaveCard> {
 // Apply Leave Bottom Sheet
 // ═══════════════════════════════════════════════════════════════════════════════
 class _ApplyLeaveSheet extends StatefulWidget {
+  final String employeeId;
   final bool isEdit;
   final String? initialLeaveType;
   final DateTime? initialFromDate;
@@ -1424,6 +1475,7 @@ class _ApplyLeaveSheet extends StatefulWidget {
   final Function(String, DateTime, DateTime, String) onSubmit;
 
   const _ApplyLeaveSheet({
+    required this.employeeId,
     required this.isEdit,
     this.initialLeaveType,
     this.initialFromDate,
@@ -1446,6 +1498,10 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   late DateTime? toDate;
   late String reason;
 
+  List<Map<String, dynamic>> _leaveOptions = [];
+  bool _loadingBalance = true;
+  Map<String, dynamic>? _selectedTypeInfo;
+
   @override
   void initState() {
     super.initState();
@@ -1453,12 +1509,137 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     fromDate = widget.initialFromDate;
     toDate = widget.initialToDate;
     reason = widget.initialReason ?? '';
+    _fetchLeaveBalance();
   }
 
+  Future<void> _fetchLeaveBalance() async {
+    try {
+      final res = await ApiClient.get(
+        '/employees/${widget.employeeId}/leave-balance',
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['success'] == true) {
+          final List balances = data['data'] as List;
+          final Map<String, Map<String, dynamic>> balMap = {
+            for (final b in balances) b['leave_type'] as String: b,
+          };
+          final options = <Map<String, dynamic>>[];
+
+          final casual = balMap['Casual'];
+          if (casual != null) {
+            final rem =
+                (casual['remaining_this_month'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Casual',
+              'label': 'Casual Leave',
+              'icon': Icons.beach_access_rounded,
+              'remaining': rem,
+              'has_balance': rem > 0,
+              'subtitle': rem > 0
+                  ? '${rem.toStringAsFixed(1)} day${rem == 1.0 ? '' : 's'} left this month'
+                  : 'No balance this month',
+            });
+          }
+
+          final sick = balMap['Sick'];
+          if (sick != null) {
+            final rem =
+                (sick['remaining_this_month'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Sick',
+              'label': 'Sick Leave',
+              'icon': Icons.sick_rounded,
+              'remaining': rem,
+              'has_balance': rem > 0,
+              'subtitle': rem > 0
+                  ? '${rem.toStringAsFixed(1)} day${rem == 1.0 ? '' : 's'} left this month'
+                  : 'No balance this month',
+            });
+          }
+
+          final paid = balMap['Paid'];
+          if (paid != null) {
+            final isUnlimited = paid['is_unlimited'] == true;
+            final rem = isUnlimited
+                ? 999.0
+                : (paid['remaining_days'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Paid',
+              'label': 'Paid Leave',
+              'icon': Icons.event_available_rounded,
+              'remaining': rem,
+              'has_balance': isUnlimited || rem > 0,
+              'subtitle': isUnlimited
+                  ? 'Unlimited'
+                  : '${rem.toStringAsFixed(1)} days left',
+            });
+          }
+
+          if (mounted) {
+            setState(() {
+              _leaveOptions = options.isEmpty ? _fallbackOptions() : options;
+              _loadingBalance = false;
+            });
+          }
+          return;
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _leaveOptions = _fallbackOptions();
+        _loadingBalance = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _fallbackOptions() => [
+    {
+      'type': 'Casual',
+      'label': 'Casual Leave',
+      'icon': Icons.beach_access_rounded,
+      'remaining': 0.0,
+      'has_balance': false,
+      'subtitle': 'Unable to load balance',
+    },
+    {
+      'type': 'Sick',
+      'label': 'Sick Leave',
+      'icon': Icons.sick_rounded,
+      'remaining': 0.0,
+      'has_balance': false,
+      'subtitle': 'Unable to load balance',
+    },
+    {
+      'type': 'Paid',
+      'label': 'Paid Leave',
+      'icon': Icons.event_available_rounded,
+      'remaining': 999.0,
+      'has_balance': true,
+      'subtitle': 'Unlimited',
+    },
+  ];
   String _fmt(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/'
       '${d.month.toString().padLeft(2, '0')}/'
       '${d.year}';
+
+  Color _typeColor(String type) {
+    switch (type) {
+      case 'Casual':
+        return Colors.orange;
+      case 'Sick':
+        return Colors.red;
+      case 'Paid':
+        return Colors.green;
+      case 'CompOff':
+        return Colors.purple;
+      default:
+        return Colors.blue;
+    }
+  }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -1490,200 +1671,266 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           top: 16,
           bottom: MediaQuery.of(context).viewInsets.bottom + 28,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              widget.isEdit ? 'Edit Leave Request' : 'Apply for Leave',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _textDark,
-              ),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              'Fill in the details below',
-              style: TextStyle(fontSize: 13, color: _textMid),
-            ),
-            const SizedBox(height: 20),
-            DropdownButtonFormField<String>(
-              initialValue: leaveType,
-              decoration: InputDecoration(
-                labelText: 'Leave Type *',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 16),
+              Text(
+                widget.isEdit ? 'Edit Leave Request' : 'Apply for Leave',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _textDark,
                 ),
               ),
-              items: const [
-                DropdownMenuItem(value: 'Casual', child: Text('Casual Leave')),
-                DropdownMenuItem(value: 'Sick', child: Text('Sick Leave')),
-                DropdownMenuItem(value: 'Paid', child: Text('Paid Leave')),
-              ],
-              onChanged: (v) => setState(() => leaveType = v),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _datePicker(
-                    label: 'From Date *',
-                    value: fromDate,
-                    onPick: () async {
-                      final p = await showDatePicker(
-                        context: context,
-                        initialDate: fromDate ?? DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime(DateTime.now().year + 2),
-                        builder: (ctx, child) => Theme(
-                          data: Theme.of(ctx).copyWith(
-                            colorScheme: const ColorScheme.light(
-                              primary: _primary,
-                            ),
-                          ),
-                          child: child!,
+              const SizedBox(height: 2),
+              const Text(
+                'Your leave goes to Manager for approval',
+                style: TextStyle(fontSize: 13, color: _textMid),
+              ),
+              const SizedBox(height: 20),
+              if (_loadingBalance)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: CircularProgressIndicator(
+                      color: _primary,
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _leaveOptions.map((opt) {
+                    final type = opt['type'] as String;
+                    final label = opt['label'] as String;
+                    final icon = opt['icon'] as IconData;
+                    final subtitle = opt['subtitle'] as String;
+                    final noBalance = opt['has_balance'] == false;
+                    final selected = leaveType == type;
+                    final color = _typeColor(type);
+
+                    return GestureDetector(
+                      onTap: noBalance
+                          ? null
+                          : () => setState(() {
+                              leaveType = type;
+                              _selectedTypeInfo = opt;
+                            }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: (MediaQuery.of(context).size.width - 40 - 8) / 2,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                      );
-                      if (p != null) {
-                        setState(() {
-                          fromDate = p;
-                          toDate = null;
-                        });
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _datePicker(
-                    label: 'To Date *',
-                    value: toDate,
-                    enabled: fromDate != null,
-                    onPick: fromDate == null
-                        ? null
-                        : () async {
-                            final p = await showDatePicker(
-                              context: context,
-                              initialDate: toDate ?? fromDate!,
-                              firstDate: fromDate!,
-                              lastDate: DateTime(DateTime.now().year + 2),
-                              builder: (ctx, child) => Theme(
-                                data: Theme.of(ctx).copyWith(
-                                  colorScheme: const ColorScheme.light(
-                                    primary: _primary,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? color.withOpacity(0.08)
+                              : noBalance
+                              ? const Color(0xFFF8FAFC)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected ? color : const Color(0xFFE2E8F0),
+                            width: selected ? 1.8 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              icon,
+                              size: 16,
+                              color: noBalance ? Colors.grey : color,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: noBalance
+                                          ? Colors.grey
+                                          : Colors.black,
+                                    ),
                                   ),
-                                ),
-                                child: child!,
+                                  Text(
+                                    subtitle,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: noBalance ? Colors.grey : color,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            );
-                            if (p != null) setState(() => toDate = p);
-                          },
-                  ),
+                            ),
+                            if (selected)
+                              Icon(Icons.check_circle, size: 16, color: color),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              ],
-            ),
-            if (fromDate != null && toDate != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Row(
                 children: [
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
+                  Expanded(
+                    child: _datePicker(
+                      label: 'From Date *',
+                      value: fromDate,
+                      onPick: () async {
+                        final p = await showDatePicker(
+                          context: context,
+                          initialDate: fromDate ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(DateTime.now().year + 2),
+                          builder: (ctx, child) => Theme(
+                            data: Theme.of(ctx).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: _primary,
+                              ),
+                            ),
+                            child: child!,
+                          ),
+                        );
+                        if (p != null) {
+                          setState(() {
+                            fromDate = p;
+                            toDate = null;
+                          });
+                        }
+                      },
                     ),
-                    decoration: BoxDecoration(
-                      color: _primary.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${toDate!.difference(fromDate!).inDays + 1} day(s)',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: _primary,
-                      ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _datePicker(
+                      label: 'To Date *',
+                      value: toDate,
+                      enabled: fromDate != null,
+                      onPick: fromDate == null
+                          ? null
+                          : () async {
+                              final p = await showDatePicker(
+                                context: context,
+                                initialDate: toDate ?? fromDate!,
+                                firstDate: fromDate!,
+                                lastDate: DateTime(DateTime.now().year + 2),
+                                builder: (ctx, child) => Theme(
+                                  data: Theme.of(ctx).copyWith(
+                                    colorScheme: const ColorScheme.light(
+                                      primary: _primary,
+                                    ),
+                                  ),
+                                  child: child!,
+                                ),
+                              );
+                              if (p != null) setState(() => toDate = p);
+                            },
                     ),
                   ),
                 ],
               ),
+              if (fromDate != null && toDate != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${toDate!.difference(fromDate!).inDays + 1} day(s)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: reason,
+                maxLines: 3,
+                onChanged: (v) => reason = v,
+                decoration: InputDecoration(
+                  labelText: 'Reason *',
+                  alignLabelWithHint: true,
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () {
+                    if (leaveType == null) return _snack('Select leave type');
+                    if (fromDate == null) return _snack('Select from date');
+                    if (toDate == null) return _snack('Select to date');
+                    if (reason.trim().isEmpty) return _snack('Enter reason');
+
+                    if (_selectedTypeInfo?['has_balance'] == false) {
+                      return _snack('No balance remaining');
+                    }
+
+                    widget.onSubmit(leaveType!, fromDate!, toDate!, reason);
+                  },
+                  child: Text(
+                    widget.isEdit ? 'UPDATE REQUEST' : 'SUBMIT REQUEST',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
             ],
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: reason,
-              maxLines: 3,
-              onChanged: (v) => reason = v,
-              decoration: InputDecoration(
-                labelText: 'Reason *',
-                alignLabelWithHint: true,
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () {
-                  if (leaveType == null) {
-                    return _snack('Please select leave type');
-                  }
-                  if (fromDate == null) {
-                    return _snack('Please select from date');
-                  }
-                  if (toDate == null) {
-                    return _snack('Please select to date');
-                  }
-                  if (reason.trim().isEmpty) {
-                    return _snack('Please enter a reason');
-                  }
-                  widget.onSubmit(leaveType!, fromDate!, toDate!, reason);
-                },
-                child: Text(
-                  widget.isEdit ? 'UPDATE REQUEST' : 'SUBMIT REQUEST',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

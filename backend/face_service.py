@@ -1,58 +1,4 @@
-# from fastapi import FastAPI, UploadFile, File
-# from fastapi.responses import JSONResponse
-# from deepface import DeepFace
-# from PIL import Image
-# import numpy as np
-# import io
-
-# app = FastAPI()
-
-# # ─── LOAD IMAGE ─────────────────────────────────────
-# def load_image(file_bytes):
-#     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-#     return np.array(image)
-
-# # ─── GENERATE EMBEDDING ─────────────────────────────
-# def generate_embedding(image_np):
-#     try:
-#         result = DeepFace.represent(
-#             img_path=image_np,
-#             model_name="Facenet",
-#             enforce_detection=False
-#         )
-
-#         embedding = result[0]["embedding"]
-#         return embedding, None
-
-#     except Exception as e:
-#         return None, str(e)
-
-# # ─── EMBEDDING API ──────────────────────────────────
-# @app.post("/embedding")
-# async def get_embedding(file: UploadFile = File(...)):
-#     try:
-#         contents = await file.read()
-#         image_np = load_image(contents)
-
-#         embedding, error = generate_embedding(image_np)
-
-#         if error:
-#             return JSONResponse(
-#                 status_code=400,
-#                 content={"success": False, "error": error}
-#             )
-
-#         return {
-#             "success": True,
-#             "embedding": embedding
-#         }
-
-#     except Exception as e:
-#         return JSONResponse(
-#             status_code=500,
-#             content={"success": False, "error": str(e)}
-#         )
-
+ 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from deepface import DeepFace
@@ -69,7 +15,7 @@ load_dotenv()
 
 app = FastAPI()
 
-THRESHOLD = 0.40  # Facenet threshold
+THRESHOLD = 0.30  # Facenet threshold
 
 # ─── DB CONNECTION ───────────────────────────────────
 def get_db():
@@ -192,10 +138,20 @@ async def compare_face(
                 }
             )
 
-        # ── Step 3: Compare ──
+        # ── Step 3: Compare ── 
         distance = float(cosine(ref_norm, live_norm))
-        match = distance < THRESHOLD
         confidence = max(0, min(100, int((1 - distance) * 100)))
+
+        # Two-level decision (production-safe)
+        if distance < 0.30:
+            match = True
+            reason = "Face matched"
+        elif distance < 0.45:
+            match = True
+            reason = "Face matched"
+        else:
+            match = False
+            reason = "Face not matched"
 
         print(f"[emp_id={emp_id}] [{emp_name}] Distance: {distance:.4f} → {'✅ MATCH' if match else '❌ NO MATCH'} ({confidence}%)")
 
@@ -206,7 +162,7 @@ async def compare_face(
             "confidence": confidence,
             "emp_id": emp_id,
             "emp_name": emp_name,
-            "reason": "Face matched" if match else "Face not matched"
+            "reason": reason,
         }
 
     except Exception as e:

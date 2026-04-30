@@ -21,6 +21,16 @@ class LeaveModel {
   final String? createdAt;
   final String? updatedAt;
   final bool isHalfDay;
+  int get effectiveDays {
+    if (numberOfDays > 0) return numberOfDays;
+
+    final diff = toDate.difference(fromDate).inDays + 1;
+
+    if (isHalfDay) return 1; // or 0.5 if using double
+
+    return diff > 0 ? diff : 1;
+  }
+
   final String? halfDayPeriod; // 'AM' | 'PM'
   final double? allocatedDays;
   final double? usedDays;
@@ -60,8 +70,11 @@ class LeaveModel {
   static int? _parseInt(dynamic v) =>
       v == null ? null : int.tryParse(v.toString());
 
-  static int _parseIntRequired(dynamic v, {int fallback = 0}) =>
-      v == null ? fallback : (int.tryParse(v.toString()) ?? fallback);
+  static int _parseIntRequired(dynamic v, {int fallback = 0}) {
+    if (v == null) return fallback;
+    if (v is num) return v.toInt();
+    return (double.tryParse(v.toString()) ?? fallback.toDouble()).toInt();
+  }
 
   /// Parses both "yyyy-MM-dd" (server default) and "dd.MM.yyyy" (legacy format).
   /// FIX: previous dot-branch had day/month swapped — p[0] is day, p[1] is month.
@@ -98,10 +111,15 @@ class LeaveModel {
       departmentName: json['department_name']?.toString(),
       roleName: json['role_name']?.toString(),
       leaveType: json['leave_type']?.toString() ?? '',
-      // FIX: server uses leave_start_date / leave_end_date keys in pending endpoints
-      fromDate: _parseDate(json['leave_start_date']?.toString()),
-      toDate: _parseDate(json['leave_end_date']?.toString()),
-      numberOfDays: _parseIntRequired(json['number_of_days']),
+      fromDate: _parseDate(
+        (json['from_date'] ?? json['leave_start_date'])?.toString(),
+      ),
+      toDate: _parseDate(
+        (json['to_date'] ?? json['leave_end_date'])?.toString(),
+      ),
+      numberOfDays: _parseIntRequired(
+        json['total_days'] ?? json['number_of_days'],
+      ),
       approvedBy: json['approved_by']?.toString(),
       reason: json['reason']?.toString(),
       takenDays: _parseInt(json['taken_days']),
@@ -117,7 +135,6 @@ class LeaveModel {
       halfDayPeriod: json['half_day_period']?.toString(),
     );
   }
-
   // ── fromHistoryJson ───────────────────────────────────────────────────────
   // Used by: /leaves/all-history, /leave-history
   // These endpoints return dates as 'from_date' / 'to_date' keys.
@@ -135,7 +152,7 @@ class LeaveModel {
       // FIX: history endpoints use 'from_date' / 'to_date' — not leave_start/end_date
       fromDate: _parseDate(json['from_date']?.toString()),
       toDate: _parseDate(json['to_date']?.toString()),
-      numberOfDays: _parseIntRequired(json['total_days']),
+      numberOfDays: _parseIntRequired(json['number_of_days']),
       // Use resolved name if available, raw id otherwise
       approvedBy: approvedByName ?? json['approved_by']?.toString(),
       status: json['status']?.toString() ?? '',

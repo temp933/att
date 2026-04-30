@@ -83,7 +83,8 @@ class _LeaveRecord {
       leaveEndDate: parseDate(j['leave_end_date'] ?? j['to_date']),
       numberOfDays: j['total_days'] is num
           ? (j['total_days'] as num).toInt()
-          : int.tryParse(j['total_days']?.toString() ?? '0') ?? 0,
+          : (double.tryParse(j['total_days']?.toString() ?? '0') ?? 0.0)
+                .toInt(),
       recommendedBy:
           j['recommended_by_name']?.toString() ??
           j['recommended_by']?.toString() ??
@@ -163,9 +164,22 @@ class _LeaveReportService {
     DateTime to,
   ) {
     final toEnd = DateTime(to.year, to.month, to.day, 23, 59, 59);
-    return all.where((r) {
-      return !r.leaveStartDate.isBefore(from) &&
-          !r.leaveStartDate.isAfter(toEnd);
+    return all.where((record) {
+      final leaveStart = DateTime(
+        record.leaveStartDate.year,
+        record.leaveStartDate.month,
+        record.leaveStartDate.day,
+      );
+      final leaveEnd = DateTime(
+        record.leaveEndDate.year,
+        record.leaveEndDate.month,
+        record.leaveEndDate.day,
+        23,
+        59,
+        59,
+      );
+
+      return !leaveStart.isAfter(toEnd) && !leaveEnd.isBefore(from);
     }).toList();
   }
 }
@@ -996,7 +1010,7 @@ class _LeaveReportScreenState extends State<LeaveReportScreen>
       context: context,
       initialDate: init,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(Duration(days: 60)),
       builder: (ctx, child) => Theme(
         data: Theme.of(
           ctx,

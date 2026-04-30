@@ -1,1132 +1,6 @@
-// // import 'package:url_launcher/url_launcher.dart';
-// // import 'dart:convert';
-// // import 'package:flutter/material.dart';
-// // import 'package:http/http.dart' as http;
-
-// // const String baseUrl = 'http://192.168.29.216:3000';
-
-// // class AttendanceHistoryScreen extends StatefulWidget {
-// //   final int employeeId;
-// //   const AttendanceHistoryScreen({super.key, required this.employeeId});
-
-// //   @override
-// //   State<AttendanceHistoryScreen> createState() =>
-// //       _AttendanceHistoryScreenState();
-// // }
-
-// // class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
-// //   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
-// //   Map<String, Map<String, dynamic>> _dayData = {}; // key: 'yyyy-MM-dd'
-// //   bool _loading = true;
-
-// //   @override
-// //   void initState() {
-// //     super.initState();
-// //     _loadMonth(_focusedMonth);
-// //   }
-
-// //   Future<void> _openInMaps(String siteName) async {
-// //     // Search by site name (no coordinates stored in your data)
-// //     final query = Uri.encodeComponent(siteName);
-// //     final uris = [
-// //       Uri.parse('geo:0,0?q=$query'), // Android native
-// //       Uri.parse('https://maps.google.com/?q=$query'), // fallback
-// //     ];
-
-// //     for (final uri in uris) {
-// //       if (await canLaunchUrl(uri)) {
-// //         await launchUrl(uri, mode: LaunchMode.externalApplication);
-// //         return;
-// //       }
-// //     }
-
-// //     if (mounted) {
-// //       ScaffoldMessenger.of(
-// //         context,
-// //       ).showSnackBar(const SnackBar(content: Text('Could not open maps app')));
-// //     }
-// //   }
-// //   // ── Load month data ────────────────────────────────────────────────────────
-
-// //   Future<void> _loadMonth(DateTime month) async {
-// //     setState(() => _loading = true);
-// //     try {
-// //       // Load each day of the month that has passed
-// //       final now = DateTime.now();
-// //       final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
-// //       final futures = <Future>[];
-// //       final results = <String, Map<String, dynamic>>{};
-
-// //       for (int d = 1; d <= daysInMonth; d++) {
-// //         final day = DateTime(month.year, month.month, d);
-// //         if (day.isAfter(now)) continue;
-// //         final dateStr = _fmtDate(day);
-// //         futures.add(
-// //           _fetchDay(dateStr).then((data) {
-// //             if (data != null) results[dateStr] = data;
-// //           }),
-// //         );
-// //       }
-// //       await Future.wait(futures);
-// //       if (mounted)
-// //         setState(() {
-// //           _dayData = results;
-// //           _loading = false;
-// //         });
-// //     } catch (_) {
-// //       if (mounted) setState(() => _loading = false);
-// //     }
-// //   }
-
-// //   Future<Map<String, dynamic>?> _fetchDay(String date) async {
-// //     try {
-// //       final res = await http.get(
-// //         Uri.parse('$baseUrl/attendance/by-date-detail?date=$date'),
-// //       );
-
-// //       if (res.statusCode != 200) return null;
-
-// //       final body = jsonDecode(res.body);
-// //       if (body['success'] != true) return null;
-
-// //       final List data = body['data'] ?? [];
-
-// //       final emp = data.firstWhere(
-// //         (e) => e['emp_id'] == widget.employeeId,
-// //         orElse: () => null,
-// //       );
-
-// //       if (emp == null || emp['attendance_status'] == 'ABSENT') return null;
-
-// //       int totalMinutes = 0;
-// //       bool isLate = false;
-// //       String? lateText;
-
-// //       final sessions = emp['sessions'] as List? ?? [];
-
-// //       for (int i = 0; i < sessions.length; i++) {
-// //         final s = sessions[i];
-
-// //         totalMinutes += (s['site_minutes'] as num? ?? 0).toInt();
-
-// //         // ✅ GET LATE INFO FROM FIRST SESSION
-// //         if (i == 0) {
-// //           if (s['is_late'] == true) {
-// //             isLate = true;
-
-// //             final lateMin = (s['late_minutes'] as num?)?.toInt() ?? 0;
-
-// //             if (lateMin > 0) {
-// //               final h = lateMin ~/ 60;
-// //               final m = lateMin % 60;
-
-// //               lateText = h > 0
-// //                   ? '${h}h ${m.toString().padLeft(2, '0')}m'
-// //                   : '${m}m';
-// //             }
-// //           }
-// //         }
-// //       }
-
-// //       return {
-// //         'total_minutes': totalMinutes,
-// //         'sessions': sessions,
-// //         'is_late': isLate,
-// //         'late_text': lateText,
-// //       };
-// //     } catch (e) {
-// //       return null;
-// //     }
-// //   }
-// //   // ── Fetch day detail (sessions + visits) for dialog ───────────────────────
-
-// //   Future<Map<String, dynamic>?> _fetchDayDetail(String date) async {
-// //     try {
-// //       final res = await http.get(
-// //         Uri.parse('$baseUrl/attendance/by-date-detail?date=$date'),
-// //       );
-// //       if (res.statusCode != 200) return null;
-// //       final body = jsonDecode(res.body);
-// //       if (body['success'] != true) return null;
-// //       final List data = body['data'] ?? [];
-// //       final emp = data.firstWhere(
-// //         (e) => e['emp_id'] == widget.employeeId,
-// //         orElse: () => null,
-// //       );
-// //       return emp as Map<String, dynamic>?;
-// //     } catch (_) {
-// //       return null;
-// //     }
-// //   }
-
-// //   // Also fetch late info from today-summary endpoint
-// //   Future<Map<String, dynamic>?> _fetchLateSummary(String date) async {
-// //     // Use the today-summary only for today; for history use stored session data
-// //     try {
-// //       final res = await http.get(
-// //         Uri.parse('$baseUrl/attendance/today-summary/${widget.employeeId}'),
-// //       );
-// //       if (res.statusCode == 200) return jsonDecode(res.body);
-// //     } catch (_) {}
-// //     return null;
-// //   }
-
-// //   // ── Helpers ────────────────────────────────────────────────────────────────
-
-// //   String _fmtDate(DateTime d) =>
-// //       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-// //   String _fmtTime(String? t) {
-// //     if (t == null) return '--';
-// //     // Format is 'yyyy-MM-dd HH:mm:ss' — just extract HH:mm directly
-// //     try {
-// //       if (t.contains(' ')) {
-// //         // "2026-04-06 17:52:49" → "17:52"
-// //         return t.split(' ')[1].substring(0, 5);
-// //       }
-// //       if (t.length >= 5) return t.substring(0, 5);
-// //       return t;
-// //     } catch (_) {
-// //       return '--';
-// //     }
-// //   }
-
-// //   String _fmtMinutes(int m) {
-// //     if (m == 0) return '0m';
-// //     final h = m ~/ 60;
-// //     final min = m % 60;
-// //     return h > 0 ? '${h}h ${min.toString().padLeft(2, '0')}m' : '${min}m';
-// //   }
-
-// //   String _monthLabel(DateTime d) {
-// //     const months = [
-// //       'January',
-// //       'February',
-// //       'March',
-// //       'April',
-// //       'May',
-// //       'June',
-// //       'July',
-// //       'August',
-// //       'September',
-// //       'October',
-// //       'November',
-// //       'December',
-// //     ];
-// //     return '${months[d.month - 1]} ${d.year}';
-// //   }
-
-// //   bool _isToday(DateTime d) {
-// //     final now = DateTime.now();
-// //     return d.year == now.year && d.month == now.month && d.day == now.day;
-// //   }
-
-// //   bool _isFuture(DateTime d) => d.isAfter(DateTime.now());
-
-// //   bool _isCurrentMonth(DateTime d) =>
-// //       d.year == _focusedMonth.year && d.month == _focusedMonth.month;
-
-// //   // ── Day tap ────────────────────────────────────────────────────────────────
-
-// //   void _onDayTap(DateTime day) async {
-// //     final dateStr = _fmtDate(day);
-// //     final data = _dayData[dateStr];
-
-// //     if (data == null) {
-// //       if (!_isFuture(day)) {
-// //         showDialog(context: context, builder: (_) => _buildAbsentDialog(day));
-// //       }
-// //       return;
-// //     }
-
-// //     final isLate = data['is_late'] == true;
-// //     final lateText = data['late_text'];
-
-// //     showDialog(
-// //       context: context,
-// //       barrierDismissible: false,
-// //       builder: (_) => const Center(child: CircularProgressIndicator()),
-// //     );
-
-// //     final detail = await _fetchDayDetail(dateStr);
-// //     if (!mounted) return;
-// //     Navigator.pop(context);
-
-// //     showDialog(
-// //       context: context,
-// //       builder: (_) => _buildDetailDialog(day, detail, isLate, lateText),
-// //     );
-// //   }
-// //   // ── BUILD ──────────────────────────────────────────────────────────────────
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     return Scaffold(
-// //       backgroundColor: const Color(0xFFF5F6FA),
-// //       appBar: _buildAppBar(),
-// //       body: _loading
-// //           ? const Center(child: CircularProgressIndicator(color: Colors.indigo))
-// //           : Column(
-// //               children: [
-// //                 _buildMonthNav(),
-// //                 _buildWeekdayHeader(),
-// //                 Expanded(child: _buildCalendar()),
-// //                 _buildLegend(),
-// //               ],
-// //             ),
-// //     );
-// //   }
-
-// //   PreferredSizeWidget _buildAppBar() => AppBar(
-// //     backgroundColor: Colors.white,
-// //     elevation: 0,
-// //     leading: IconButton(
-// //       icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E)),
-// //       onPressed: () => Navigator.pop(context),
-// //     ),
-// //     title: const Text(
-// //       'Attendance History',
-// //       style: TextStyle(
-// //         fontSize: 17,
-// //         fontWeight: FontWeight.w700,
-// //         color: Color(0xFF1A1A2E),
-// //       ),
-// //     ),
-// //     bottom: PreferredSize(
-// //       preferredSize: const Size.fromHeight(1),
-// //       child: Container(height: 1, color: const Color(0xFFE2E8F0)),
-// //     ),
-// //   );
-
-// //   Widget _buildMonthNav() => Container(
-// //     color: Colors.white,
-// //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-// //     child: Row(
-// //       children: [
-// //         IconButton(
-// //           onPressed: () {
-// //             final prev = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
-// //             setState(() {
-// //               _focusedMonth = prev;
-// //               _dayData = {};
-// //             });
-// //             _loadMonth(prev);
-// //           },
-// //           icon: const Icon(Icons.chevron_left_rounded, color: Colors.indigo),
-// //           padding: EdgeInsets.zero,
-// //           constraints: const BoxConstraints(),
-// //         ),
-// //         Expanded(
-// //           child: Text(
-// //             _monthLabel(_focusedMonth),
-// //             textAlign: TextAlign.center,
-// //             style: const TextStyle(
-// //               fontSize: 16,
-// //               fontWeight: FontWeight.w700,
-// //               color: Color(0xFF1A1A2E),
-// //             ),
-// //           ),
-// //         ),
-// //         IconButton(
-// //           onPressed: () {
-// //             final now = DateTime.now();
-// //             final next = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
-// //             if (next.isAfter(DateTime(now.year, now.month))) return;
-// //             setState(() {
-// //               _focusedMonth = next;
-// //               _dayData = {};
-// //             });
-// //             _loadMonth(next);
-// //           },
-// //           icon: Icon(
-// //             Icons.chevron_right_rounded,
-// //             color:
-// //                 DateTime(
-// //                   _focusedMonth.year,
-// //                   _focusedMonth.month + 1,
-// //                 ).isAfter(DateTime(DateTime.now().year, DateTime.now().month))
-// //                 ? Colors.grey.shade300
-// //                 : Colors.indigo,
-// //           ),
-// //           padding: EdgeInsets.zero,
-// //           constraints: const BoxConstraints(),
-// //         ),
-// //       ],
-// //     ),
-// //   );
-
-// //   Widget _buildWeekdayHeader() => Container(
-// //     color: Colors.white,
-// //     padding: const EdgeInsets.only(bottom: 8),
-// //     child: Row(
-// //       children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-// //           .map(
-// //             (d) => Expanded(
-// //               child: Text(
-// //                 d,
-// //                 textAlign: TextAlign.center,
-// //                 style: TextStyle(
-// //                   fontSize: 11,
-// //                   fontWeight: FontWeight.w600,
-// //                   color: (d == 'Sun')
-// //                       ? Colors.red.shade300
-// //                       : Colors.grey.shade500,
-// //                 ),
-// //               ),
-// //             ),
-// //           )
-// //           .toList(),
-// //     ),
-// //   );
-
-// //   Widget _buildCalendar() {
-// //     final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-// //     // Monday = 1, so offset = weekday - 1
-// //     final startOffset = (firstDay.weekday - 1) % 7;
-// //     final daysInMonth = DateUtils.getDaysInMonth(
-// //       _focusedMonth.year,
-// //       _focusedMonth.month,
-// //     );
-// //     final totalCells = startOffset + daysInMonth;
-// //     final rows = (totalCells / 7).ceil();
-
-// //     return GridView.builder(
-// //       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-// //       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-// //         crossAxisCount: 7,
-// //         mainAxisSpacing: 6,
-// //         crossAxisSpacing: 4,
-// //         childAspectRatio: 0.72,
-// //       ),
-// //       itemCount: rows * 7,
-// //       itemBuilder: (_, index) {
-// //         final dayNum = index - startOffset + 1;
-// //         if (dayNum < 1 || dayNum > daysInMonth) {
-// //           return const SizedBox();
-// //         }
-// //         final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
-// //         return _buildDayCell(day);
-// //       },
-// //     );
-// //   }
-
-// //   Widget _buildDayCell(DateTime day) {
-// //     final dateStr = _fmtDate(day);
-// //     final data = _dayData[dateStr];
-// //     final isToday = _isToday(day);
-// //     final isFuture = _isFuture(day);
-// //     final isSunday = day.weekday == DateTime.sunday;
-// //     final isPresent = data != null;
-// //     final totalMin = (data?['total_minutes'] as int?) ?? 0;
-// //     final isLate = data?['is_late'] == true;
-// //     final lateText = data?['late_text'] as String?;
-
-// //     Color bgColor = Colors.white;
-// //     Color textColor = const Color(0xFF1A1A2E);
-// //     Color borderColor = const Color(0xFFE2E8F0);
-
-// //     if (isFuture) {
-// //       bgColor = Colors.grey.shade50;
-// //       textColor = Colors.grey.shade300;
-// //       borderColor = Colors.transparent;
-// //     } else if (isToday) {
-// //       borderColor = Colors.indigo;
-// //     } else if (isPresent) {
-// //       bgColor = const Color(0xFFE8F5E9);
-// //       borderColor = const Color(0xFFA5D6A7);
-// //     } else if (!isFuture) {
-// //       // past absent
-// //       bgColor = const Color(0xFFFFF3F3);
-// //       borderColor = const Color(0xFFFFCDD2);
-// //     }
-
-// //     if (isSunday && !isFuture) {
-// //       textColor = Colors.red.shade400;
-// //     }
-
-// //     return GestureDetector(
-// //       onTap: isFuture ? null : () => _onDayTap(day),
-// //       child: Container(
-// //         decoration: BoxDecoration(
-// //           color: isToday ? const Color(0xFFEEF2FF) : bgColor,
-// //           borderRadius: BorderRadius.circular(10),
-// //           border: Border.all(color: borderColor, width: isToday ? 1.5 : 1),
-// //         ),
-// //         child: Column(
-// //           mainAxisAlignment: MainAxisAlignment.start,
-// //           children: [
-// //             const SizedBox(height: 6),
-// //             // Day number
-// //             Container(
-// //               width: 24,
-// //               height: 24,
-// //               decoration: isToday
-// //                   ? BoxDecoration(color: Colors.indigo, shape: BoxShape.circle)
-// //                   : null,
-// //               child: Center(
-// //                 child: Text(
-// //                   '${day.day}',
-// //                   style: TextStyle(
-// //                     fontSize: 12,
-// //                     fontWeight: FontWeight.w700,
-// //                     color: isToday ? Colors.white : textColor,
-// //                   ),
-// //                 ),
-// //               ),
-// //             ),
-// //             const SizedBox(height: 4),
-// //             if (isPresent && !isFuture) ...[
-// //               // Hours
-// //               Text(
-// //                 _fmtMinutes(totalMin),
-// //                 style: const TextStyle(
-// //                   fontSize: 9,
-// //                   fontWeight: FontWeight.w700,
-// //                   color: Color(0xFF2E7D32),
-// //                 ),
-// //                 textAlign: TextAlign.center,
-// //               ),
-// //               // Late badge
-// //               if (isLate && lateText != null) ...[
-// //                 const SizedBox(height: 2),
-// //                 Container(
-// //                   padding: const EdgeInsets.symmetric(
-// //                     horizontal: 3,
-// //                     vertical: 1,
-// //                   ),
-// //                   decoration: BoxDecoration(
-// //                     color: Colors.orange.shade100,
-// //                     borderRadius: BorderRadius.circular(4),
-// //                   ),
-// //                   child: Text(
-// //                     'Late',
-// //                     style: TextStyle(
-// //                       fontSize: 8,
-// //                       fontWeight: FontWeight.w700,
-// //                       color: Colors.orange.shade800,
-// //                     ),
-// //                   ),
-// //                 ),
-// //               ],
-// //             ] else if (!isPresent &&
-// //                 !isFuture &&
-// //                 day.weekday != DateTime.sunday) ...[
-// //               Text(
-// //                 'Absent',
-// //                 style: TextStyle(
-// //                   fontSize: 8,
-// //                   color: Colors.red.shade300,
-// //                   fontWeight: FontWeight.w600,
-// //                 ),
-// //                 textAlign: TextAlign.center,
-// //               ),
-// //             ],
-// //           ],
-// //         ),
-// //       ),
-// //     );
-// //   }
-
-// //   Widget _buildLegend() => Container(
-// //     color: Colors.white,
-// //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-// //     child: Row(
-// //       mainAxisAlignment: MainAxisAlignment.center,
-// //       children: [
-// //         _legendItem(
-// //           const Color(0xFFE8F5E9),
-// //           const Color(0xFFA5D6A7),
-// //           'Present',
-// //         ),
-// //         const SizedBox(width: 16),
-// //         _legendItem(const Color(0xFFFFF3F3), const Color(0xFFFFCDD2), 'Absent'),
-// //         const SizedBox(width: 16),
-// //         _legendItem(const Color(0xFFEEF2FF), Colors.indigo, 'Today'),
-// //         const SizedBox(width: 16),
-// //         Row(
-// //           children: [
-// //             Container(
-// //               width: 12,
-// //               height: 12,
-// //               decoration: BoxDecoration(
-// //                 color: Colors.orange.shade100,
-// //                 borderRadius: BorderRadius.circular(3),
-// //               ),
-// //             ),
-// //             const SizedBox(width: 4),
-// //             Text(
-// //               'Late',
-// //               style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-// //             ),
-// //           ],
-// //         ),
-// //       ],
-// //     ),
-// //   );
-
-// //   Widget _legendItem(Color bg, Color border, String label) => Row(
-// //     children: [
-// //       Container(
-// //         width: 12,
-// //         height: 12,
-// //         decoration: BoxDecoration(
-// //           color: bg,
-// //           border: Border.all(color: border),
-// //           borderRadius: BorderRadius.circular(3),
-// //         ),
-// //       ),
-// //       const SizedBox(width: 4),
-// //       Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
-// //     ],
-// //   );
-
-// //   // ── Dialogs ────────────────────────────────────────────────────────────────
-
-// //   Widget _buildAbsentDialog(DateTime day) => AlertDialog(
-// //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-// //     titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-// //     contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-// //     title: Row(
-// //       children: [
-// //         Container(
-// //           padding: const EdgeInsets.all(8),
-// //           decoration: BoxDecoration(
-// //             color: Colors.red.shade50,
-// //             shape: BoxShape.circle,
-// //           ),
-// //           child: Icon(
-// //             Icons.event_busy_rounded,
-// //             color: Colors.red.shade400,
-// //             size: 18,
-// //           ),
-// //         ),
-// //         const SizedBox(width: 10),
-// //         Column(
-// //           crossAxisAlignment: CrossAxisAlignment.start,
-// //           children: [
-// //             const Text(
-// //               'No Attendance',
-// //               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-// //             ),
-// //             Text(
-// //               _fullDate(day),
-// //               style: TextStyle(
-// //                 fontSize: 11,
-// //                 color: Colors.grey.shade500,
-// //                 fontWeight: FontWeight.w400,
-// //               ),
-// //             ),
-// //           ],
-// //         ),
-// //       ],
-// //     ),
-// //     content: Text(
-// //       day.weekday == DateTime.sunday
-// //           ? 'Sunday — weekly off.'
-// //           : 'No attendance recorded for this day.',
-// //       style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-// //     ),
-// //     actions: [
-// //       TextButton(
-// //         onPressed: () => Navigator.pop(context),
-// //         child: const Text('Close'),
-// //       ),
-// //     ],
-// //   );
-
-// //   Future<void> _openSiteInMaps(int? siteId, String siteName) async {
-// //     double? lat, lng;
-
-// //     // Try to get precise coordinates from backend
-// //     if (siteId != null) {
-// //       try {
-// //         final res = await http.get(
-// //           Uri.parse('$baseUrl/sites/$siteId/location'),
-// //         );
-// //         if (res.statusCode == 200) {
-// //           final body = jsonDecode(res.body);
-// //           if (body['success'] == true) {
-// //             lat = (body['lat'] as num?)?.toDouble();
-// //             lng = (body['lng'] as num?)?.toDouble();
-// //           }
-// //         }
-// //       } catch (_) {}
-// //     }
-
-// //     final Uri uri;
-// //     if (lat != null && lng != null) {
-// //       // Precise pin with label
-// //       uri = Uri.parse(
-// //         'https://www.google.com/maps/search/?api=1&query=$lat,$lng&query_place_id=${Uri.encodeComponent(siteName)}',
-// //       );
-// //     } else {
-// //       // Fallback: search by name
-// //       uri = Uri.parse(
-// //         'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(siteName)}',
-// //       );
-// //     }
-
-// //     if (await canLaunchUrl(uri)) {
-// //       await launchUrl(uri, mode: LaunchMode.externalApplication);
-// //     } else if (mounted) {
-// //       ScaffoldMessenger.of(
-// //         context,
-// //       ).showSnackBar(const SnackBar(content: Text('Could not open maps')));
-// //     }
-// //   }
-
-// //   Widget _buildDetailDialog(
-// //     DateTime day,
-// //     Map<String, dynamic>? detail,
-// //     bool isLate,
-// //     String? lateText,
-// //   ) {
-// //     final sessions = (detail?['sessions'] as List?) ?? [];
-// //     final totalMin = sessions.fold<int>(
-// //       0,
-// //       (s, e) => s + ((e['site_minutes'] as num?)?.toInt() ?? 0),
-// //     );
-
-// //     return Dialog(
-// //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-// //       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
-// //       child: Column(
-// //         mainAxisSize: MainAxisSize.min,
-// //         children: [
-// //           // ── Header ────────────────────────────────────────────────────────────
-// //           Container(
-// //             padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-// //             decoration: const BoxDecoration(
-// //               gradient: LinearGradient(
-// //                 colors: [Color(0xFF3949AB), Color(0xFF1E88E5)],
-// //                 begin: Alignment.topLeft,
-// //                 end: Alignment.bottomRight,
-// //               ),
-// //               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-// //             ),
-// //             child: Row(
-// //               children: [
-// //                 Container(
-// //                   padding: const EdgeInsets.all(8),
-// //                   decoration: BoxDecoration(
-// //                     color: Colors.white.withOpacity(0.2),
-// //                     borderRadius: BorderRadius.circular(10),
-// //                   ),
-// //                   child: const Icon(
-// //                     Icons.calendar_today_rounded,
-// //                     color: Colors.white,
-// //                     size: 18,
-// //                   ),
-// //                 ),
-// //                 const SizedBox(width: 12),
-// //                 Expanded(
-// //                   child: Column(
-// //                     crossAxisAlignment: CrossAxisAlignment.start,
-// //                     children: [
-// //                       Text(
-// //                         _fullDate(day),
-// //                         style: const TextStyle(
-// //                           fontSize: 15,
-// //                           fontWeight: FontWeight.w700,
-// //                           color: Colors.white,
-// //                         ),
-// //                       ),
-
-// //                       const SizedBox(height: 4),
-
-// //                       // ✅ LATE BADGE (NEW)
-// //                       if (isLate && lateText != null)
-// //                         Container(
-// //                           margin: const EdgeInsets.only(bottom: 4),
-// //                           padding: const EdgeInsets.symmetric(
-// //                             horizontal: 8,
-// //                             vertical: 3,
-// //                           ),
-// //                           decoration: BoxDecoration(
-// //                             color: Colors.orange.shade200,
-// //                             borderRadius: BorderRadius.circular(6),
-// //                           ),
-// //                           child: Text(
-// //                             'Late by $lateText',
-// //                             style: const TextStyle(
-// //                               fontSize: 11,
-// //                               fontWeight: FontWeight.w700,
-// //                               color: Colors.black87,
-// //                             ),
-// //                           ),
-// //                         ),
-
-// //                       Text(
-// //                         'Total: ${_fmtMinutes(totalMin)}  ·  ${sessions.length} session(s)',
-// //                         style: TextStyle(
-// //                           fontSize: 11,
-// //                           color: Colors.white.withOpacity(0.8),
-// //                         ),
-// //                       ),
-// //                     ],
-// //                   ),
-// //                 ),
-// //                 IconButton(
-// //                   onPressed: () => Navigator.pop(context),
-// //                   icon: const Icon(
-// //                     Icons.close_rounded,
-// //                     color: Colors.white,
-// //                     size: 20,
-// //                   ),
-// //                   padding: EdgeInsets.zero,
-// //                   constraints: const BoxConstraints(),
-// //                 ),
-// //               ],
-// //             ),
-// //           ),
-
-// //           // ── Sessions list ─────────────────────────────────────────────────────
-// //           ConstrainedBox(
-// //             constraints: const BoxConstraints(maxHeight: 420),
-// //             child: sessions.isEmpty
-// //                 ? const Padding(
-// //                     padding: EdgeInsets.all(32),
-// //                     child: Text(
-// //                       'No session data available.',
-// //                       textAlign: TextAlign.center,
-// //                     ),
-// //                   )
-// //                 : ListView.separated(
-// //                     shrinkWrap: true,
-// //                     padding: const EdgeInsets.all(16),
-// //                     itemCount: sessions.length,
-// //                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-// //                     itemBuilder: (_, si) {
-// //                       final sess = sessions[si];
-// //                       final visits = (sess['visits'] as List?) ?? [];
-// //                       final sessMin =
-// //                           (sess['site_minutes'] as num?)?.toInt() ?? 0;
-// //                       final sessNum = sess['session_number'] ?? (si + 1);
-
-// //                       return Container(
-// //                         decoration: BoxDecoration(
-// //                           color: const Color(0xFFF8FAFF),
-// //                           borderRadius: BorderRadius.circular(12),
-// //                           border: Border.all(color: const Color(0xFFE2E8F0)),
-// //                         ),
-// //                         child: Column(
-// //                           crossAxisAlignment: CrossAxisAlignment.start,
-// //                           children: [
-// //                             // Session header
-// //                             Container(
-// //                               padding: const EdgeInsets.symmetric(
-// //                                 horizontal: 14,
-// //                                 vertical: 10,
-// //                               ),
-// //                               decoration: BoxDecoration(
-// //                                 color: Colors.indigo.shade50,
-// //                                 borderRadius: const BorderRadius.vertical(
-// //                                   top: Radius.circular(12),
-// //                                 ),
-// //                               ),
-// //                               child: Row(
-// //                                 children: [
-// //                                   Container(
-// //                                     padding: const EdgeInsets.symmetric(
-// //                                       horizontal: 8,
-// //                                       vertical: 3,
-// //                                     ),
-// //                                     decoration: BoxDecoration(
-// //                                       color: Colors.indigo,
-// //                                       borderRadius: BorderRadius.circular(6),
-// //                                     ),
-// //                                     child: Text(
-// //                                       'Session $sessNum',
-// //                                       style: const TextStyle(
-// //                                         fontSize: 11,
-// //                                         color: Colors.white,
-// //                                         fontWeight: FontWeight.w700,
-// //                                       ),
-// //                                     ),
-// //                                   ),
-// //                                   const SizedBox(width: 8),
-// //                                   Text(
-// //                                     _fmtTime(sess['started_at']?.toString()),
-// //                                     style: TextStyle(
-// //                                       fontSize: 11,
-// //                                       color: Colors.grey.shade600,
-// //                                     ),
-// //                                   ),
-// //                                   const Text(' → '),
-// //                                   Text(
-// //                                     sess['ended_at'] != null
-// //                                         ? _fmtTime(sess['ended_at'].toString())
-// //                                         : 'Active',
-// //                                     style: TextStyle(
-// //                                       fontSize: 11,
-// //                                       color: sess['ended_at'] != null
-// //                                           ? Colors.grey.shade600
-// //                                           : Colors.green,
-// //                                       fontWeight: FontWeight.w600,
-// //                                     ),
-// //                                   ),
-// //                                   const Spacer(),
-// //                                   Text(
-// //                                     _fmtMinutes(sessMin),
-// //                                     style: const TextStyle(
-// //                                       fontSize: 12,
-// //                                       fontWeight: FontWeight.w700,
-// //                                       color: Color(0xFF2E7D32),
-// //                                     ),
-// //                                   ),
-// //                                 ],
-// //                               ),
-// //                             ),
-
-// //                             // Visits
-// //                             if (visits.isEmpty)
-// //                               Padding(
-// //                                 padding: const EdgeInsets.all(12),
-// //                                 child: Text(
-// //                                   'No site visits in this session.',
-// //                                   style: TextStyle(
-// //                                     fontSize: 12,
-// //                                     color: Colors.grey.shade500,
-// //                                   ),
-// //                                 ),
-// //                               )
-// //                             else
-// //                               ...visits.asMap().entries.map((e) {
-// //                                 final vi = e.key;
-// //                                 final v = e.value;
-// //                                 final isLast = vi == visits.length - 1;
-// //                                 final vMin =
-// //                                     (v['worked_minutes'] as num?)?.toInt() ?? 0;
-// //                                 final isOpen = v['out_time'] == null;
-// //                                 final siteName =
-// //                                     v['site_name'] as String? ?? 'Unknown Site';
-// //                                 final siteId = v['site_id'] as int?;
-
-// //                                 return InkWell(
-// //                                   onTap: () =>
-// //                                       _openSiteInMaps(siteId, siteName),
-// //                                   borderRadius: isLast
-// //                                       ? const BorderRadius.vertical(
-// //                                           bottom: Radius.circular(12),
-// //                                         )
-// //                                       : BorderRadius.zero,
-// //                                   child: Container(
-// //                                     padding: const EdgeInsets.fromLTRB(
-// //                                       14,
-// //                                       10,
-// //                                       14,
-// //                                       10,
-// //                                     ),
-// //                                     decoration: BoxDecoration(
-// //                                       border: Border(
-// //                                         top: const BorderSide(
-// //                                           color: Color(0xFFE2E8F0),
-// //                                         ),
-// //                                         bottom: isLast
-// //                                             ? BorderSide.none
-// //                                             : const BorderSide(
-// //                                                 color: Color(0xFFE2E8F0),
-// //                                               ),
-// //                                       ),
-// //                                     ),
-// //                                     child: Row(
-// //                                       children: [
-// //                                         // Status dot
-// //                                         Container(
-// //                                           width: 8,
-// //                                           height: 8,
-// //                                           decoration: BoxDecoration(
-// //                                             color: isOpen
-// //                                                 ? Colors.green
-// //                                                 : Colors.grey.shade400,
-// //                                             shape: BoxShape.circle,
-// //                                           ),
-// //                                         ),
-// //                                         const SizedBox(width: 10),
-
-// //                                         // Site name + times
-// //                                         Expanded(
-// //                                           child: Column(
-// //                                             crossAxisAlignment:
-// //                                                 CrossAxisAlignment.start,
-// //                                             children: [
-// //                                               Row(
-// //                                                 children: [
-// //                                                   Expanded(
-// //                                                     child: Text(
-// //                                                       siteName,
-// //                                                       style: const TextStyle(
-// //                                                         fontSize: 12,
-// //                                                         fontWeight:
-// //                                                             FontWeight.w600,
-// //                                                         color: Color(
-// //                                                           0xFF1A1A2E,
-// //                                                         ),
-// //                                                       ),
-// //                                                     ),
-// //                                                   ),
-// //                                                   // Map icon hint
-// //                                                   Icon(
-// //                                                     Icons.open_in_new_rounded,
-// //                                                     size: 12,
-// //                                                     color:
-// //                                                         Colors.indigo.shade300,
-// //                                                   ),
-// //                                                 ],
-// //                                               ),
-// //                                               const SizedBox(height: 3),
-// //                                               Row(
-// //                                                 children: [
-// //                                                   Icon(
-// //                                                     Icons.login_rounded,
-// //                                                     size: 10,
-// //                                                     color:
-// //                                                         Colors.green.shade600,
-// //                                                   ),
-// //                                                   const SizedBox(width: 3),
-// //                                                   Text(
-// //                                                     _fmtTime(
-// //                                                       v['in_time']?.toString(),
-// //                                                     ),
-// //                                                     style: TextStyle(
-// //                                                       fontSize: 10,
-// //                                                       color:
-// //                                                           Colors.grey.shade600,
-// //                                                     ),
-// //                                                   ),
-// //                                                   const SizedBox(width: 8),
-// //                                                   Icon(
-// //                                                     Icons.logout_rounded,
-// //                                                     size: 10,
-// //                                                     color: isOpen
-// //                                                         ? Colors.orange
-// //                                                         : Colors.red.shade400,
-// //                                                   ),
-// //                                                   const SizedBox(width: 3),
-// //                                                   Text(
-// //                                                     isOpen
-// //                                                         ? 'Active'
-// //                                                         : _fmtTime(
-// //                                                             v['out_time']
-// //                                                                 ?.toString(),
-// //                                                           ),
-// //                                                     style: TextStyle(
-// //                                                       fontSize: 10,
-// //                                                       color: isOpen
-// //                                                           ? Colors.orange
-// //                                                           : Colors
-// //                                                                 .grey
-// //                                                                 .shade600,
-// //                                                     ),
-// //                                                   ),
-// //                                                   const SizedBox(width: 6),
-// //                                                   Text(
-// //                                                     'Tap to view map',
-// //                                                     style: TextStyle(
-// //                                                       fontSize: 9,
-// //                                                       color: Colors
-// //                                                           .indigo
-// //                                                           .shade200,
-// //                                                       fontStyle:
-// //                                                           FontStyle.italic,
-// //                                                     ),
-// //                                                   ),
-// //                                                 ],
-// //                                               ),
-// //                                             ],
-// //                                           ),
-// //                                         ),
-
-// //                                         // Duration badge
-// //                                         Container(
-// //                                           padding: const EdgeInsets.symmetric(
-// //                                             horizontal: 8,
-// //                                             vertical: 3,
-// //                                           ),
-// //                                           decoration: BoxDecoration(
-// //                                             color: isOpen
-// //                                                 ? Colors.green.shade50
-// //                                                 : Colors.grey.shade100,
-// //                                             borderRadius: BorderRadius.circular(
-// //                                               6,
-// //                                             ),
-// //                                           ),
-// //                                           child: Text(
-// //                                             _fmtMinutes(vMin),
-// //                                             style: TextStyle(
-// //                                               fontSize: 10,
-// //                                               fontWeight: FontWeight.w700,
-// //                                               color: isOpen
-// //                                                   ? Colors.green.shade700
-// //                                                   : Colors.grey.shade600,
-// //                                             ),
-// //                                           ),
-// //                                         ),
-// //                                       ],
-// //                                     ),
-// //                                   ),
-// //                                 );
-// //                               }),
-// //                           ],
-// //                         ),
-// //                       );
-// //                     },
-// //                   ),
-// //           ),
-
-// //           // ── Footer ────────────────────────────────────────────────────────────
-// //           Padding(
-// //             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-// //             child: SizedBox(
-// //               width: double.infinity,
-// //               child: TextButton(
-// //                 onPressed: () => Navigator.pop(context),
-// //                 style: TextButton.styleFrom(
-// //                   backgroundColor: const Color(0xFFEEF2FF),
-// //                   shape: RoundedRectangleBorder(
-// //                     borderRadius: BorderRadius.circular(10),
-// //                   ),
-// //                   padding: const EdgeInsets.symmetric(vertical: 12),
-// //                 ),
-// //                 child: const Text(
-// //                   'Close',
-// //                   style: TextStyle(
-// //                     color: Colors.indigo,
-// //                     fontWeight: FontWeight.w600,
-// //                   ),
-// //                 ),
-// //               ),
-// //             ),
-// //           ),
-// //         ],
-// //       ),
-// //     );
-// //   }
-
-// //   String _fullDate(DateTime d) {
-// //     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-// //     const months = [
-// //       'Jan',
-// //       'Feb',
-// //       'Mar',
-// //       'Apr',
-// //       'May',
-// //       'Jun',
-// //       'Jul',
-// //       'Aug',
-// //       'Sep',
-// //       'Oct',
-// //       'Nov',
-// //       'Dec',
-// //     ];
-// //     return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]} ${d.year}';
-// //   }
-// // }
-// import 'package:url_launcher/url_launcher.dart';
 // import 'dart:convert';
 // import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
-
+// import 'package:url_launcher/url_launcher.dart';
 // import '../providers/api_client.dart';
 
 // class AttendanceHistoryScreen extends StatefulWidget {
@@ -1140,39 +14,95 @@
 
 // class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
 //     with SingleTickerProviderStateMixin {
+//   // ── Theme (matches LeaveScreen exactly) ───────────────────────────────────
+//   static const Color _primary = Color(0xFF1A56DB);
+//   static const Color _accent = Color(0xFF0E9F6E);
+//   static const Color _red = Color(0xFFEF4444);
+//   static const Color _orange = Color(0xFFF97316);
+//   static const Color _surface = Color(0xFFF0F4FF);
+//   static const Color _textDark = Color(0xFF0F172A);
+//   static const Color _textMid = Color(0xFF64748B);
+//   static const Color _textLight = Color(0xFF94A3B8);
+//   static const Color _border = Color(0xFFE2E8F0);
+
 //   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
 //   Map<String, Map<String, dynamic>> _dayData = {};
 //   bool _loading = true;
 
-//   // Summary stats
 //   int _presentDays = 0;
 //   int _absentDays = 0;
 //   int _lateDays = 0;
 //   int _totalMinutes = 0;
-
-//   late AnimationController _pulseController;
-//   late Animation<double> _pulseAnim;
+//   List<Map<String, dynamic>> _holidays = [];
+//   List<Map<String, dynamic>> _leaves = [];
+//   List<Map<String, dynamic>> _compoffs = [];
+//   late AnimationController _animCtrl;
+//   late Animation<double> _fadeAnim;
 
 //   @override
 //   void initState() {
 //     super.initState();
-//     _pulseController = AnimationController(
+//     _animCtrl = AnimationController(
 //       vsync: this,
-//       duration: const Duration(seconds: 2),
-//     )..repeat(reverse: true);
-//     _pulseAnim = Tween<double>(begin: 0.85, end: 1.0).animate(
-//       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+//       duration: const Duration(milliseconds: 500),
 //     );
+//     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
 //     _loadMonth(_focusedMonth);
 //   }
 
 //   @override
 //   void dispose() {
-//     _pulseController.dispose();
+//     _animCtrl.dispose();
 //     super.dispose();
 //   }
 
-//   // ── Load month ─────────────────────────────────────────────────────────────
+//   Future<void> _fetchMonthSummary(DateTime month) async {
+//     try {
+//       final res = await ApiClient.get(
+//         '/attendance/month-summary/${widget.employeeId}'
+//         '?year=${month.year}&month=${month.month}',
+//       );
+//       if (res.statusCode != 200) return;
+//       final body = jsonDecode(res.body);
+//       if (body['success'] != true) return;
+//       if (mounted) {
+//         setState(() {
+//           _holidays = List<Map<String, dynamic>>.from(body['holidays'] ?? []);
+//           _leaves = List<Map<String, dynamic>>.from(body['leaves'] ?? []);
+//           _compoffs = List<Map<String, dynamic>>.from(body['compoffs'] ?? []);
+//         });
+//       }
+//     } catch (_) {}
+//   }
+//   // ── Data ───────────────────────────────────────────────────────────────────
+
+//   String? _holidayName(DateTime d) {
+//     final ds = _fmtDate(d);
+//     for (final h in _holidays) {
+//       if (h['date'] == ds) return h['holiday_name'] as String?;
+//     }
+//     return null;
+//   }
+
+//   String? _leaveType(DateTime d) {
+//     final ds = _fmtDate(d);
+//     for (final l in _leaves) {
+//       final from = l['from_date'] as String?;
+//       final to = l['to_date'] as String?;
+//       if (from != null &&
+//           to != null &&
+//           ds.compareTo(from) >= 0 &&
+//           ds.compareTo(to) <= 0) {
+//         return l['leave_type'] as String?;
+//       }
+//     }
+//     return null;
+//   }
+
+//   bool _hasCompoff(DateTime d) {
+//     final ds = _fmtDate(d);
+//     return _compoffs.any((c) => c['date'] == ds && (c['days_earned'] ?? 0) > 0);
+//   }
 
 //   Future<void> _loadMonth(DateTime month) async {
 //     setState(() => _loading = true);
@@ -1193,18 +123,23 @@
 //         );
 //       }
 //       await Future.wait(futures);
+//       await _fetchMonthSummary(month);
 
-//       // Compute stats
 //       int present = 0, absent = 0, late = 0, totalMin = 0;
 //       for (int d = 1; d <= daysInMonth; d++) {
 //         final day = DateTime(month.year, month.month, d);
 //         if (day.isAfter(now)) continue;
 //         if (day.weekday == DateTime.sunday) continue;
 //         final dateStr = _fmtDate(day);
+//         final isHoliday = _holidayName(day) != null;
+//         final isLeave = _leaveType(day) != null;
+//         final isCompoff = _hasCompoff(day);
 //         if (results.containsKey(dateStr)) {
 //           present++;
 //           totalMin += (results[dateStr]!['total_minutes'] as int? ?? 0);
 //           if (results[dateStr]!['is_late'] == true) late++;
+//         } else if (isHoliday || isLeave || isCompoff) {
+//           // ✅ DO NOT count as absent
 //         } else {
 //           absent++;
 //         }
@@ -1219,6 +154,7 @@
 //           _totalMinutes = totalMin;
 //           _loading = false;
 //         });
+//         _animCtrl.forward(from: 0);
 //       }
 //     } catch (_) {
 //       if (mounted) setState(() => _loading = false);
@@ -1242,6 +178,7 @@
 //       bool isLate = false;
 //       String? lateText;
 //       final sessions = emp['sessions'] as List? ?? [];
+
 //       for (int i = 0; i < sessions.length; i++) {
 //         final s = sessions[i];
 //         totalMinutes += (s['site_minutes'] as num? ?? 0).toInt();
@@ -1275,11 +212,11 @@
 //       final body = jsonDecode(res.body);
 //       if (body['success'] != true) return null;
 //       final List data = body['data'] ?? [];
-//       final emp = data.firstWhere(
-//         (e) => e['emp_id'] == widget.employeeId,
-//         orElse: () => null,
-//       );
-//       return emp as Map<String, dynamic>?;
+//       return data.firstWhere(
+//             (e) => e['emp_id'] == widget.employeeId,
+//             orElse: () => null,
+//           )
+//           as Map<String, dynamic>?;
 //     } catch (_) {
 //       return null;
 //     }
@@ -1302,7 +239,7 @@
 //   }
 
 //   String _fmtMinutes(int m) {
-//     if (m == 0) return '0m';
+//     if (m == 0) return '--';
 //     final h = m ~/ 60;
 //     final min = m % 60;
 //     return h > 0 ? '${h}h ${min.toString().padLeft(2, '0')}m' : '${min}m';
@@ -1358,6 +295,39 @@
 //     return _presentDays / total;
 //   }
 
+//   int get _pendingCount =>
+//       0; // attendance has no pending concept — kept for symmetry
+
+//   void _showSnack(String msg, {bool success = false}) {
+//     if (!mounted) return;
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       SnackBar(
+//         content: Row(
+//           children: [
+//             Icon(
+//               success
+//                   ? Icons.check_circle_rounded
+//                   : Icons.error_outline_rounded,
+//               color: Colors.white,
+//               size: 18,
+//             ),
+//             const SizedBox(width: 8),
+//             Expanded(
+//               child: Text(
+//                 msg,
+//                 style: const TextStyle(fontWeight: FontWeight.w500),
+//               ),
+//             ),
+//           ],
+//         ),
+//         backgroundColor: success ? _accent : _red,
+//         behavior: SnackBarBehavior.floating,
+//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//         margin: const EdgeInsets.all(16),
+//       ),
+//     );
+//   }
+
 //   // ── Day tap ────────────────────────────────────────────────────────────────
 
 //   void _onDayTap(DateTime day) async {
@@ -1372,13 +342,13 @@
 //     }
 
 //     final isLate = data['is_late'] == true;
-//     final lateText = data['late_text'];
+//     final lateText = data['late_text'] as String?;
 
 //     showDialog(
 //       context: context,
 //       barrierDismissible: false,
 //       builder: (_) =>
-//           const Center(child: CircularProgressIndicator(color: Colors.indigo)),
+//           const Center(child: CircularProgressIndicator(color: _primary)),
 //     );
 
 //     final detail = await _fetchDayDetail(dateStr);
@@ -1391,7 +361,7 @@
 //     );
 //   }
 
-//   // ── MAPS ───────────────────────────────────────────────────────────────────
+//   // ── Maps ───────────────────────────────────────────────────────────────────
 
 //   Future<void> _openSiteInMaps(int? siteId, String siteName) async {
 //     double? lat, lng;
@@ -1408,335 +378,211 @@
 //       } catch (_) {}
 //     }
 
-//     final Uri uri;
-//     if (lat != null && lng != null) {
-//       uri = Uri.parse(
-//         'https://www.google.com/maps/search/?api=1&query=$lat,$lng&query_place_id=${Uri.encodeComponent(siteName)}',
-//       );
-//     } else {
-//       uri = Uri.parse(
-//         'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(siteName)}',
-//       );
-//     }
+//     final Uri uri = lat != null && lng != null
+//         ? Uri.parse(
+//             'https://www.google.com/maps/search/?api=1&query=$lat,$lng&query_place_id=${Uri.encodeComponent(siteName)}',
+//           )
+//         : Uri.parse(
+//             'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(siteName)}',
+//           );
 
 //     if (await canLaunchUrl(uri)) {
 //       await launchUrl(uri, mode: LaunchMode.externalApplication);
 //     } else if (mounted) {
-//       ScaffoldMessenger.of(
-//         context,
-//       ).showSnackBar(const SnackBar(content: Text('Could not open maps')));
+//       _showSnack('Could not open maps', success: false);
 //     }
 //   }
 
-//   // ── BUILD ──────────────────────────────────────────────────────────────────
-
 //   @override
 //   Widget build(BuildContext context) {
-//     final mq = MediaQuery.of(context);
-//     final isSmall = mq.size.width < 360;
-//     final hPad = isSmall ? 12.0 : 16.0;
-//     final safeBot = mq.padding.bottom;
-
 //     return Scaffold(
-//       backgroundColor: const Color(0xFFF5F6FA),
-//       body: SafeArea(
-//         bottom: false,
-//         child: Padding(
-//           padding: EdgeInsets.fromLTRB(hPad, hPad, hPad, 0),
-//           child: Column(
-//             children: [
-//               _buildHeader(isSmall: isSmall),
-//               const SizedBox(height: 14),
-//               if (_loading)
-//                 Expanded(
-//                   child: Center(
-//                     child: CircularProgressIndicator(color: Colors.indigo),
+//       backgroundColor: _surface,
+//       body: loading
+//           ? const Center(child: CircularProgressIndicator(color: _primary))
+//           : RefreshIndicator(
+//               onRefresh: () async => _loadMonth(_focusedMonth),
+//               color: _primary,
+//               child: CustomScrollView(
+//                 physics: const AlwaysScrollableScrollPhysics(),
+//                 slivers: [
+//                   // ── App bar — mirrors LeaveScreen _buildSliverAppBar ──────
+//                   _buildSliverAppBar(),
+
+//                   // ── Summary bar — mirrors LeaveScreen _buildSummaryBar ────
+//                   SliverToBoxAdapter(child: _buildSummaryBar()),
+
+//                   // ── Month navigator ───────────────────────────────────────
+//                   SliverToBoxAdapter(child: _buildMonthNav()),
+
+//                   // ── Calendar section header ───────────────────────────────
+//                   SliverToBoxAdapter(child: _buildCalendarHeader()),
+
+//                   // ── Weekday row ───────────────────────────────────────────
+//                   SliverToBoxAdapter(child: _buildWeekdayHeader()),
+
+//                   // ── Calendar grid ─────────────────────────────────────────
+//                   SliverPadding(
+//                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+//                     sliver: SliverToBoxAdapter(
+//                       child: FadeTransition(
+//                         opacity: _fadeAnim,
+//                         child: _buildCalendarGrid(),
+//                       ),
+//                     ),
 //                   ),
-//                 )
-//               else ...[
-//                 _buildSummaryCard(isSmall: isSmall),
-//                 const SizedBox(height: 14),
-//                 _buildMonthNav(isSmall: isSmall),
-//                 const SizedBox(height: 10),
-//                 _buildWeekdayHeader(),
-//                 const SizedBox(height: 6),
-//                 Expanded(child: _buildCalendar()),
-//                 Padding(
-//                   padding: EdgeInsets.only(top: 10, bottom: safeBot + 12),
-//                   child: _buildLegend(),
-//                 ),
-//               ],
-//             ],
-//           ),
-//         ),
-//       ),
+
+//                   // ── Legend ────────────────────────────────────────────────
+//                   SliverToBoxAdapter(child: _buildLegend()),
+
+//                   // ── Bottom padding ────────────────────────────────────────
+//                   const SliverToBoxAdapter(child: SizedBox(height: 32)),
+//                 ],
+//               ),
+//             ),
 //     );
 //   }
 
-//   // ── Header ─────────────────────────────────────────────────────────────────
+//   bool get loading => _loading;
 
-//   Widget _buildHeader({required bool isSmall}) {
-//     return Row(
-//       children: [
-//         GestureDetector(
-//           onTap: () => Navigator.pop(context),
-//           child: Container(
-//             width: 38,
-//             height: 38,
-//             decoration: BoxDecoration(
-//               color: Colors.white,
-//               borderRadius: BorderRadius.circular(12),
-//               border: Border.all(color: const Color(0xFFE2E8F0)),
-//             ),
-//             child: const Icon(
-//               Icons.arrow_back_rounded,
-//               color: Color(0xFF1A1A2E),
-//               size: 20,
-//             ),
-//           ),
+//   // ── Sliver app bar — exact LeaveScreen style ──────────────────────────────
+
+//   Widget _buildSliverAppBar() {
+//     final ratePercent = (_attendanceRate * 100).round();
+//     return SliverToBoxAdapter(
+//       child: Container(
+//         color: _primary,
+//         padding: EdgeInsets.fromLTRB(
+//           16,
+//           MediaQuery.of(context).padding.top + 8,
+//           4,
+//           12,
 //         ),
-//         const SizedBox(width: 12),
-//         Column(
-//           crossAxisAlignment: CrossAxisAlignment.start,
+//         child: Row(
 //           children: [
-//             Text(
+//             // Back button
+//             GestureDetector(
+//               onTap: () => Navigator.pop(context),
+//               child: Container(
+//                 width: 36,
+//                 height: 36,
+//                 decoration: BoxDecoration(
+//                   color: Colors.white.withValues(alpha: 0.15),
+//                   borderRadius: BorderRadius.circular(10),
+//                 ),
+//                 child: const Icon(
+//                   Icons.arrow_back_rounded,
+//                   color: Colors.white,
+//                   size: 20,
+//                 ),
+//               ),
+//             ),
+//             const SizedBox(width: 12),
+//             const Text(
 //               'Attendance History',
 //               style: TextStyle(
-//                 fontSize: isSmall ? 15 : 17,
-//                 fontWeight: FontWeight.w700,
-//                 color: const Color(0xFF1A1A2E),
+//                 fontSize: 17,
+//                 fontWeight: FontWeight.w800,
+//                 color: Colors.white,
 //               ),
 //             ),
-//             Text(
-//               _monthLabel(_focusedMonth),
-//               style: TextStyle(
-//                 fontSize: 11,
-//                 color: Colors.grey.shade500,
-//                 fontWeight: FontWeight.w500,
-//               ),
-//             ),
-//           ],
-//         ),
-//         const Spacer(),
-//         AnimatedBuilder(
-//           animation: _pulseAnim,
-//           builder: (_, __) => Transform.scale(
-//             scale: _pulseAnim.value,
-//             child: Container(
-//               width: 10,
-//               height: 10,
+//             const Spacer(),
+//             // Rate badge
+//             Container(
+//               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
 //               decoration: BoxDecoration(
-//                 shape: BoxShape.circle,
-//                 color: Colors.indigo.shade300,
-//                 boxShadow: [
-//                   BoxShadow(
-//                     color: Colors.indigo.withOpacity(0.5),
-//                     blurRadius: 6,
-//                     spreadRadius: 1,
+//                 color: Colors.white.withValues(alpha: 0.15),
+//                 borderRadius: BorderRadius.circular(20),
+//                 border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+//               ),
+//               child: Row(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Icon(
+//                     Icons.trending_up_rounded,
+//                     size: 13,
+//                     color: Colors.white,
+//                   ),
+//                   const SizedBox(width: 4),
+//                   Text(
+//                     '$ratePercent%',
+//                     style: const TextStyle(
+//                       fontSize: 12,
+//                       fontWeight: FontWeight.w700,
+//                       color: Colors.white,
+//                     ),
 //                   ),
 //                 ],
 //               ),
 //             ),
-//           ),
+//             // Refresh
+//             IconButton(
+//               icon: const Icon(
+//                 Icons.refresh_rounded,
+//                 color: Colors.white,
+//                 size: 20,
+//               ),
+//               padding: const EdgeInsets.all(8),
+//               constraints: const BoxConstraints(),
+//               onPressed: () => _loadMonth(_focusedMonth),
+//             ),
+//           ],
 //         ),
-//       ],
+//       ),
 //     );
 //   }
 
-//   // ── Summary card (mirrors StatusCard from AttendanceScreen) ───────────────
+//   // ── Summary bar — mirrors LeaveScreen _buildSummaryBar exactly ────────────
 
-//   Widget _buildSummaryCard({required bool isSmall}) {
-//     final rate = _attendanceRate;
-//     final ratePercent = (rate * 100).round();
-
-//     // Choose gradient based on attendance rate
-//     final gradient = rate >= 0.9
-//         ? const LinearGradient(
-//             colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
-//             begin: Alignment.topLeft,
-//             end: Alignment.bottomRight,
-//           )
-//         : rate >= 0.7
-//         ? const LinearGradient(
-//             colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
-//             begin: Alignment.topLeft,
-//             end: Alignment.bottomRight,
-//           )
-//         : const LinearGradient(
-//             colors: [Color(0xFFE65100), Color(0xFFFF6D00)],
-//             begin: Alignment.topLeft,
-//             end: Alignment.bottomRight,
-//           );
-
-//     final shadowColor = rate >= 0.9
-//         ? const Color(0xFF2E7D32)
-//         : rate >= 0.7
-//         ? const Color(0xFF1565C0)
-//         : const Color(0xFFE65100);
-
+//   Widget _buildSummaryBar() {
 //     return Container(
-//       decoration: BoxDecoration(
-//         gradient: gradient,
-//         borderRadius: BorderRadius.circular(20),
-//         boxShadow: [
-//           BoxShadow(
-//             color: shadowColor.withOpacity(0.35),
-//             blurRadius: 20,
-//             offset: const Offset(0, 6),
-//           ),
-//         ],
-//       ),
-//       padding: EdgeInsets.all(isSmall ? 14 : 20),
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           // Top row
-//           Row(
-//             children: [
-//               Container(
-//                 width: isSmall ? 38 : 46,
-//                 height: isSmall ? 38 : 46,
-//                 decoration: BoxDecoration(
-//                   color: Colors.white.withOpacity(0.18),
-//                   borderRadius: BorderRadius.circular(14),
-//                 ),
-//                 child: Icon(
-//                   Icons.bar_chart_rounded,
-//                   color: Colors.white,
-//                   size: isSmall ? 22 : 26,
-//                 ),
-//               ),
-//               SizedBox(width: isSmall ? 10 : 14),
-//               Expanded(
-//                 child: Column(
-//                   crossAxisAlignment: CrossAxisAlignment.start,
-//                   children: [
-//                     Text(
-//                       'Monthly Overview',
-//                       style: TextStyle(
-//                         color: Colors.white,
-//                         fontSize: isSmall ? 15 : 17,
-//                         fontWeight: FontWeight.w700,
-//                       ),
-//                     ),
-//                     const SizedBox(height: 2),
-//                     Text(
-//                       _monthLabel(_focusedMonth),
-//                       style: TextStyle(
-//                         color: Colors.white.withOpacity(0.82),
-//                         fontSize: isSmall ? 11 : 12.5,
-//                         fontWeight: FontWeight.w500,
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//               // Attendance rate circle
-//               Container(
-//                 width: 52,
-//                 height: 52,
-//                 decoration: BoxDecoration(
-//                   shape: BoxShape.circle,
-//                   color: Colors.white.withOpacity(0.18),
-//                 ),
-//                 child: Center(
-//                   child: Column(
-//                     mainAxisAlignment: MainAxisAlignment.center,
-//                     children: [
-//                       Text(
-//                         '$ratePercent%',
-//                         style: const TextStyle(
-//                           color: Colors.white,
-//                           fontSize: 15,
-//                           fontWeight: FontWeight.w800,
-//                         ),
-//                       ),
-//                       Text(
-//                         'rate',
-//                         style: TextStyle(
-//                           color: Colors.white.withOpacity(0.7),
-//                           fontSize: 9,
-//                           fontWeight: FontWeight.w500,
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-//           const SizedBox(height: 16),
-//           Container(height: 1, color: Colors.white.withOpacity(0.15)),
-//           const SizedBox(height: 14),
-//           // Stats row
-//           Row(
-//             children: [
-//               _summaryStatItem(
-//                 icon: Icons.check_circle_outline_rounded,
-//                 label: 'Present',
-//                 value: '$_presentDays',
-//                 color: Colors.white,
-//                 isSmall: isSmall,
-//               ),
-//               _verticalDivider(),
-//               _summaryStatItem(
-//                 icon: Icons.cancel_outlined,
-//                 label: 'Absent',
-//                 value: '$_absentDays',
-//                 color: Colors.white,
-//                 isSmall: isSmall,
-//               ),
-//               _verticalDivider(),
-//               _summaryStatItem(
-//                 icon: Icons.schedule_rounded,
-//                 label: 'Late',
-//                 value: '$_lateDays',
-//                 color: Colors.white,
-//                 isSmall: isSmall,
-//               ),
-//               _verticalDivider(),
-//               _summaryStatItem(
-//                 icon: Icons.timelapse_rounded,
-//                 label: 'Total',
-//                 value: _fmtMinutes(_totalMinutes),
-//                 color: Colors.white,
-//                 isSmall: isSmall,
-//               ),
-//             ],
-//           ),
-//         ],
+//       color: _primary,
+//       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+//       child: Container(
+//         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+//         decoration: BoxDecoration(
+//           color: Colors.white.withValues(alpha: 0.12),
+//           borderRadius: BorderRadius.circular(14),
+//           border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+//         ),
+//         child: Row(
+//           children: [
+//             _statItem('$_presentDays', 'Present', Colors.white),
+//             _vDiv(),
+//             _statItem('$_absentDays', 'Absent', const Color(0xFFFCA5A5)),
+//             _vDiv(),
+//             _statItem('$_lateDays', 'Late', const Color(0xFFFDE68A)),
+//             _vDiv(),
+//             _statItem(
+//               _fmtMinutes(_totalMinutes),
+//               'On-Site',
+//               const Color(0xFF6EE7B7),
+//             ),
+//           ],
+//         ),
 //       ),
 //     );
 //   }
 
-//   Widget _summaryStatItem({
-//     required IconData icon,
-//     required String label,
-//     required String value,
-//     required Color color,
-//     required bool isSmall,
-//   }) {
+//   Widget _statItem(String v, String l, Color c) {
 //     return Expanded(
 //       child: Column(
 //         children: [
-//           Icon(icon, size: isSmall ? 13 : 15, color: color.withOpacity(0.7)),
-//           const SizedBox(height: 4),
 //           Text(
-//             value,
+//             v,
 //             style: TextStyle(
-//               color: color,
-//               fontSize: isSmall ? 13 : 15,
+//               fontSize: 18,
 //               fontWeight: FontWeight.w800,
+//               color: c,
 //             ),
 //           ),
 //           const SizedBox(height: 2),
 //           Text(
-//             label,
+//             l,
 //             style: TextStyle(
-//               fontSize: 9.5,
-//               color: color.withOpacity(0.65),
+//               fontSize: 10,
+//               color: c.withValues(alpha: 0.75),
+//               letterSpacing: 0.4,
 //               fontWeight: FontWeight.w500,
-//               letterSpacing: 0.3,
 //             ),
 //           ),
 //         ],
@@ -1744,33 +590,26 @@
 //     );
 //   }
 
-//   Widget _verticalDivider() {
-//     return Container(
-//       width: 1,
-//       height: 36,
-//       color: Colors.white.withOpacity(0.2),
-//     );
-//   }
+//   Widget _vDiv() => Container(
+//     width: 1,
+//     height: 28,
+//     color: Colors.white.withValues(alpha: 0.2),
+//   );
 
-//   // ── Month nav ──────────────────────────────────────────────────────────────
+//   // ── Month navigator ────────────────────────────────────────────────────────
 
-//   Widget _buildMonthNav({required bool isSmall}) {
+//   Widget _buildMonthNav() {
 //     final now = DateTime.now();
 //     final canGoNext = !DateTime(
 //       _focusedMonth.year,
 //       _focusedMonth.month + 1,
 //     ).isAfter(DateTime(now.year, now.month));
 
-//     return Container(
-//       decoration: BoxDecoration(
-//         color: Colors.white,
-//         borderRadius: BorderRadius.circular(14),
-//         border: Border.all(color: const Color(0xFFE2E8F0)),
-//       ),
-//       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+//     return Padding(
+//       padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
 //       child: Row(
 //         children: [
-//           _navButton(
+//           _navBtn(
 //             icon: Icons.chevron_left_rounded,
 //             onTap: () {
 //               final prev = DateTime(
@@ -1783,117 +622,167 @@
 //               });
 //               _loadMonth(prev);
 //             },
-//             enabled: true,
 //           ),
 //           Expanded(
-//             child: Text(
-//               _monthLabel(_focusedMonth),
-//               textAlign: TextAlign.center,
-//               style: TextStyle(
-//                 fontSize: isSmall ? 13 : 15,
-//                 fontWeight: FontWeight.w700,
-//                 color: const Color(0xFF1A1A2E),
+//             child: Center(
+//               child: Text(
+//                 _monthLabel(_focusedMonth),
+//                 style: const TextStyle(
+//                   fontSize: 14,
+//                   fontWeight: FontWeight.w700,
+//                   color: _textDark,
+//                   letterSpacing: 0.2,
+//                 ),
 //               ),
 //             ),
 //           ),
-//           _navButton(
+//           _navBtn(
 //             icon: Icons.chevron_right_rounded,
-//             onTap: () {
-//               if (!canGoNext) return;
-//               final next = DateTime(
-//                 _focusedMonth.year,
-//                 _focusedMonth.month + 1,
-//               );
-//               setState(() {
-//                 _focusedMonth = next;
-//                 _dayData = {};
-//               });
-//               _loadMonth(next);
-//             },
-//             enabled: canGoNext,
+//             onTap: canGoNext
+//                 ? () {
+//                     final next = DateTime(
+//                       _focusedMonth.year,
+//                       _focusedMonth.month + 1,
+//                     );
+//                     setState(() {
+//                       _focusedMonth = next;
+//                       _dayData = {};
+//                     });
+//                     _loadMonth(next);
+//                   }
+//                 : null,
+//             disabled: !canGoNext,
 //           ),
 //         ],
 //       ),
 //     );
 //   }
 
-//   Widget _navButton({
+//   Widget _navBtn({
 //     required IconData icon,
-//     required VoidCallback onTap,
-//     required bool enabled,
+//     VoidCallback? onTap,
+//     bool disabled = false,
 //   }) {
 //     return GestureDetector(
-//       onTap: enabled ? onTap : null,
+//       onTap: onTap,
 //       child: Container(
-//         width: 34,
-//         height: 34,
+//         width: 36,
+//         height: 36,
 //         decoration: BoxDecoration(
-//           color: enabled ? Colors.indigo.shade50 : Colors.grey.shade50,
+//           color: disabled ? const Color(0xFFF1F5F9) : Colors.white,
 //           borderRadius: BorderRadius.circular(10),
+//           border: Border.all(color: _border),
+//           boxShadow: disabled
+//               ? null
+//               : [
+//                   BoxShadow(
+//                     color: Colors.black.withValues(alpha: 0.04),
+//                     blurRadius: 6,
+//                     offset: const Offset(0, 2),
+//                   ),
+//                 ],
 //         ),
-//         child: Icon(
-//           icon,
-//           color: enabled ? Colors.indigo : Colors.grey.shade300,
-//           size: 20,
-//         ),
+//         child: Icon(icon, size: 20, color: disabled ? _textLight : _primary),
 //       ),
 //     );
 //   }
 
-//   // ── Weekday header ─────────────────────────────────────────────────────────
+//   // ── Calendar header ───────────────────────────────────────────────────────
 
-//   Widget _buildWeekdayHeader() {
-//     return Row(
-//       children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-//           .map(
-//             (d) => Expanded(
-//               child: Text(
-//                 d,
-//                 textAlign: TextAlign.center,
-//                 style: TextStyle(
-//                   fontSize: 10,
-//                   fontWeight: FontWeight.w700,
-//                   color: (d == 'Sun')
-//                       ? Colors.red.shade300
-//                       : Colors.grey.shade400,
-//                   letterSpacing: 0.3,
-//                 ),
-//               ),
+//   Widget _buildCalendarHeader() {
+//     return Padding(
+//       padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+//       child: Row(
+//         children: [
+//           Container(
+//             width: 28,
+//             height: 28,
+//             decoration: BoxDecoration(
+//               color: _primary.withValues(alpha: 0.08),
+//               borderRadius: BorderRadius.circular(8),
 //             ),
-//           )
-//           .toList(),
+//             child: const Icon(
+//               Icons.calendar_month_rounded,
+//               color: _primary,
+//               size: 16,
+//             ),
+//           ),
+//           const SizedBox(width: 10),
+//           const Text(
+//             'Monthly Calendar',
+//             style: TextStyle(
+//               fontSize: 15,
+//               fontWeight: FontWeight.w700,
+//               color: _textDark,
+//             ),
+//           ),
+//         ],
+//       ),
 //     );
 //   }
 
-//   // ── Calendar ───────────────────────────────────────────────────────────────
+//   // ── Weekday header ────────────────────────────────────────────────────────
 
-//   Widget _buildCalendar() {
+//   Widget _buildWeekdayHeader() {
+//     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(horizontal: 16),
+//       child: Row(
+//         children: days
+//             .map(
+//               (d) => Expanded(
+//                 child: Text(
+//                   d,
+//                   textAlign: TextAlign.center,
+//                   style: TextStyle(
+//                     fontSize: 10,
+//                     fontWeight: FontWeight.w700,
+//                     color: d == 'Sun'
+//                         ? _red.withValues(alpha: 0.7)
+//                         : _textLight,
+//                     letterSpacing: 0.3,
+//                   ),
+//                 ),
+//               ),
+//             )
+//             .toList(),
+//       ),
+//     );
+//   }
+
+//   // ── Calendar grid ─────────────────────────────────────────────────────────
+
+//   Widget _buildCalendarGrid() {
 //     final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-//     final startOffset = (firstDay.weekday - 1) % 7;
-//     final daysInMonth = DateUtils.getDaysInMonth(
+//     final startOff = (firstDay.weekday - 1) % 7;
+//     final daysInMon = DateUtils.getDaysInMonth(
 //       _focusedMonth.year,
 //       _focusedMonth.month,
 //     );
-//     final totalCells = startOffset + daysInMonth;
+//     final totalCells = startOff + daysInMon;
 //     final rows = (totalCells / 7).ceil();
 
 //     return GridView.builder(
-//       padding: const EdgeInsets.symmetric(vertical: 4),
+//       shrinkWrap: true,
+//       physics: const NeverScrollableScrollPhysics(),
+//       padding: const EdgeInsets.only(top: 8),
 //       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
 //         crossAxisCount: 7,
-//         mainAxisSpacing: 5,
-//         crossAxisSpacing: 4,
-//         childAspectRatio: 0.72,
+//         mainAxisSpacing: 6,
+//         crossAxisSpacing: 5,
+//         childAspectRatio: 0.70,
 //       ),
 //       itemCount: rows * 7,
 //       itemBuilder: (_, index) {
-//         final dayNum = index - startOffset + 1;
-//         if (dayNum < 1 || dayNum > daysInMonth) return const SizedBox();
+//         final dayNum = index - startOff + 1;
+//         if (dayNum < 1 || dayNum > daysInMon) return const SizedBox();
 //         final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
 //         return _buildDayCell(day);
 //       },
 //     );
 //   }
+
+//   // ── Day cell ──────────────────────────────────────────────────────────────
 
 //   Widget _buildDayCell(DateTime day) {
 //     final dateStr = _fmtDate(day);
@@ -1904,51 +793,51 @@
 //     final isPresent = data != null;
 //     final totalMin = (data?['total_minutes'] as int?) ?? 0;
 //     final isLate = data?['is_late'] == true;
-//     final lateText = data?['late_text'] as String?;
 
+//     // Background + border logic — matches LeaveScreen card border style
 //     Color bgColor = Colors.white;
-//     Color textColor = const Color(0xFF1A1A2E);
-//     Color borderColor = const Color(0xFFE2E8F0);
-//     LinearGradient? cellGradient;
+//     Color borderColor = _border;
 
 //     if (isFuture) {
-//       bgColor = Colors.grey.shade50;
-//       textColor = Colors.grey.shade300;
+//       bgColor = const Color(0xFFF8FAFC);
 //       borderColor = Colors.transparent;
 //     } else if (isToday) {
-//       borderColor = Colors.indigo;
-//       bgColor = const Color(0xFFEEF2FF);
+//       bgColor = _primary.withValues(alpha: 0.06);
+//       borderColor = _primary;
 //     } else if (isPresent) {
 //       if (isLate) {
-//         bgColor = const Color(0xFFFFF8E1);
-//         borderColor = const Color(0xFFFFCC02);
+//         bgColor = _orange.withValues(alpha: 0.06);
+//         borderColor = _orange.withValues(alpha: 0.3);
 //       } else {
-//         bgColor = const Color(0xFFE8F5E9);
-//         borderColor = const Color(0xFFA5D6A7);
+//         bgColor = _accent.withValues(alpha: 0.06);
+//         borderColor = _accent.withValues(alpha: 0.3);
 //       }
-//     } else if (!isFuture) {
-//       bgColor = const Color(0xFFFFF3F3);
-//       borderColor = const Color(0xFFFFCDD2);
+//     } else if (!isFuture && !isSunday) {
+//       bgColor = _red.withValues(alpha: 0.04);
+//       borderColor = _red.withValues(alpha: 0.2);
 //     }
 
-//     if (isSunday && !isFuture) {
-//       textColor = Colors.red.shade400;
-//     }
+//     final dayNumColor = isFuture
+//         ? _textLight
+//         : isSunday
+//         ? _red.withValues(alpha: isFuture ? 0.3 : 0.8)
+//         : isToday
+//         ? _primary
+//         : _textDark;
 
 //     return GestureDetector(
 //       onTap: isFuture ? null : () => _onDayTap(day),
-//       child: Container(
+//       child: AnimatedContainer(
+//         duration: const Duration(milliseconds: 150),
 //         decoration: BoxDecoration(
-//           color: isToday ? const Color(0xFFEEF2FF) : bgColor,
+//           color: bgColor,
 //           borderRadius: BorderRadius.circular(10),
 //           border: Border.all(color: borderColor, width: isToday ? 1.5 : 1),
 //           boxShadow: isPresent && !isFuture
 //               ? [
 //                   BoxShadow(
-//                     color: (isLate ? Colors.orange : Colors.green).withOpacity(
-//                       0.08,
-//                     ),
-//                     blurRadius: 4,
+//                     color: Colors.black.withValues(alpha: 0.03),
+//                     blurRadius: 6,
 //                     offset: const Offset(0, 2),
 //                   ),
 //                 ]
@@ -1957,16 +846,13 @@
 //         child: Column(
 //           mainAxisAlignment: MainAxisAlignment.start,
 //           children: [
-//             const SizedBox(height: 6),
-//             // Day number circle
+//             const SizedBox(height: 5),
+//             // Day number
 //             Container(
 //               width: 22,
 //               height: 22,
 //               decoration: isToday
-//                   ? const BoxDecoration(
-//                       color: Colors.indigo,
-//                       shape: BoxShape.circle,
-//                     )
+//                   ? BoxDecoration(color: _primary, shape: BoxShape.circle)
 //                   : null,
 //               child: Center(
 //                 child: Text(
@@ -1974,7 +860,7 @@
 //                   style: TextStyle(
 //                     fontSize: 11,
 //                     fontWeight: FontWeight.w700,
-//                     color: isToday ? Colors.white : textColor,
+//                     color: isToday ? Colors.white : dayNumColor,
 //                   ),
 //                 ),
 //               ),
@@ -1986,21 +872,19 @@
 //                 style: TextStyle(
 //                   fontSize: 8,
 //                   fontWeight: FontWeight.w700,
-//                   color: isLate
-//                       ? Colors.orange.shade800
-//                       : const Color(0xFF2E7D32),
+//                   color: isLate ? _orange : _accent,
 //                 ),
 //                 textAlign: TextAlign.center,
 //               ),
-//               if (isLate) ...[
-//                 const SizedBox(height: 2),
+//               const SizedBox(height: 2),
+//               if (isLate)
 //                 Container(
 //                   padding: const EdgeInsets.symmetric(
 //                     horizontal: 3,
 //                     vertical: 1,
 //                   ),
 //                   decoration: BoxDecoration(
-//                     color: Colors.orange.shade600,
+//                     color: _orange,
 //                     borderRadius: BorderRadius.circular(4),
 //                   ),
 //                   child: const Text(
@@ -2011,27 +895,96 @@
 //                       color: Colors.white,
 //                     ),
 //                   ),
-//                 ),
-//               ] else ...[
-//                 const SizedBox(height: 2),
+//                 )
+//               else
 //                 Container(
 //                   width: 16,
 //                   height: 3,
 //                   decoration: BoxDecoration(
-//                     color: Colors.green.shade400,
+//                     color: _accent,
 //                     borderRadius: BorderRadius.circular(2),
+//                   ),
+//                 ),
+//               if (_hasCompoff(day)) ...[
+//                 const SizedBox(height: 2),
+//                 Container(
+//                   padding: const EdgeInsets.symmetric(
+//                     horizontal: 3,
+//                     vertical: 1,
+//                   ),
+//                   decoration: BoxDecoration(
+//                     color: Colors.amber.shade600,
+//                     borderRadius: BorderRadius.circular(4),
+//                   ),
+//                   child: const Text(
+//                     'CO',
+//                     style: TextStyle(
+//                       fontSize: 7,
+//                       color: Colors.white,
+//                       fontWeight: FontWeight.w700,
+//                     ),
 //                   ),
 //                 ),
 //               ],
 //             ] else if (!isPresent && !isFuture && !isSunday) ...[
-//               Text(
-//                 'Abs',
-//                 style: TextStyle(
-//                   fontSize: 8,
-//                   color: Colors.red.shade300,
-//                   fontWeight: FontWeight.w600,
-//                 ),
-//                 textAlign: TextAlign.center,
+//               Builder(
+//                 builder: (context) {
+//                   final holidayName = _holidayName(day);
+//                   final leaveType = _leaveType(day);
+//                   if (holidayName != null) {
+//                     return Column(
+//                       children: [
+//                         Container(
+//                           padding: const EdgeInsets.symmetric(
+//                             horizontal: 3,
+//                             vertical: 1,
+//                           ),
+//                           decoration: BoxDecoration(
+//                             color: Colors.purple.shade400,
+//                             borderRadius: BorderRadius.circular(4),
+//                           ),
+//                           child: const Text(
+//                             'Holi',
+//                             style: TextStyle(
+//                               fontSize: 7,
+//                               color: Colors.white,
+//                               fontWeight: FontWeight.w700,
+//                             ),
+//                           ),
+//                         ),
+//                       ],
+//                     );
+//                   }
+//                   if (leaveType != null) {
+//                     return Container(
+//                       padding: const EdgeInsets.symmetric(
+//                         horizontal: 3,
+//                         vertical: 1,
+//                       ),
+//                       decoration: BoxDecoration(
+//                         color: Colors.blue.shade400,
+//                         borderRadius: BorderRadius.circular(4),
+//                       ),
+//                       child: const Text(
+//                         'Leave',
+//                         style: TextStyle(
+//                           fontSize: 7,
+//                           color: Colors.white,
+//                           fontWeight: FontWeight.w700,
+//                         ),
+//                       ),
+//                     );
+//                   }
+//                   return Text(
+//                     'Abs',
+//                     style: TextStyle(
+//                       fontSize: 8,
+//                       color: _red.withValues(alpha: 0.6),
+//                       fontWeight: FontWeight.w600,
+//                     ),
+//                     textAlign: TextAlign.center,
+//                   );
+//                 },
 //               ),
 //             ],
 //           ],
@@ -2040,55 +993,105 @@
 //     );
 //   }
 
-//   // ── Legend ─────────────────────────────────────────────────────────────────
+//   // ── Legend — LeaveScreen card style ──────────────────────────────────────
 
 //   Widget _buildLegend() {
-//     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-//       decoration: BoxDecoration(
-//         color: Colors.white,
-//         borderRadius: BorderRadius.circular(14),
-//         border: Border.all(color: const Color(0xFFE2E8F0)),
+//     return Padding(
+//       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+//       child: Container(
+//         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+//         decoration: BoxDecoration(
+//           color: Colors.white,
+//           borderRadius: BorderRadius.circular(14),
+//           border: Border.all(color: _border),
+//           boxShadow: [
+//             BoxShadow(
+//               color: Colors.black.withValues(alpha: 0.04),
+//               blurRadius: 8,
+//               offset: const Offset(0, 3),
+//             ),
+//           ],
+//         ),
+//         child: Column(
+//           children: [
+//             Row(
+//               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+//               children: [
+//                 _legendItem(_accent.withValues(alpha: 0.1), _accent, 'Present'),
+//                 _legendItem(
+//                   _red.withValues(alpha: 0.06),
+//                   _red.withValues(alpha: 0.4),
+//                   'Absent',
+//                 ),
+//                 _legendItem(
+//                   _primary.withValues(alpha: 0.06),
+//                   _primary,
+//                   'Today',
+//                 ),
+//                 _legendItem(
+//                   _orange.withValues(alpha: 0.08),
+//                   _orange.withValues(alpha: 0.5),
+//                   'Late',
+//                 ),
+//               ],
+//             ),
+//             const SizedBox(height: 8),
+//             Row(
+//               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+//               children: [
+//                 _legendBadge(Colors.blue.shade400, 'Leave'),
+//                 _legendBadge(Colors.purple.shade400, 'Holiday'),
+//                 _legendBadge(Colors.amber.shade600, 'Comp-Off'),
+//                 const Expanded(child: SizedBox()),
+//               ],
+//             ),
+//           ],
+//         ),
 //       ),
+//     );
+//   }
+
+//   Widget _legendBadge(Color color, String label) {
+//     return Expanded(
 //       child: Row(
-//         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+//         mainAxisSize: MainAxisSize.min,
 //         children: [
-//           _legendItem(
-//             const Color(0xFFE8F5E9),
-//             const Color(0xFFA5D6A7),
-//             Colors.green.shade700,
-//             'Present',
+//           Container(
+//             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+//             decoration: BoxDecoration(
+//               color: color,
+//               borderRadius: BorderRadius.circular(4),
+//             ),
+//             child: Text(
+//               label == 'Comp-Off' ? 'CO' : label.substring(0, 4),
+//               style: const TextStyle(
+//                 fontSize: 8,
+//                 color: Colors.white,
+//                 fontWeight: FontWeight.w700,
+//               ),
+//             ),
 //           ),
-//           _legendItem(
-//             const Color(0xFFFFF3F3),
-//             const Color(0xFFFFCDD2),
-//             Colors.red.shade400,
-//             'Absent',
-//           ),
-//           _legendItem(
-//             const Color(0xFFEEF2FF),
-//             Colors.indigo,
-//             Colors.indigo,
-//             'Today',
-//           ),
-//           _legendItem(
-//             const Color(0xFFFFF8E1),
-//             const Color(0xFFFFCC02),
-//             Colors.orange.shade800,
-//             'Late',
+//           const SizedBox(width: 4),
+//           Text(
+//             label,
+//             style: const TextStyle(
+//               fontSize: 10,
+//               color: _textMid,
+//               fontWeight: FontWeight.w500,
+//             ),
 //           ),
 //         ],
 //       ),
 //     );
 //   }
 
-//   Widget _legendItem(Color bg, Color border, Color textColor, String label) {
+//   Widget _legendItem(Color bg, Color border, String label) {
 //     return Row(
 //       mainAxisSize: MainAxisSize.min,
 //       children: [
 //         Container(
-//           width: 11,
-//           height: 11,
+//           width: 12,
+//           height: 12,
 //           decoration: BoxDecoration(
 //             color: bg,
 //             border: Border.all(color: border, width: 1.2),
@@ -2098,9 +1101,9 @@
 //         const SizedBox(width: 5),
 //         Text(
 //           label,
-//           style: TextStyle(
-//             fontSize: 10,
-//             color: Colors.grey.shade600,
+//           style: const TextStyle(
+//             fontSize: 11,
+//             color: _textMid,
 //             fontWeight: FontWeight.w500,
 //           ),
 //         ),
@@ -2108,78 +1111,98 @@
 //     );
 //   }
 
-//   // ── Absent dialog ──────────────────────────────────────────────────────────
-
-//   Widget _buildAbsentDialog(DateTime day) => Dialog(
-//     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-//     insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 80),
-//     child: Padding(
-//       padding: const EdgeInsets.all(24),
-//       child: Column(
-//         mainAxisSize: MainAxisSize.min,
+//   Widget _buildAbsentDialog(DateTime day) {
+//     final isSunday = day.weekday == DateTime.sunday;
+//     return AlertDialog(
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+//       backgroundColor: Colors.white,
+//       title: Row(
 //         children: [
 //           Container(
-//             width: 56,
-//             height: 56,
+//             padding: const EdgeInsets.all(10),
 //             decoration: BoxDecoration(
-//               color: Colors.red.shade50,
+//               color: (isSunday ? _textLight : _red).withValues(alpha: 0.08),
 //               shape: BoxShape.circle,
 //             ),
 //             child: Icon(
-//               Icons.event_busy_rounded,
-//               color: Colors.red.shade400,
-//               size: 28,
+//               isSunday ? Icons.weekend_rounded : Icons.event_busy_rounded,
+//               color: isSunday ? _textLight : _red,
+//               size: 20,
 //             ),
 //           ),
-//           const SizedBox(height: 16),
-//           Text(
-//             day.weekday == DateTime.sunday ? 'Weekly Off' : 'No Attendance',
-//             style: const TextStyle(
-//               fontSize: 16,
-//               fontWeight: FontWeight.w700,
-//               color: Color(0xFF1A1A2E),
-//             ),
-//           ),
-//           const SizedBox(height: 6),
-//           Text(
-//             _fullDate(day),
-//             style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-//           ),
-//           const SizedBox(height: 12),
-//           Text(
-//             day.weekday == DateTime.sunday
-//                 ? 'Sunday — weekly off.'
-//                 : 'No attendance recorded for this day.',
-//             textAlign: TextAlign.center,
-//             style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-//           ),
-//           const SizedBox(height: 20),
-//           SizedBox(
-//             width: double.infinity,
-//             child: TextButton(
-//               onPressed: () => Navigator.pop(context),
-//               style: TextButton.styleFrom(
-//                 backgroundColor: const Color(0xFFEEF2FF),
-//                 shape: RoundedRectangleBorder(
-//                   borderRadius: BorderRadius.circular(10),
+//           const SizedBox(width: 12),
+//           Expanded(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Text(
+//                   isSunday ? 'Weekly Off' : 'No Attendance',
+//                   style: const TextStyle(
+//                     fontSize: 16,
+//                     fontWeight: FontWeight.w800,
+//                     color: _textDark,
+//                   ),
 //                 ),
-//                 padding: const EdgeInsets.symmetric(vertical: 12),
-//               ),
-//               child: const Text(
-//                 'Close',
-//                 style: TextStyle(
-//                   color: Colors.indigo,
-//                   fontWeight: FontWeight.w600,
+//                 const SizedBox(height: 2),
+//                 Text(
+//                   _fullDate(day),
+//                   style: const TextStyle(
+//                     fontSize: 11,
+//                     color: _textMid,
+//                     fontWeight: FontWeight.w400,
+//                   ),
 //                 ),
-//               ),
+//               ],
 //             ),
 //           ),
 //         ],
 //       ),
-//     ),
-//   );
-
-//   // ── Detail dialog ──────────────────────────────────────────────────────────
+//       content: Container(
+//         padding: const EdgeInsets.all(12),
+//         decoration: BoxDecoration(
+//           color: (isSunday ? _textLight : _red).withValues(alpha: 0.04),
+//           borderRadius: BorderRadius.circular(10),
+//           border: Border.all(
+//             color: (isSunday ? _textLight : _red).withValues(alpha: 0.15),
+//           ),
+//         ),
+//         child: Row(
+//           children: [
+//             Icon(
+//               isSunday ? Icons.info_outline_rounded : Icons.cancel_outlined,
+//               color: isSunday ? _textLight : _red,
+//               size: 16,
+//             ),
+//             const SizedBox(width: 8),
+//             Expanded(
+//               child: Text(
+//                 isSunday
+//                     ? 'Sunday — weekly off day.'
+//                     : 'No attendance recorded for this day.',
+//                 style: const TextStyle(fontSize: 13, color: _textMid),
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//       actions: [
+//         FilledButton(
+//           onPressed: () => Navigator.pop(context),
+//           style: FilledButton.styleFrom(
+//             backgroundColor: _primary,
+//             shape: RoundedRectangleBorder(
+//               borderRadius: BorderRadius.circular(10),
+//             ),
+//             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+//           ),
+//           child: const Text(
+//             'Close',
+//             style: TextStyle(fontWeight: FontWeight.w700),
+//           ),
+//         ),
+//       ],
+//     );
+//   }
 
 //   Widget _buildDetailDialog(
 //     DateTime day,
@@ -2196,20 +1219,15 @@
 //     return Dialog(
 //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
 //       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+//       backgroundColor: Colors.white,
 //       child: Column(
 //         mainAxisSize: MainAxisSize.min,
 //         children: [
-//           // Header — same gradient style as AttendanceScreen status card
+//           // ── Header — LeaveScreen _buildSummaryBar gradient style ──────────
 //           Container(
-//             padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+//             padding: const EdgeInsets.fromLTRB(20, 20, 16, 16),
 //             decoration: BoxDecoration(
-//               gradient: LinearGradient(
-//                 colors: isLate
-//                     ? [const Color(0xFFE65100), const Color(0xFFFF8F00)]
-//                     : [const Color(0xFF2E7D32), const Color(0xFF43A047)],
-//                 begin: Alignment.topLeft,
-//                 end: Alignment.bottomRight,
-//               ),
+//               color: _primary,
 //               borderRadius: const BorderRadius.vertical(
 //                 top: Radius.circular(20),
 //               ),
@@ -2218,20 +1236,21 @@
 //               crossAxisAlignment: CrossAxisAlignment.start,
 //               children: [
 //                 Container(
-//                   padding: const EdgeInsets.all(8),
+//                   width: 46,
+//                   height: 46,
 //                   decoration: BoxDecoration(
-//                     color: Colors.white.withOpacity(0.2),
-//                     borderRadius: BorderRadius.circular(10),
+//                     color: Colors.white.withValues(alpha: 0.15),
+//                     borderRadius: BorderRadius.circular(14),
 //                   ),
 //                   child: Icon(
 //                     isLate
 //                         ? Icons.schedule_rounded
 //                         : Icons.check_circle_rounded,
 //                     color: Colors.white,
-//                     size: 18,
+//                     size: 26,
 //                   ),
 //                 ),
-//                 const SizedBox(width: 12),
+//                 const SizedBox(width: 14),
 //                 Expanded(
 //                   child: Column(
 //                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2239,70 +1258,114 @@
 //                       Text(
 //                         _fullDate(day),
 //                         style: const TextStyle(
-//                           fontSize: 14,
-//                           fontWeight: FontWeight.w700,
 //                           color: Colors.white,
+//                           fontSize: 16,
+//                           fontWeight: FontWeight.w800,
 //                         ),
 //                       ),
 //                       const SizedBox(height: 5),
 //                       if (isLate && lateText != null)
 //                         Container(
+//                           margin: const EdgeInsets.only(bottom: 5),
 //                           padding: const EdgeInsets.symmetric(
-//                             horizontal: 8,
-//                             vertical: 3,
+//                             horizontal: 9,
+//                             vertical: 4,
 //                           ),
 //                           decoration: BoxDecoration(
-//                             color: Colors.white.withOpacity(0.25),
-//                             borderRadius: BorderRadius.circular(6),
-//                           ),
-//                           child: Text(
-//                             'Late by $lateText',
-//                             style: const TextStyle(
-//                               fontSize: 11,
-//                               fontWeight: FontWeight.w700,
-//                               color: Colors.white,
+//                             color: _orange.withValues(alpha: 0.25),
+//                             borderRadius: BorderRadius.circular(8),
+//                             border: Border.all(
+//                               color: Colors.white.withValues(alpha: 0.25),
 //                             ),
 //                           ),
+//                           child: Row(
+//                             mainAxisSize: MainAxisSize.min,
+//                             children: [
+//                               const Icon(
+//                                 Icons.schedule_rounded,
+//                                 size: 12,
+//                                 color: Colors.white,
+//                               ),
+//                               const SizedBox(width: 5),
+//                               Text(
+//                                 'Late by $lateText',
+//                                 style: const TextStyle(
+//                                   fontSize: 11,
+//                                   color: Colors.white,
+//                                   fontWeight: FontWeight.w600,
+//                                 ),
+//                               ),
+//                             ],
+//                           ),
 //                         ),
-//                       const SizedBox(height: 4),
-//                       Text(
-//                         'Total: ${_fmtMinutes(totalMin)}  ·  ${sessions.length} session(s)',
-//                         style: TextStyle(
-//                           fontSize: 11,
-//                           color: Colors.white.withOpacity(0.8),
-//                         ),
+//                       Row(
+//                         children: [
+//                           _dialogStatChip(
+//                             icon: Icons.timelapse_rounded,
+//                             label: _fmtMinutes(totalMin),
+//                           ),
+//                           const SizedBox(width: 6),
+//                           _dialogStatChip(
+//                             icon: Icons.layers_rounded,
+//                             label:
+//                                 '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
+//                           ),
+//                         ],
 //                       ),
 //                     ],
 //                   ),
 //                 ),
-//                 IconButton(
-//                   onPressed: () => Navigator.pop(context),
-//                   icon: const Icon(
-//                     Icons.close_rounded,
-//                     color: Colors.white,
-//                     size: 20,
+//                 GestureDetector(
+//                   onTap: () => Navigator.pop(context),
+//                   child: Container(
+//                     width: 30,
+//                     height: 30,
+//                     decoration: BoxDecoration(
+//                       color: Colors.white.withValues(alpha: 0.15),
+//                       borderRadius: BorderRadius.circular(8),
+//                     ),
+//                     child: const Icon(
+//                       Icons.close_rounded,
+//                       color: Colors.white,
+//                       size: 18,
+//                     ),
 //                   ),
-//                   padding: EdgeInsets.zero,
-//                   constraints: const BoxConstraints(),
 //                 ),
 //               ],
 //             ),
 //           ),
 
-//           // Sessions list
+//           // ── Sessions list ─────────────────────────────────────────────────
 //           ConstrainedBox(
 //             constraints: const BoxConstraints(maxHeight: 420),
 //             child: sessions.isEmpty
-//                 ? const Padding(
-//                     padding: EdgeInsets.all(32),
-//                     child: Text(
-//                       'No session data available.',
-//                       textAlign: TextAlign.center,
+//                 ? Padding(
+//                     padding: const EdgeInsets.all(32),
+//                     child: Column(
+//                       children: [
+//                         Container(
+//                           padding: const EdgeInsets.all(16),
+//                           decoration: BoxDecoration(
+//                             color: _textLight.withValues(alpha: 0.08),
+//                             shape: BoxShape.circle,
+//                           ),
+//                           child: const Icon(
+//                             Icons.inbox_rounded,
+//                             color: _textLight,
+//                             size: 28,
+//                           ),
+//                         ),
+//                         const SizedBox(height: 12),
+//                         const Text(
+//                           'No session data available.',
+//                           style: TextStyle(color: _textMid, fontSize: 13),
+//                         ),
+//                       ],
 //                     ),
 //                   )
 //                 : ListView.separated(
 //                     shrinkWrap: true,
-//                     padding: const EdgeInsets.all(16),
+//                     padding: const EdgeInsets.all(14),
 //                     itemCount: sessions.length,
 //                     separatorBuilder: (_, __) => const SizedBox(height: 10),
 //                     itemBuilder: (_, si) {
@@ -2311,93 +1374,156 @@
 //                       final sessMin =
 //                           (sess['site_minutes'] as num?)?.toInt() ?? 0;
 //                       final sessNum = sess['session_number'] ?? (si + 1);
+//                       final sessLate = sess['is_late'] == true;
 
+//                       // Session card — mirrors _LeaveCard structure
 //                       return Container(
 //                         decoration: BoxDecoration(
-//                           color: const Color(0xFFF8FAFF),
-//                           borderRadius: BorderRadius.circular(12),
-//                           border: Border.all(color: const Color(0xFFE2E8F0)),
+//                           color: Colors.white,
+//                           borderRadius: BorderRadius.circular(14),
+//                           border: Border.all(
+//                             color: sessLate
+//                                 ? _orange.withValues(alpha: 0.3)
+//                                 : _border,
+//                             width: 1,
+//                           ),
+//                           boxShadow: [
+//                             BoxShadow(
+//                               color: Colors.black.withValues(alpha: 0.04),
+//                               blurRadius: 8,
+//                               offset: const Offset(0, 3),
+//                             ),
+//                           ],
 //                         ),
+//                         clipBehavior: Clip.antiAlias,
 //                         child: Column(
 //                           crossAxisAlignment: CrossAxisAlignment.start,
 //                           children: [
-//                             // Session header — indigo accent like AttendanceScreen log cards
+//                             // Session top accent bar
 //                             Container(
-//                               padding: const EdgeInsets.symmetric(
-//                                 horizontal: 14,
-//                                 vertical: 10,
-//                               ),
-//                               decoration: BoxDecoration(
-//                                 color: Colors.indigo.shade50,
-//                                 borderRadius: const BorderRadius.vertical(
-//                                   top: Radius.circular(12),
-//                                 ),
+//                               height: 3,
+//                               color: sessLate ? _orange : _accent,
+//                             ),
+//                             // Session header row
+//                             Padding(
+//                               padding: const EdgeInsets.fromLTRB(
+//                                 12,
+//                                 10,
+//                                 12,
+//                                 10,
 //                               ),
 //                               child: Row(
 //                                 children: [
+//                                   // Session badge — LeaveScreen icon container style
 //                                   Container(
-//                                     padding: const EdgeInsets.symmetric(
-//                                       horizontal: 8,
-//                                       vertical: 3,
-//                                     ),
+//                                     width: 36,
+//                                     height: 36,
 //                                     decoration: BoxDecoration(
-//                                       color: Colors.indigo,
-//                                       borderRadius: BorderRadius.circular(6),
+//                                       color: _primary.withValues(alpha: 0.06),
+//                                       borderRadius: BorderRadius.circular(10),
 //                                     ),
-//                                     child: Text(
-//                                       'S$sessNum',
-//                                       style: const TextStyle(
-//                                         fontSize: 11,
-//                                         color: Colors.white,
-//                                         fontWeight: FontWeight.w700,
+//                                     child: Center(
+//                                       child: Text(
+//                                         'S$sessNum',
+//                                         style: const TextStyle(
+//                                           fontSize: 11,
+//                                           color: _primary,
+//                                           fontWeight: FontWeight.w800,
+//                                         ),
 //                                       ),
 //                                     ),
 //                                   ),
-//                                   const SizedBox(width: 8),
-//                                   _dialogTimeTag(
-//                                     icon: Icons.login_rounded,
-//                                     time: _fmtTime(
-//                                       sess['started_at']?.toString(),
+//                                   const SizedBox(width: 10),
+//                                   Expanded(
+//                                     child: Column(
+//                                       crossAxisAlignment:
+//                                           CrossAxisAlignment.start,
+//                                       children: [
+//                                         Row(
+//                                           children: [
+//                                             _timeTag(
+//                                               icon: Icons.login_rounded,
+//                                               time: _fmtTime(
+//                                                 sess['started_at']?.toString(),
+//                                               ),
+//                                               color: _accent,
+//                                               bg: _accent.withValues(
+//                                                 alpha: 0.08,
+//                                               ),
+//                                             ),
+//                                             const Padding(
+//                                               padding: EdgeInsets.symmetric(
+//                                                 horizontal: 5,
+//                                               ),
+//                                               child: Icon(
+//                                                 Icons.arrow_forward_rounded,
+//                                                 size: 12,
+//                                                 color: _textLight,
+//                                               ),
+//                                             ),
+//                                             _timeTag(
+//                                               icon: Icons.logout_rounded,
+//                                               time: sess['ended_at'] != null
+//                                                   ? _fmtTime(
+//                                                       sess['ended_at']
+//                                                           .toString(),
+//                                                     )
+//                                                   : 'Active',
+//                                               color: sess['ended_at'] != null
+//                                                   ? _red
+//                                                   : _orange,
+//                                               bg: sess['ended_at'] != null
+//                                                   ? _red.withValues(alpha: 0.08)
+//                                                   : _orange.withValues(
+//                                                       alpha: 0.08,
+//                                                     ),
+//                                             ),
+//                                           ],
+//                                         ),
+//                                         if (sessLate &&
+//                                             sess['late_hours_text'] !=
+//                                                 null) ...[
+//                                           const SizedBox(height: 4),
+//                                           Row(
+//                                             children: [
+//                                               const Icon(
+//                                                 Icons.schedule_rounded,
+//                                                 size: 11,
+//                                                 color: _orange,
+//                                               ),
+//                                               const SizedBox(width: 3),
+//                                               Text(
+//                                                 'Late: ${sess['late_hours_text']}',
+//                                                 style: const TextStyle(
+//                                                   fontSize: 10,
+//                                                   color: _orange,
+//                                                   fontWeight: FontWeight.w600,
+//                                                 ),
+//                                               ),
+//                                             ],
+//                                           ),
+//                                         ],
+//                                       ],
 //                                     ),
-//                                     color: Colors.green.shade700,
 //                                   ),
-//                                   const Padding(
-//                                     padding: EdgeInsets.symmetric(
-//                                       horizontal: 4,
-//                                     ),
-//                                     child: Text(
-//                                       '→',
-//                                       style: TextStyle(color: Colors.grey),
-//                                     ),
-//                                   ),
-//                                   _dialogTimeTag(
-//                                     icon: Icons.logout_rounded,
-//                                     time: sess['ended_at'] != null
-//                                         ? _fmtTime(sess['ended_at'].toString())
-//                                         : 'Active',
-//                                     color: sess['ended_at'] != null
-//                                         ? Colors.red.shade400
-//                                         : Colors.green,
-//                                   ),
-//                                   const Spacer(),
+//                                   // Duration — LeaveScreen status badge style
 //                                   Container(
 //                                     padding: const EdgeInsets.symmetric(
-//                                       horizontal: 8,
-//                                       vertical: 3,
+//                                       horizontal: 9,
+//                                       vertical: 5,
 //                                     ),
 //                                     decoration: BoxDecoration(
-//                                       color: Colors.green.shade50,
-//                                       borderRadius: BorderRadius.circular(6),
-//                                       border: Border.all(
-//                                         color: Colors.green.shade200,
-//                                       ),
+//                                       color: sessLate
+//                                           ? _orange.withValues(alpha: 0.08)
+//                                           : _accent.withValues(alpha: 0.08),
+//                                       borderRadius: BorderRadius.circular(20),
 //                                     ),
 //                                     child: Text(
 //                                       _fmtMinutes(sessMin),
 //                                       style: TextStyle(
 //                                         fontSize: 11,
 //                                         fontWeight: FontWeight.w700,
-//                                         color: Colors.green.shade700,
+//                                         color: sessLate ? _orange : _accent,
 //                                       ),
 //                                     ),
 //                                   ),
@@ -2405,68 +1531,76 @@
 //                               ),
 //                             ),
 
-//                             // Visits
+//                             // Divider
+//                             Divider(height: 1, color: Colors.grey.shade100),
+
+//                             // Visits — _infoBlock style rows
 //                             if (visits.isEmpty)
 //                               Padding(
 //                                 padding: const EdgeInsets.all(12),
 //                                 child: Text(
 //                                   'No site visits in this session.',
-//                                   style: TextStyle(
+//                                   style: const TextStyle(
 //                                     fontSize: 12,
-//                                     color: Colors.grey.shade500,
+//                                     color: _textMid,
 //                                   ),
 //                                 ),
 //                               )
 //                             else
 //                               ...visits.asMap().entries.map((e) {
-//                                 final vi = e.key;
 //                                 final v = e.value;
-//                                 final isLast = vi == visits.length - 1;
+//                                 final isOpen = v['out_time'] == null;
 //                                 final vMin =
 //                                     (v['worked_minutes'] as num?)?.toInt() ?? 0;
-//                                 final isOpen = v['out_time'] == null;
 //                                 final siteName =
-//                                     v['site_name'] as String? ?? 'Unknown Site';
+//                                     v['site_name'] as String? ?? 'Unknown';
 //                                 final siteId = v['site_id'] as int?;
+//                                 final isLast = e.key == visits.length - 1;
 
 //                                 return InkWell(
 //                                   onTap: () =>
 //                                       _openSiteInMaps(siteId, siteName),
 //                                   borderRadius: isLast
 //                                       ? const BorderRadius.vertical(
-//                                           bottom: Radius.circular(12),
+//                                           bottom: Radius.circular(14),
 //                                         )
 //                                       : BorderRadius.zero,
-//                                   child: Container(
+//                                   child: Padding(
 //                                     padding: const EdgeInsets.fromLTRB(
-//                                       14,
+//                                       12,
 //                                       10,
-//                                       14,
+//                                       12,
 //                                       10,
-//                                     ),
-//                                     decoration: BoxDecoration(
-//                                       border: Border(
-//                                         top: const BorderSide(
-//                                           color: Color(0xFFE2E8F0),
-//                                         ),
-//                                       ),
 //                                     ),
 //                                     child: Row(
 //                                       children: [
-//                                         // Status dot
+//                                         // Site icon — LeaveScreen _infoBlock icon style
 //                                         Container(
-//                                           width: 8,
-//                                           height: 8,
+//                                           width: 36,
+//                                           height: 36,
 //                                           decoration: BoxDecoration(
 //                                             color: isOpen
-//                                                 ? Colors.green
-//                                                 : Colors.grey.shade400,
-//                                             shape: BoxShape.circle,
+//                                                 ? _accent.withValues(
+//                                                     alpha: 0.08,
+//                                                   )
+//                                                 : const Color(0xFFF8FAFC),
+//                                             borderRadius: BorderRadius.circular(
+//                                               10,
+//                                             ),
+//                                             border: Border.all(color: _border),
+//                                           ),
+//                                           child: Icon(
+//                                             isOpen
+//                                                 ? Icons.location_on_rounded
+//                                                 : Icons
+//                                                       .check_circle_outline_rounded,
+//                                             size: 18,
+//                                             color: isOpen
+//                                                 ? _accent
+//                                                 : _textLight,
 //                                           ),
 //                                         ),
 //                                         const SizedBox(width: 10),
-
-//                                         // Site info
 //                                         Expanded(
 //                                           child: Column(
 //                                             crossAxisAlignment:
@@ -2478,38 +1612,39 @@
 //                                                     child: Text(
 //                                                       siteName,
 //                                                       style: const TextStyle(
-//                                                         fontSize: 12,
 //                                                         fontWeight:
-//                                                             FontWeight.w600,
-//                                                         color: Color(
-//                                                           0xFF1A1A2E,
-//                                                         ),
+//                                                             FontWeight.w700,
+//                                                         fontSize: 13,
+//                                                         color: _textDark,
 //                                                       ),
+//                                                       maxLines: 1,
+//                                                       overflow:
+//                                                           TextOverflow.ellipsis,
 //                                                     ),
 //                                                   ),
-//                                                   Icon(
+//                                                   const Icon(
 //                                                     Icons.open_in_new_rounded,
-//                                                     size: 12,
-//                                                     color:
-//                                                         Colors.indigo.shade300,
+//                                                     size: 11,
+//                                                     color: _textLight,
 //                                                   ),
 //                                                 ],
 //                                               ),
 //                                               const SizedBox(height: 4),
-//                                               // Time tags — same as AttendanceScreen log list
 //                                               Wrap(
 //                                                 spacing: 5,
+//                                                 runSpacing: 3,
 //                                                 children: [
-//                                                   _visitTimeTag(
+//                                                   _timeTag(
 //                                                     icon: Icons.login_rounded,
 //                                                     time: _fmtTime(
 //                                                       v['in_time']?.toString(),
 //                                                     ),
-//                                                     color:
-//                                                         Colors.green.shade700,
-//                                                     bg: Colors.green.shade50,
+//                                                     color: _accent,
+//                                                     bg: _accent.withValues(
+//                                                       alpha: 0.08,
+//                                                     ),
 //                                                   ),
-//                                                   _visitTimeTag(
+//                                                   _timeTag(
 //                                                     icon: Icons.logout_rounded,
 //                                                     time: isOpen
 //                                                         ? 'Active'
@@ -2518,50 +1653,46 @@
 //                                                                 ?.toString(),
 //                                                           ),
 //                                                     color: isOpen
-//                                                         ? Colors.orange.shade700
-//                                                         : Colors.red.shade400,
+//                                                         ? _orange
+//                                                         : _red,
 //                                                     bg: isOpen
-//                                                         ? Colors.orange.shade50
-//                                                         : Colors.red.shade50,
+//                                                         ? _orange.withValues(
+//                                                             alpha: 0.08,
+//                                                           )
+//                                                         : _red.withValues(
+//                                                             alpha: 0.08,
+//                                                           ),
 //                                                   ),
 //                                                 ],
 //                                               ),
 //                                             ],
 //                                           ),
 //                                         ),
-
-//                                         // Duration
+//                                         const SizedBox(width: 8),
+//                                         // Duration badge
 //                                         Container(
 //                                           padding: const EdgeInsets.symmetric(
-//                                             horizontal: 8,
-//                                             vertical: 4,
+//                                             horizontal: 9,
+//                                             vertical: 5,
 //                                           ),
 //                                           decoration: BoxDecoration(
-//                                             gradient: isOpen
-//                                                 ? LinearGradient(
-//                                                     colors: [
-//                                                       Colors.green.shade400,
-//                                                       Colors.green.shade600,
-//                                                     ],
+//                                             color: isOpen
+//                                                 ? _accent.withValues(
+//                                                     alpha: 0.08,
 //                                                   )
-//                                                 : LinearGradient(
-//                                                     colors: [
-//                                                       Colors.grey.shade300,
-//                                                       Colors.grey.shade400,
-//                                                     ],
-//                                                   ),
+//                                                 : const Color(0xFFF1F5F9),
 //                                             borderRadius: BorderRadius.circular(
-//                                               8,
+//                                               20,
 //                                             ),
 //                                           ),
 //                                           child: Text(
 //                                             _fmtMinutes(vMin),
 //                                             style: TextStyle(
-//                                               fontSize: 10,
+//                                               fontSize: 11,
 //                                               fontWeight: FontWeight.w700,
 //                                               color: isOpen
-//                                                   ? Colors.white
-//                                                   : Colors.grey.shade700,
+//                                                   ? _accent
+//                                                   : _textMid,
 //                                             ),
 //                                           ),
 //                                         ),
@@ -2569,7 +1700,7 @@
 //                                     ),
 //                                   ),
 //                                 );
-//                               }),
+//                               }).toList(),
 //                           ],
 //                         ),
 //                       );
@@ -2577,25 +1708,28 @@
 //                   ),
 //           ),
 
-//           // Footer
+//           // ── Footer — LeaveScreen FilledButton style ───────────────────────
 //           Padding(
-//             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+//             padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
 //             child: SizedBox(
 //               width: double.infinity,
-//               child: TextButton(
+//               height: 46,
+//               child: FilledButton(
 //                 onPressed: () => Navigator.pop(context),
-//                 style: TextButton.styleFrom(
-//                   backgroundColor: const Color(0xFFEEF2FF),
+//                 style: FilledButton.styleFrom(
+//                   backgroundColor: _primary.withValues(alpha: 0.08),
+//                   foregroundColor: _primary,
+//                   elevation: 0,
 //                   shape: RoundedRectangleBorder(
-//                     borderRadius: BorderRadius.circular(10),
+//                     borderRadius: BorderRadius.circular(12),
 //                   ),
-//                   padding: const EdgeInsets.symmetric(vertical: 12),
 //                 ),
 //                 child: const Text(
 //                   'Close',
 //                   style: TextStyle(
-//                     color: Colors.indigo,
-//                     fontWeight: FontWeight.w600,
+//                     fontWeight: FontWeight.w700,
+//                     fontSize: 14,
+//                     color: _primary,
 //                   ),
 //                 ),
 //               ),
@@ -2606,49 +1740,53 @@
 //     );
 //   }
 
-//   Widget _dialogTimeTag({
-//     required IconData icon,
-//     required String time,
-//     required Color color,
-//   }) {
-//     return Row(
-//       mainAxisSize: MainAxisSize.min,
-//       children: [
-//         Icon(icon, size: 10, color: color),
-//         const SizedBox(width: 3),
-//         Text(
-//           time,
-//           style: TextStyle(
-//             fontSize: 11,
-//             color: Colors.grey.shade600,
-//             fontWeight: FontWeight.w500,
+//   Widget _dialogStatChip({required IconData icon, required String label}) {
+//     return Container(
+//       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+//       decoration: BoxDecoration(
+//         color: Colors.white.withValues(alpha: 0.15),
+//         borderRadius: BorderRadius.circular(8),
+//       ),
+//       child: Row(
+//         mainAxisSize: MainAxisSize.min,
+//         children: [
+//           Icon(icon, size: 12, color: Colors.white),
+//           const SizedBox(width: 4),
+//           Text(
+//             label,
+//             style: const TextStyle(
+//               fontSize: 11,
+//               color: Colors.white,
+//               fontWeight: FontWeight.w600,
+//             ),
 //           ),
-//         ),
-//       ],
+//         ],
+//       ),
 //     );
 //   }
 
-//   Widget _visitTimeTag({
+//   Widget _timeTag({
 //     required IconData icon,
 //     required String time,
 //     required Color color,
 //     required Color bg,
 //   }) {
 //     return Container(
-//       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+//       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
 //       decoration: BoxDecoration(
 //         color: bg,
-//         borderRadius: BorderRadius.circular(5),
+//         borderRadius: BorderRadius.circular(6),
+//         border: Border.all(color: color.withValues(alpha: 0.2)),
 //       ),
 //       child: Row(
 //         mainAxisSize: MainAxisSize.min,
 //         children: [
-//           Icon(icon, size: 10, color: color),
+//           Icon(icon, size: 11, color: color),
 //           const SizedBox(width: 3),
 //           Text(
 //             time,
 //             style: TextStyle(
-//               fontSize: 10,
+//               fontSize: 11,
 //               color: color,
 //               fontWeight: FontWeight.w600,
 //             ),
@@ -2661,8 +1799,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../providers/api_client.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AttendanceHistoryScreen  — fast single-call implementation
+//  Uses GET /attendance/month-report/:empId?year=&month=
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AttendanceHistoryScreen extends StatefulWidget {
   final int employeeId;
@@ -2675,151 +1817,107 @@ class AttendanceHistoryScreen extends StatefulWidget {
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     with SingleTickerProviderStateMixin {
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  static const Color _primary = Color(0xFF1A56DB);
+  static const Color _accent = Color(0xFF0E9F6E);
+  static const Color _red = Color(0xFFEF4444);
+  static const Color _orange = Color(0xFFF97316);
+  static const Color _purple = Color(0xFF8B5CF6);
+  static const Color _blue = Color(0xFF3B82F6);
+  static const Color _amber = Color(0xFFF59E0B);
+  static const Color _surface = Color(0xFFF0F4FF);
+  static const Color _textDark = Color(0xFF0F172A);
+  static const Color _textMid = Color(0xFF64748B);
+  static const Color _textLight = Color(0xFF94A3B8);
+  static const Color _border = Color(0xFFE2E8F0);
+
+  // ── State ─────────────────────────────────────────────────────────────────
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
-  Map<String, Map<String, dynamic>> _dayData = {};
   bool _loading = true;
+  String? _error;
 
-  int _presentDays = 0;
-  int _absentDays = 0;
-  int _lateDays = 0;
-  int _totalMinutes = 0;
+  // Parsed from API
+  Map<String, dynamic> _summary = {};
+  List<Map<String, dynamic>> _days = [];
 
-  // ── Pulse animation (same as AttendanceScreen) ────────────────────────────
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnim;
+  late AnimationController _animCtrl;
+  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+      duration: const Duration(milliseconds: 400),
     );
+    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
     _loadMonth(_focusedMonth);
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _animCtrl.dispose();
     super.dispose();
   }
 
-  // ── Load month ─────────────────────────────────────────────────────────────
+  // ── Data ──────────────────────────────────────────────────────────────────
 
   Future<void> _loadMonth(DateTime month) async {
-    setState(() => _loading = true);
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final now = DateTime.now();
-      final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
-      final futures = <Future>[];
-      final results = <String, Map<String, dynamic>>{};
+      final res = await ApiClient.get(
+        '/attendance/month-report/${widget.employeeId}'
+        '?year=${month.year}&month=${month.month}',
+      );
+      if (!mounted) return;
 
-      for (int d = 1; d <= daysInMonth; d++) {
-        final day = DateTime(month.year, month.month, d);
-        if (day.isAfter(now)) continue;
-        final dateStr = _fmtDate(day);
-        futures.add(
-          _fetchDay(dateStr).then((data) {
-            if (data != null) results[dateStr] = data;
-          }),
-        );
-      }
-      await Future.wait(futures);
-
-      int present = 0, absent = 0, late = 0, totalMin = 0;
-      for (int d = 1; d <= daysInMonth; d++) {
-        final day = DateTime(month.year, month.month, d);
-        if (day.isAfter(now)) continue;
-        if (day.weekday == DateTime.sunday) continue;
-        final dateStr = _fmtDate(day);
-        if (results.containsKey(dateStr)) {
-          present++;
-          totalMin += (results[dateStr]!['total_minutes'] as int? ?? 0);
-          if (results[dateStr]!['is_late'] == true) late++;
-        } else {
-          absent++;
-        }
-      }
-
-      if (mounted) {
+      if (res.statusCode != 200) {
         setState(() {
-          _dayData = results;
-          _presentDays = present;
-          _absentDays = absent;
-          _lateDays = late;
-          _totalMinutes = totalMin;
           _loading = false;
+          _error = 'Server error ${res.statusCode}';
         });
+        return;
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
 
-  Future<Map<String, dynamic>?> _fetchDay(String date) async {
-    try {
-      final res = await ApiClient.get('/attendance/by-date-detail?date=$date');
-      if (res.statusCode != 200) return null;
-      final body = jsonDecode(res.body);
-      if (body['success'] != true) return null;
-      final List data = body['data'] ?? [];
-      final emp = data.firstWhere(
-        (e) => e['emp_id'] == widget.employeeId,
-        orElse: () => null,
-      );
-      if (emp == null || emp['attendance_status'] == 'ABSENT') return null;
-
-      int totalMinutes = 0;
-      bool isLate = false;
-      String? lateText;
-      final sessions = emp['sessions'] as List? ?? [];
-      for (int i = 0; i < sessions.length; i++) {
-        final s = sessions[i];
-        totalMinutes += (s['site_minutes'] as num? ?? 0).toInt();
-        if (i == 0 && s['is_late'] == true) {
-          isLate = true;
-          final lateMin = (s['late_minutes'] as num?)?.toInt() ?? 0;
-          if (lateMin > 0) {
-            final h = lateMin ~/ 60;
-            final m = lateMin % 60;
-            lateText = h > 0
-                ? '${h}h ${m.toString().padLeft(2, '0')}m'
-                : '${m}m';
-          }
-        }
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (body['success'] != true) {
+        setState(() {
+          _loading = false;
+          _error = body['message'] ?? 'Unknown error';
+        });
+        return;
       }
-      return {
-        'total_minutes': totalMinutes,
-        'sessions': sessions,
-        'is_late': isLate,
-        'late_text': lateText,
-      };
-    } catch (_) {
-      return null;
+
+      final rawDays = (body['days'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+
+      setState(() {
+        _summary = Map<String, dynamic>.from(body['summary'] ?? {});
+        _days = rawDays;
+        _loading = false;
+      });
+      _animCtrl.forward(from: 0);
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
     }
   }
 
-  Future<Map<String, dynamic>?> _fetchDayDetail(String date) async {
-    try {
-      final res = await ApiClient.get('/attendance/by-date-detail?date=$date');
-      if (res.statusCode != 200) return null;
-      final body = jsonDecode(res.body);
-      if (body['success'] != true) return null;
-      final List data = body['data'] ?? [];
-      final emp = data.firstWhere(
-        (e) => e['emp_id'] == widget.employeeId,
-        orElse: () => null,
-      );
-      return emp as Map<String, dynamic>?;
-    } catch (_) {
-      return null;
+  Map<String, dynamic>? _dayData(String dateStr) {
+    for (final d in _days) {
+      if (d['date'] == dateStr) return d;
     }
+    return null;
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -2827,9 +1925,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
   String _fmtTime(String? t) {
     if (t == null) return '--';
     try {
-      if (t.contains(' ')) return t.split(' ')[1].substring(0, 5);
-      if (t.length >= 5) return t.substring(0, 5);
-      return t;
+      final part = t.contains(' ') ? t.split(' ')[1] : t;
+      return part.length >= 5 ? part.substring(0, 5) : part;
     } catch (_) {
       return '--';
     }
@@ -2879,64 +1976,49 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
-  bool _isToday(DateTime d) {
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
+  int get _presentDays => (_summary['present_days'] as num? ?? 0).toInt();
+  int get _absentDays => (_summary['absent_days'] as num? ?? 0).toInt();
+  int get _lateDays => (_summary['late_days'] as num? ?? 0).toInt();
+  int get _leaveDays => (_summary['leave_days'] as num? ?? 0).toInt();
+  int get _holidayDays => (_summary['holiday_days'] as num? ?? 0).toInt();
+  int get _compoffDays => (_summary['compoff_days'] as num? ?? 0).toInt();
+  int get _totalMinutes =>
+      (_summary['total_on_site_minutes'] as num? ?? 0).toInt();
+  int get _attendanceRate => (_summary['attendance_rate'] as num? ?? 0).toInt();
+  int get _workingDays =>
+      (_summary['working_days_in_month'] as num? ?? 0).toInt();
 
-  bool _isFuture(DateTime d) => d.isAfter(DateTime.now());
-
-  double get _attendanceRate {
-    final total = _presentDays + _absentDays;
-    if (total == 0) return 0;
-    return _presentDays / total;
-  }
-
-  void _showSnack(String msg, {bool isError = false}) {
+  void _showSnack(String msg, {bool success = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? Colors.red.shade700 : null,
-        duration: Duration(seconds: isError ? 5 : 3),
+        content: Row(
+          children: [
+            Icon(
+              success
+                  ? Icons.check_circle_rounded
+                  : Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: success ? _accent : _red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
 
-  // ── Day tap ────────────────────────────────────────────────────────────────
-
-  void _onDayTap(DateTime day) async {
-    final dateStr = _fmtDate(day);
-    final data = _dayData[dateStr];
-
-    if (data == null) {
-      if (!_isFuture(day)) {
-        showDialog(context: context, builder: (_) => _buildAbsentDialog(day));
-      }
-      return;
-    }
-
-    final isLate = data['is_late'] == true;
-    final lateText = data['late_text'];
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) =>
-          const Center(child: CircularProgressIndicator(color: Colors.indigo)),
-    );
-
-    final detail = await _fetchDayDetail(dateStr);
-    if (!mounted) return;
-    Navigator.pop(context);
-
-    showDialog(
-      context: context,
-      builder: (_) => _buildDetailDialog(day, detail, isLate, lateText),
-    );
-  }
-
-  // ── Maps ───────────────────────────────────────────────────────────────────
+  // ── Maps ──────────────────────────────────────────────────────────────────
 
   Future<void> _openSiteInMaps(int? siteId, String siteName) async {
     double? lat, lng;
@@ -2952,371 +2034,246 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
         }
       } catch (_) {}
     }
-
-    final Uri uri;
-    if (lat != null && lng != null) {
-      uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng&query_place_id=${Uri.encodeComponent(siteName)}',
-      );
-    } else {
-      uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(siteName)}',
-      );
-    }
-
+    final Uri uri = lat != null && lng != null
+        ? Uri.parse(
+            'https://www.google.com/maps/search/?api=1&query=$lat,$lng'
+            '&query_place_id=${Uri.encodeComponent(siteName)}',
+          )
+        : Uri.parse(
+            'https://www.google.com/maps/search/?api=1'
+            '&query=${Uri.encodeComponent(siteName)}',
+          );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (mounted) {
-      _showSnack('Could not open maps', isError: true);
+      _showSnack('Could not open maps');
     }
   }
 
-  // ── BUILD ──────────────────────────────────────────────────────────────────
-  // Matches AttendanceScreen: Scaffold → SafeArea → Padding → Column
+  // ── Day tap ───────────────────────────────────────────────────────────────
+
+  void _onDayTap(Map<String, dynamic> dayData) {
+    final status = dayData['status'] as String? ?? 'absent';
+    final day = DateTime.parse(dayData['date'] as String);
+
+    if (status == 'future') return;
+
+    if (status == 'absent' || status == 'weekend') {
+      showDialog(
+        context: context,
+        builder: (_) => _buildAbsentDialog(day, status),
+      );
+      return;
+    }
+
+    if (status == 'holiday') {
+      showDialog(
+        context: context,
+        builder: (_) => _buildSpecialDayDialog(
+          day,
+          title: 'Public Holiday',
+          subtitle: dayData['holiday']?['holiday_name'] as String? ?? 'Holiday',
+          icon: Icons.celebration_rounded,
+          color: _purple,
+        ),
+      );
+      return;
+    }
+
+    if (status == 'leave') {
+      final leave = dayData['leave'] as Map<String, dynamic>?;
+      showDialog(
+        context: context,
+        builder: (_) => _buildSpecialDayDialog(
+          day,
+          title: 'On Leave',
+          subtitle: leave?['leave_type'] as String? ?? 'Leave',
+          icon: Icons.beach_access_rounded,
+          color: _blue,
+        ),
+      );
+      return;
+    }
+
+    // present / late — show sessions
+    final sessions = (dayData['sessions'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+    final totalMin = (dayData['total_minutes'] as num? ?? 0).toInt();
+    final isLate = dayData['is_late'] == true;
+    final lateText = dayData['late_text'] as String?;
+
+    showDialog(
+      context: context,
+      builder: (_) =>
+          _buildDetailDialog(day, sessions, totalMin, isLate, lateText),
+    );
+  }
+
+  // ── BUILD ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final sw = mq.size.width;
-    final isSmall = sw < 360;
-    final hPad = isSmall ? 12.0 : 16.0;
-    final safeBot = mq.padding.bottom;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
-      body: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(hPad, hPad, hPad, 0),
-          child: Column(
-            children: [
-              // ── Header row (same pattern as AttendanceScreen log header) ──
-              _buildHeader(isSmall: isSmall),
-              SizedBox(height: isSmall ? 10 : 14),
-
-              if (_loading)
-                const Expanded(
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.indigo),
+      backgroundColor: _surface,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _primary))
+          : _error != null
+          ? _buildError()
+          : RefreshIndicator(
+              onRefresh: () => _loadMonth(_focusedMonth),
+              color: _primary,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(child: _buildAppBar()),
+                  SliverToBoxAdapter(child: _buildSummaryBar()),
+                  SliverToBoxAdapter(child: _buildStatCards()),
+                  SliverToBoxAdapter(child: _buildMonthNav()),
+                  SliverToBoxAdapter(child: _buildCalendarHeader()),
+                  SliverToBoxAdapter(child: _buildWeekdayHeader()),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    sliver: SliverToBoxAdapter(
+                      child: FadeTransition(
+                        opacity: _fadeAnim,
+                        child: _buildCalendarGrid(),
+                      ),
+                    ),
                   ),
-                )
-              else ...[
-                // ── Summary card (matches AttendanceScreen status card) ─────
-                _buildSummaryCard(isSmall: isSmall),
-                SizedBox(height: isSmall ? 10 : 14),
+                  SliverToBoxAdapter(child: _buildLegend()),
+                  SliverToBoxAdapter(child: _buildDaysList()),
+                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                ],
+              ),
+            ),
+    );
+  }
 
-                // ── Month navigator ────────────────────────────────────────
-                _buildMonthNav(isSmall: isSmall),
-                SizedBox(height: isSmall ? 6 : 10),
-
-                // ── Weekday header ─────────────────────────────────────────
-                _buildWeekdayHeader(isSmall: isSmall),
-                SizedBox(height: isSmall ? 4 : 6),
-
-                // ── Calendar grid ──────────────────────────────────────────
-                Expanded(child: _buildCalendar()),
-
-                // ── Legend (matches AttendanceScreen log list bottom pad) ──
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: isSmall ? 8 : 10,
-                    bottom: safeBot + (isSmall ? 8 : 12),
-                  ),
-                  child: _buildLegend(),
-                ),
-              ],
-            ],
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline_rounded, color: _red, size: 48),
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: _textMid)),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: () => _loadMonth(_focusedMonth),
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('Retry'),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  // ── Header — mirrors AttendanceScreen _buildLogHeader style ───────────────
+  // ── App bar ───────────────────────────────────────────────────────────────
 
-  Widget _buildHeader({required bool isSmall}) {
-    final rate = _attendanceRate;
-    final ratePercent = (rate * 100).round();
-
-    return Row(
-      children: [
-        // Back button — same container style used throughout AttendanceScreen
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            width: isSmall ? 34 : 38,
-            height: isSmall ? 34 : 38,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.arrow_back_rounded,
-              color: const Color(0xFF1A1A2E),
-              size: isSmall ? 18 : 20,
-            ),
-          ),
-        ),
-        SizedBox(width: isSmall ? 10 : 12),
-
-        // Title — same style as AttendanceScreen section labels
-        Icon(
-          Icons.calendar_month_rounded,
-          size: isSmall ? 15 : 17,
-          color: Colors.indigo,
-        ),
-        SizedBox(width: isSmall ? 5 : 7),
-        Text(
-          'Attendance History',
-          style: TextStyle(
-            fontSize: isSmall ? 12 : 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.grey[800],
-            letterSpacing: 0.2,
-          ),
-        ),
-
-        const Spacer(),
-
-        // Attendance rate badge — same style as session count badge
-        if (!_loading) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _attendanceRate >= 0.9
-                  ? Colors.green.shade50
-                  : _attendanceRate >= 0.7
-                  ? Colors.indigo.shade50
-                  : Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _attendanceRate >= 0.9
-                    ? Colors.green.shade200
-                    : _attendanceRate >= 0.7
-                    ? Colors.indigo.shade200
-                    : Colors.orange.shade200,
-                width: 1,
+  Widget _buildAppBar() {
+    return Container(
+      color: _primary,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 8,
+        4,
+        12,
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: const Icon(
+                Icons.arrow_back_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Attendance History',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                const Icon(
                   Icons.trending_up_rounded,
-                  size: 12,
-                  color: _attendanceRate >= 0.9
-                      ? Colors.green.shade700
-                      : _attendanceRate >= 0.7
-                      ? Colors.indigo.shade700
-                      : Colors.orange.shade700,
+                  size: 13,
+                  color: Colors.white,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '$ratePercent%',
-                  style: TextStyle(
-                    fontSize: 11,
+                  '$_attendanceRate%',
+                  style: const TextStyle(
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: _attendanceRate >= 0.9
-                        ? Colors.green.shade700
-                        : _attendanceRate >= 0.7
-                        ? Colors.indigo.shade700
-                        : Colors.orange.shade700,
+                    color: Colors.white,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-
-          // Pulse dot — same as AttendanceScreen status card live indicator
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (_, __) => Transform.scale(
-              scale: _pulseAnim.value,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.indigo.shade300,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.indigo.withValues(alpha: 0.5),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
+          IconButton(
+            icon: const Icon(
+              Icons.refresh_rounded,
+              color: Colors.white,
+              size: 20,
             ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  // ── Summary card — exact same structure as AttendanceScreen status card ───
-
-  Widget _buildSummaryCard({required bool isSmall}) {
-    final rate = _attendanceRate;
-
-    // Gradient matches AttendanceScreen _StatusConfig gradients
-    final LinearGradient gradient;
-    final Color shadowColor;
-
-    if (rate >= 0.9) {
-      gradient = const LinearGradient(
-        colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      );
-      shadowColor = const Color(0xFF2E7D32);
-    } else if (rate >= 0.7) {
-      gradient = const LinearGradient(
-        colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      );
-      shadowColor = const Color(0xFF1565C0);
-    } else if (rate > 0) {
-      gradient = const LinearGradient(
-        colors: [Color(0xFFE65100), Color(0xFFFF6D00)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      );
-      shadowColor = const Color(0xFFE65100);
-    } else {
-      gradient = const LinearGradient(
-        colors: [Color(0xFF455A64), Color(0xFF607D8B)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      );
-      shadowColor = const Color(0xFF455A64);
-    }
-
-    final cardPad = isSmall ? 14.0 : 20.0;
-    final isCompact = MediaQuery.of(context).size.height < 680;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: shadowColor.withValues(alpha: 0.35),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
+            onPressed: () => _loadMonth(_focusedMonth),
           ),
         ],
       ),
-      child: Padding(
-        padding: EdgeInsets.all(cardPad),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    );
+  }
+
+  // ── Summary bar ───────────────────────────────────────────────────────────
+
+  Widget _buildSummaryBar() {
+    return Container(
+      color: _primary,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: Row(
           children: [
-            // Top row — icon + title + pulse dot (matches AttendanceScreen)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: isCompact ? 38 : 46,
-                  height: isCompact ? 38 : 46,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    Icons.bar_chart_rounded,
-                    color: Colors.white,
-                    size: isCompact ? 22 : 26,
-                  ),
-                ),
-                SizedBox(width: isCompact ? 10 : 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Monthly Overview',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: isCompact ? 15 : 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _monthLabel(_focusedMonth),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.82),
-                          fontSize: isCompact ? 11 : 12.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Static dot (same pattern as AttendanceScreen notStarted)
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
-            ),
-
-            // Divider + stats — matches AttendanceScreen _buildCardBottom
-            if (!isCompact) ...[
-              const SizedBox(height: 16),
-              Container(height: 1, color: Colors.white.withValues(alpha: 0.15)),
-              const SizedBox(height: 14),
-            ] else
-              const SizedBox(height: 10),
-
-            // Stats row — same _infoChip style columns as AttendanceScreen
-            Row(
-              children: [
-                _statColumn(
-                  icon: Icons.check_circle_outline_rounded,
-                  label: 'Present',
-                  value: '$_presentDays',
-                  isCompact: isCompact,
-                ),
-                _statDivider(),
-                _statColumn(
-                  icon: Icons.cancel_outlined,
-                  label: 'Absent',
-                  value: '$_absentDays',
-                  isCompact: isCompact,
-                ),
-                _statDivider(),
-                _statColumn(
-                  icon: Icons.schedule_rounded,
-                  label: 'Late',
-                  value: '$_lateDays',
-                  isCompact: isCompact,
-                ),
-                _statDivider(),
-                _statColumn(
-                  icon: Icons.timelapse_rounded,
-                  label: 'On-Site',
-                  value: _fmtMinutes(_totalMinutes),
-                  isCompact: isCompact,
-                ),
-              ],
+            _statItem('$_presentDays', 'Present', Colors.white),
+            _vDiv(),
+            _statItem('$_absentDays', 'Absent', const Color(0xFFFCA5A5)),
+            _vDiv(),
+            _statItem('$_lateDays', 'Late', const Color(0xFFFDE68A)),
+            _vDiv(),
+            _statItem(
+              _fmtMinutes(_totalMinutes),
+              'On-Site',
+              const Color(0xFF6EE7B7),
             ),
           ],
         ),
@@ -3324,229 +2281,441 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  Widget _statColumn({
-    required IconData icon,
-    required String label,
-    required String value,
-    required bool isCompact,
-  }) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.white.withValues(alpha: 0.6),
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.4,
-            ),
+  Widget _statItem(String v, String l, Color c) => Expanded(
+    child: Column(
+      children: [
+        Text(
+          v,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: c),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          l,
+          style: TextStyle(
+            fontSize: 10,
+            color: c.withValues(alpha: 0.75),
+            letterSpacing: 0.4,
+            fontWeight: FontWeight.w500,
           ),
-          const SizedBox(height: 2),
+        ),
+      ],
+    ),
+  );
+
+  Widget _vDiv() => Container(
+    width: 1,
+    height: 28,
+    color: Colors.white.withValues(alpha: 0.2),
+  );
+
+  // ── Stat cards ────────────────────────────────────────────────────────────
+
+  Widget _buildStatCards() {
+    final worked = _presentDays + _absentDays;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        children: [
           Row(
             children: [
-              Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.9)),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: isCompact ? 13 : 15,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              _statCard(
+                '$_leaveDays',
+                'Leave Days',
+                _blue,
+                Icons.beach_access_rounded,
+              ),
+              const SizedBox(width: 10),
+              _statCard(
+                '$_holidayDays',
+                'Holidays',
+                _purple,
+                Icons.celebration_rounded,
+              ),
+              const SizedBox(width: 10),
+              _statCard(
+                '$_compoffDays',
+                'Comp-Off\nWorked',
+                _amber,
+                Icons.swap_horiz_rounded,
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          // Progress bar card
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Monthly Attendance Rate',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _textMid,
+                      ),
+                    ),
+                    Text(
+                      '$_presentDays / $worked working days',
+                      style: const TextStyle(fontSize: 11, color: _textLight),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: worked > 0 ? _presentDays / worked : 0,
+                    backgroundColor: _red.withValues(alpha: 0.12),
+                    color: _attendanceRate >= 90
+                        ? _accent
+                        : _attendanceRate >= 75
+                        ? _orange
+                        : _red,
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _progressLegend(_accent, 'Present: $_presentDays'),
+                    _progressLegend(_red, 'Absent: $_absentDays'),
+                    _progressLegend(_orange, 'Late: $_lateDays'),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _statDivider() {
-    return Container(
-      width: 1,
-      height: 32,
-      margin: const EdgeInsets.symmetric(horizontal: 10),
-      color: Colors.white.withValues(alpha: 0.2),
-    );
-  }
+  Widget _progressLegend(Color c, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 4),
+      Text(label, style: const TextStyle(fontSize: 10, color: _textMid)),
+    ],
+  );
 
-  // ── Month nav — matches the History button style in AttendanceScreen ───────
+  Widget _statCard(String val, String label, Color color, IconData icon) =>
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(height: 6),
+              Text(
+                val,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: _textMid,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
-  Widget _buildMonthNav({required bool isSmall}) {
+  // ── Month navigator ───────────────────────────────────────────────────────
+
+  Widget _buildMonthNav() {
     final now = DateTime.now();
     final canGoNext = !DateTime(
       _focusedMonth.year,
       _focusedMonth.month + 1,
     ).isAfter(DateTime(now.year, now.month));
 
-    return Row(
-      children: [
-        // Same icon button style used inside AttendanceScreen header
-        InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            final prev = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
-            setState(() {
-              _focusedMonth = prev;
-              _dayData = {};
-            });
-            _loadMonth(prev);
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Icon(
-              Icons.chevron_left_rounded,
-              size: 22,
-              color: Colors.indigo.shade400,
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      child: Row(
+        children: [
+          _navBtn(
+            icon: Icons.chevron_left_rounded,
+            onTap: () {
+              final prev = DateTime(
+                _focusedMonth.year,
+                _focusedMonth.month - 1,
+              );
+              setState(() {
+                _focusedMonth = prev;
+                _days = [];
+                _summary = {};
+              });
+              _loadMonth(prev);
+            },
           ),
-        ),
-        Expanded(
-          child: Text(
-            _monthLabel(_focusedMonth),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: isSmall ? 12 : 13,
-              fontWeight: FontWeight.w700,
-              color: Colors.grey[800],
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: canGoNext
-              ? () {
-                  final next = DateTime(
-                    _focusedMonth.year,
-                    _focusedMonth.month + 1,
-                  );
-                  setState(() {
-                    _focusedMonth = next;
-                    _dayData = {};
-                  });
-                  _loadMonth(next);
-                }
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Icon(
-              Icons.chevron_right_rounded,
-              size: 22,
-              color: canGoNext ? Colors.indigo.shade400 : Colors.grey.shade300,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Weekday header ─────────────────────────────────────────────────────────
-
-  Widget _buildWeekdayHeader({required bool isSmall}) {
-    return Row(
-      children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-          .map(
-            (d) => Expanded(
+          Expanded(
+            child: Center(
               child: Text(
-                d,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: isSmall ? 9 : 10,
+                _monthLabel(_focusedMonth),
+                style: const TextStyle(
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: d == 'Sun'
-                      ? Colors.red.shade300
-                      : Colors.grey.shade400,
-                  letterSpacing: 0.3,
+                  color: _textDark,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
-          )
-          .toList(),
+          ),
+          _navBtn(
+            icon: Icons.chevron_right_rounded,
+            disabled: !canGoNext,
+            onTap: canGoNext
+                ? () {
+                    final next = DateTime(
+                      _focusedMonth.year,
+                      _focusedMonth.month + 1,
+                    );
+                    setState(() {
+                      _focusedMonth = next;
+                      _days = [];
+                      _summary = {};
+                    });
+                    _loadMonth(next);
+                  }
+                : null,
+          ),
+        ],
+      ),
     );
   }
 
-  // ── Calendar grid ──────────────────────────────────────────────────────────
+  Widget _navBtn({
+    required IconData icon,
+    VoidCallback? onTap,
+    bool disabled = false,
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: disabled ? const Color(0xFFF1F5F9) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
+        boxShadow: disabled
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Icon(icon, size: 20, color: disabled ? _textLight : _primary),
+    ),
+  );
 
-  Widget _buildCalendar() {
+  // ── Calendar header ───────────────────────────────────────────────────────
+
+  Widget _buildCalendarHeader() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+    child: Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: _primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.calendar_month_rounded,
+            color: _primary,
+            size: 16,
+          ),
+        ),
+        const SizedBox(width: 10),
+        const Text(
+          'Monthly Calendar',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: _textDark,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  // ── Weekday header ────────────────────────────────────────────────────────
+
+  Widget _buildWeekdayHeader() {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: days
+            .map(
+              (d) => Expanded(
+                child: Text(
+                  d,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: d == 'Sun'
+                        ? _red.withValues(alpha: 0.7)
+                        : _textLight,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  // ── Calendar grid ─────────────────────────────────────────────────────────
+
+  Widget _buildCalendarGrid() {
+    if (_days.isEmpty) return const SizedBox();
+
     final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final startOffset = (firstDay.weekday - 1) % 7;
-    final daysInMonth = DateUtils.getDaysInMonth(
+    final startOff = (firstDay.weekday - 1) % 7;
+    final daysInMon = DateUtils.getDaysInMonth(
       _focusedMonth.year,
       _focusedMonth.month,
     );
-    final totalCells = startOffset + daysInMonth;
+    final totalCells = startOff + daysInMon;
     final rows = (totalCells / 7).ceil();
 
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 7,
-        mainAxisSpacing: 5,
-        crossAxisSpacing: 4,
-        childAspectRatio: 0.72,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 5,
+        childAspectRatio: 0.70,
       ),
       itemCount: rows * 7,
       itemBuilder: (_, index) {
-        final dayNum = index - startOffset + 1;
-        if (dayNum < 1 || dayNum > daysInMonth) return const SizedBox();
+        final dayNum = index - startOff + 1;
+        if (dayNum < 1 || dayNum > daysInMon) return const SizedBox();
         final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
-        return _buildDayCell(day);
+        final dateStr = _fmtDate(day);
+        final data = _dayData(dateStr);
+        if (data == null) return const SizedBox();
+        return _buildDayCell(data);
       },
     );
   }
 
-  // Day cell — uses same white card + border style as AttendanceScreen log items
-  Widget _buildDayCell(DateTime day) {
-    final dateStr = _fmtDate(day);
-    final data = _dayData[dateStr];
-    final isToday = _isToday(day);
-    final isFuture = _isFuture(day);
-    final isSunday = day.weekday == DateTime.sunday;
-    final isPresent = data != null;
-    final totalMin = (data?['total_minutes'] as int?) ?? 0;
-    final isLate = data?['is_late'] == true;
+  // ── Day cell ──────────────────────────────────────────────────────────────
 
-    Color bgColor = Colors.white;
-    Color textColor = const Color(0xFF1A1A2E);
-    Color borderColor = Colors.grey.shade200;
+  Widget _buildDayCell(Map<String, dynamic> data) {
+    final status = data['status'] as String? ?? 'future';
+    final dayNum = data['day'] as int? ?? 0;
+    final isToday = data['is_today'] == true;
+    final isSunday = data['is_sunday'] == true;
+    final isFuture = data['is_future'] == true;
+    final totalMin = (data['total_minutes'] as num? ?? 0).toInt();
+    final isLate = data['is_late'] == true;
+    final holiday = data['holiday'] as Map<String, dynamic>?;
+    final leave = data['leave'] as Map<String, dynamic>?;
+    final hasCompoff = data['compoff'] != null;
 
-    if (isFuture) {
-      bgColor = Colors.grey.shade50;
-      textColor = Colors.grey.shade300;
-      borderColor = Colors.transparent;
-    } else if (isToday) {
-      borderColor = Colors.indigo;
-      bgColor = const Color(0xFFEEF2FF);
-    } else if (isPresent) {
-      if (isLate) {
-        bgColor = const Color(0xFFFFF8E1);
-        borderColor = Colors.orange.shade200;
-      } else {
-        bgColor = const Color(0xFFE8F5E9);
-        borderColor = Colors.green.shade200;
-      }
-    } else if (!isFuture) {
-      bgColor = const Color(0xFFFFF3F3);
-      borderColor = Colors.red.shade100;
+    Color bgColor = Colors.white, borderColor = _border;
+    switch (status) {
+      case 'present':
+        bgColor = _accent.withValues(alpha: 0.06);
+        borderColor = _accent.withValues(alpha: 0.3);
+        break;
+      case 'late':
+        bgColor = _orange.withValues(alpha: 0.06);
+        borderColor = _orange.withValues(alpha: 0.3);
+        break;
+      case 'absent':
+        bgColor = _red.withValues(alpha: 0.04);
+        borderColor = _red.withValues(alpha: 0.2);
+        break;
+      case 'holiday':
+        bgColor = _purple.withValues(alpha: 0.05);
+        borderColor = _purple.withValues(alpha: 0.25);
+        break;
+      case 'leave':
+        bgColor = _blue.withValues(alpha: 0.05);
+        borderColor = _blue.withValues(alpha: 0.25);
+        break;
+      case 'weekend':
+        bgColor = const Color(0xFFF8FAFC);
+        borderColor = Colors.transparent;
+        break;
+      case 'future':
+        bgColor = const Color(0xFFF8FAFC);
+        borderColor = Colors.transparent;
+        break;
+      case 'compoff':
+        bgColor = _amber.withValues(alpha: 0.06);
+        borderColor = _amber.withValues(alpha: 0.25);
+        break;
+    }
+    if (isToday) {
+      bgColor = _primary.withValues(alpha: 0.06);
+      borderColor = _primary;
     }
 
-    if (isSunday && !isFuture) textColor = Colors.red.shade400;
+    final dayNumColor = isFuture
+        ? _textLight
+        : isSunday
+        ? _red.withValues(alpha: 0.8)
+        : isToday
+        ? _primary
+        : _textDark;
 
     return GestureDetector(
-      onTap: isFuture ? null : () => _onDayTap(day),
-      child: Container(
+      onTap: isFuture ? null : () => _onDayTap(data),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(10),
-          // Same border style as AttendanceScreen log list items
-          border: Border.all(color: borderColor, width: isToday ? 1.5 : 1.2),
-          boxShadow: isPresent && !isFuture
+          border: Border.all(color: borderColor, width: isToday ? 1.5 : 1),
+          boxShadow: (status == 'present' || status == 'late') && !isFuture
               ? [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.03),
@@ -3559,81 +2728,68 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            const SizedBox(height: 6),
-            // Day number — same circle style as AttendanceScreen "today"
+            const SizedBox(height: 5),
             Container(
               width: 22,
               height: 22,
               decoration: isToday
-                  ? const BoxDecoration(
-                      color: Colors.indigo,
-                      shape: BoxShape.circle,
-                    )
+                  ? const BoxDecoration(color: _primary, shape: BoxShape.circle)
                   : null,
               child: Center(
                 child: Text(
-                  '${day.day}',
+                  '$dayNum',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: isToday ? Colors.white : textColor,
+                    color: isToday ? Colors.white : dayNumColor,
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 3),
-            if (isPresent && !isFuture) ...[
+            // Content by status
+            if (status == 'present' || status == 'late') ...[
               Text(
                 _fmtMinutes(totalMin),
                 style: TextStyle(
                   fontSize: 8,
                   fontWeight: FontWeight.w700,
-                  color: isLate
-                      ? Colors.orange.shade800
-                      : const Color(0xFF2E7D32),
+                  color: isLate ? _orange : _accent,
                 ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 2),
-              // Status indicator — matches AttendanceScreen log item icons
               if (isLate)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 3,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade600,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Late',
-                    style: TextStyle(
-                      fontSize: 7,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                )
+                _miniTag('Late', _orange)
               else
                 Container(
                   width: 16,
                   height: 3,
                   decoration: BoxDecoration(
-                    color: Colors.green.shade400,
+                    color: _accent,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-            ] else if (!isPresent && !isFuture && !isSunday) ...[
+              if (hasCompoff) ...[
+                const SizedBox(height: 2),
+                _miniTag('CO', _amber),
+              ],
+            ] else if (status == 'absent') ...[
               Text(
                 'Abs',
                 style: TextStyle(
                   fontSize: 8,
-                  color: Colors.red.shade300,
+                  color: _red.withValues(alpha: 0.6),
                   fontWeight: FontWeight.w600,
                 ),
                 textAlign: TextAlign.center,
               ),
+            ] else if (status == 'holiday') ...[
+              _miniTag('Holi', _purple),
+            ] else if (status == 'leave') ...[
+              _miniTag('Leave', _blue),
+            ] else if (status == 'compoff') ...[
+              _miniTag('CO', _amber),
             ],
           ],
         ),
@@ -3641,154 +2797,597 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── Legend — same container style as AttendanceScreen cards ───────────────
+  Widget _miniTag(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        fontSize: 7,
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 
-  Widget _buildLegend() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+  // ── Legend ────────────────────────────────────────────────────────────────
+
+  Widget _buildLegend() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.2),
+        border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
         children: [
-          _legendItem(
-            const Color(0xFFE8F5E9),
-            Colors.green.shade200,
-            'Present',
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _legendItem(_accent.withValues(alpha: 0.1), _accent, 'Present'),
+              _legendItem(
+                _red.withValues(alpha: 0.06),
+                _red.withValues(alpha: 0.4),
+                'Absent',
+              ),
+              _legendItem(_primary.withValues(alpha: 0.06), _primary, 'Today'),
+              _legendItem(
+                _orange.withValues(alpha: 0.08),
+                _orange.withValues(alpha: 0.5),
+                'Late',
+              ),
+            ],
           ),
-          _legendItem(const Color(0xFFFFF3F3), Colors.red.shade100, 'Absent'),
-          _legendItem(const Color(0xFFEEF2FF), Colors.indigo, 'Today'),
-          _legendItem(const Color(0xFFFFF8E1), Colors.orange.shade200, 'Late'),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _legendBadge(_blue, 'Leave'),
+              _legendBadge(_purple, 'Holiday'),
+              _legendBadge(_amber, 'Comp-Off'),
+              const Expanded(child: SizedBox()),
+            ],
+          ),
         ],
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _legendItem(Color bg, Color border, String label) {
-    return Row(
+  Widget _legendBadge(Color color, String label) => Expanded(
+    child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 11,
-          height: 11,
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
           decoration: BoxDecoration(
-            color: bg,
-            border: Border.all(color: border, width: 1.2),
-            borderRadius: BorderRadius.circular(3),
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            label == 'Comp-Off' ? 'CO' : label.substring(0, 4),
+            style: const TextStyle(
+              fontSize: 8,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 4),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 10,
-            color: Colors.grey.shade600,
+            color: _textMid,
             fontWeight: FontWeight.w500,
           ),
         ),
       ],
-    );
-  }
-
-  // ── Absent dialog ──────────────────────────────────────────────────────────
-  // Same AlertDialog shape/style as AttendanceScreen dialogs
-
-  Widget _buildAbsentDialog(DateTime day) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    title: Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.red.shade50,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            Icons.event_busy_rounded,
-            color: Colors.red.shade400,
-            size: 18,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              day.weekday == DateTime.sunday ? 'Weekly Off' : 'No Attendance',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            Text(
-              _fullDate(day),
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade500,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ],
     ),
-    content: Text(
-      day.weekday == DateTime.sunday
-          ? 'Sunday — weekly off.'
-          : 'No attendance recorded for this day.',
-      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Close'),
+  );
+
+  Widget _legendItem(Color bg, Color border, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: border, width: 1.2),
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          color: _textMid,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     ],
   );
 
-  // ── Detail dialog ──────────────────────────────────────────────────────────
-  // Header gradient matches AttendanceScreen status card.
-  // Visit rows match AttendanceScreen log list items exactly.
+  // ── Days list (detailed report below calendar) ────────────────────────────
+
+  Widget _buildDaysList() {
+    // Only show worked days with sessions
+    final workedDays = _days.where((d) {
+      final status = d['status'] as String? ?? '';
+      return status == 'present' || status == 'late';
+    }).toList();
+
+    if (workedDays.isEmpty) return const SizedBox();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                 
+                const SizedBox(width: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayRow(Map<String, dynamic> data) {
+    final dateStr = data['date'] as String;
+    final day = DateTime.parse(dateStr);
+    final isLate = data['is_late'] == true;
+    final lateText = data['late_text'] as String?;
+    final totalMin = (data['total_minutes'] as num? ?? 0).toInt();
+    final sessions = (data['sessions'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+    final firstIn = data['first_in'] as String?;
+    final lastOut = data['last_out'] as String?;
+
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final dayLabel =
+        '${days[day.weekday - 1]}, ${day.day} ${months[day.month - 1]}';
+
+    return GestureDetector(
+      onTap: () => _onDayTap(data),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isLate
+                ? _orange.withValues(alpha: 0.3)
+                : _accent.withValues(alpha: 0.2),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Accent bar
+            Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: isLate ? _orange : _accent,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(14),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      // Date badge
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: (isLate ? _orange : _accent).withValues(
+                            alpha: 0.08,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${day.day}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: isLate ? _orange : _accent,
+                              ),
+                            ),
+                            Text(
+                              months[day.month - 1],
+                              style: const TextStyle(
+                                fontSize: 9,
+                                color: _textMid,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  dayLabel,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _textDark,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: (isLate ? _orange : _accent)
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    _fmtMinutes(totalMin),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: isLate ? _orange : _accent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                if (firstIn != null) ...[
+                                  _timeChip(
+                                    Icons.login_rounded,
+                                    _fmtTime(firstIn),
+                                    _accent,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  if (lastOut != null) ...[
+                                    const Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 11,
+                                      color: _textLight,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    _timeChip(
+                                      Icons.logout_rounded,
+                                      _fmtTime(lastOut),
+                                      _red,
+                                    ),
+                                  ],
+                                ],
+                                const Spacer(),
+                                if (isLate && lateText != null)
+                                  _miniTag('Late $lateText', _orange)
+                                else
+                                  _miniTag('On Time', _accent),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (sessions.length > 1) ...[
+                    const SizedBox(height: 8),
+                    Divider(height: 1, color: Colors.grey.shade100),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.layers_rounded,
+                          size: 13,
+                          color: _textLight,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${sessions.length} sessions',
+                          style: const TextStyle(fontSize: 11, color: _textMid),
+                        ),
+                        const Spacer(),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: _textLight,
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timeChip(IconData icon, String time, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withValues(alpha: 0.2)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: color),
+        const SizedBox(width: 3),
+        Text(
+          time,
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  // ── Dialogs ───────────────────────────────────────────────────────────────
+
+  Widget _buildAbsentDialog(DateTime day, String status) {
+    final isSunday = day.weekday == DateTime.sunday;
+    final isSat = day.weekday == DateTime.saturday;
+    final isWeekend = isSunday || isSat;
+    final color = isWeekend ? _textLight : _red;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: Colors.white,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isWeekend ? Icons.weekend_rounded : Icons.event_busy_rounded,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isSunday
+                      ? 'Weekly Off'
+                      : isSat
+                      ? 'Weekend'
+                      : 'No Attendance',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _fullDate(day),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: _textMid,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isWeekend ? Icons.info_outline_rounded : Icons.cancel_outlined,
+              color: color,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isWeekend
+                    ? '${isSunday ? 'Sunday' : 'Saturday'} — weekly off day.'
+                    : 'No attendance recorded for this day.',
+                style: const TextStyle(fontSize: 13, color: _textMid),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          style: FilledButton.styleFrom(
+            backgroundColor: _primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+          ),
+          child: const Text(
+            'Close',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpecialDayDialog(
+    DateTime day, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: Colors.white,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _fullDate(day),
+                  style: const TextStyle(fontSize: 11, color: _textMid),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          style: FilledButton.styleFrom(
+            backgroundColor: color,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+          ),
+          child: const Text(
+            'Close',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildDetailDialog(
     DateTime day,
-    Map<String, dynamic>? detail,
+    List<Map<String, dynamic>> sessions,
+    int totalMin,
     bool isLate,
     String? lateText,
   ) {
-    final sessions = (detail?['sessions'] as List?) ?? [];
-    final totalMin = sessions.fold<int>(
-      0,
-      (s, e) => s + ((e['site_minutes'] as num?)?.toInt() ?? 0),
-    );
-
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+      backgroundColor: Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header — matches AttendanceScreen status card gradient + structure
+          // Header
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isLate
-                    ? [const Color(0xFFE65100), const Color(0xFFFF6D00)]
-                    : [const Color(0xFF2E7D32), const Color(0xFF43A047)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 16, 16),
+            decoration: const BoxDecoration(
+              color: _primary,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3797,7 +3396,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
@@ -3817,24 +3416,23 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                         _fullDate(day),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      // Late badge — matches AttendanceScreen late badge style
-                      if (isLate && lateText != null) ...[
+                      const SizedBox(height: 5),
+                      if (isLate && lateText != null)
                         Container(
+                          margin: const EdgeInsets.only(bottom: 5),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 9,
-                            vertical: 5,
+                            vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.18),
+                            color: _orange.withValues(alpha: 0.25),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: Colors.white.withValues(alpha: 0.25),
-                              width: 1,
                             ),
                           ),
                           child: Row(
@@ -3842,14 +3440,14 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                             children: [
                               const Icon(
                                 Icons.schedule_rounded,
-                                size: 13,
+                                size: 12,
                                 color: Colors.white,
                               ),
                               const SizedBox(width: 5),
                               Text(
                                 'Late by $lateText',
                                 style: const TextStyle(
-                                  fontSize: 11.5,
+                                  fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -3857,237 +3455,297 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 4),
-                      ],
-                      Text(
-                        'Total: ${_fmtMinutes(totalMin)}  ·  ${sessions.length} session(s)',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.white.withValues(alpha: 0.82),
-                          fontWeight: FontWeight.w500,
-                        ),
+                      Row(
+                        children: [
+                          _dialogChip(
+                            icon: Icons.timelapse_rounded,
+                            label: _fmtMinutes(totalMin),
+                          ),
+                          const SizedBox(width: 6),
+                          _dialogChip(
+                            icon: Icons.layers_rounded,
+                            label:
+                                '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: 20,
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
           ),
 
-          // Sessions list — log items match AttendanceScreen log list exactly
+          // Sessions list
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 420),
             child: sessions.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Text(
-                      'No session data available.',
-                      textAlign: TextAlign.center,
+                ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _textLight.withValues(alpha: 0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.inbox_rounded,
+                            color: _textLight,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No session data available.',
+                          style: TextStyle(color: _textMid, fontSize: 13),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.separated(
                     shrinkWrap: true,
                     padding: const EdgeInsets.all(14),
                     itemCount: sessions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (_, si) {
                       final sess = sessions[si];
-                      final visits = (sess['visits'] as List?) ?? [];
-                      final sessMin =
-                          (sess['site_minutes'] as num?)?.toInt() ?? 0;
+                      final visits = (sess['visits'] as List? ?? [])
+                          .cast<Map<String, dynamic>>();
+                      final sessMin = (sess['site_minutes'] as num? ?? 0)
+                          .toInt();
                       final sessNum = sess['session_number'] ?? (si + 1);
+                      final sessLate = sess['is_late'] == true;
 
                       return Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: Colors.grey.shade200,
-                            width: 1.2,
+                            color: sessLate
+                                ? _orange.withValues(alpha: 0.3)
+                                : _border,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
+                        clipBehavior: Clip.antiAlias,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Session header row
+                            Container(
+                              height: 3,
+                              color: sessLate ? _orange : _accent,
+                            ),
                             Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                10,
+                                12,
+                                10,
                               ),
                               child: Row(
                                 children: [
-                                  // Session badge — same indigo style as AttendanceScreen S-badge
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
+                                    width: 36,
+                                    height: 36,
                                     decoration: BoxDecoration(
-                                      color: Colors.indigo.shade50,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      'S$sessNum',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.indigo.shade400,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  // Times — same _timeTag style as log list
-                                  _timeTag(
-                                    icon: Icons.login_rounded,
-                                    time: _fmtTime(
-                                      sess['started_at']?.toString(),
-                                    ),
-                                    color: Colors.green.shade700,
-                                    bg: Colors.green.shade50,
-                                  ),
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                    ),
-                                    child: Text(
-                                      '→',
-                                      style: TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  _timeTag(
-                                    icon: Icons.logout_rounded,
-                                    time: sess['ended_at'] != null
-                                        ? _fmtTime(sess['ended_at'].toString())
-                                        : 'Active',
-                                    color: sess['ended_at'] != null
-                                        ? Colors.red.shade400
-                                        : Colors.orange.shade700,
-                                    bg: sess['ended_at'] != null
-                                        ? Colors.red.shade50
-                                        : Colors.orange.shade50,
-                                  ),
-                                  const Spacer(),
-                                  // Duration badge — gradient matches log list
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.grey.shade300,
-                                          Colors.grey.shade400,
-                                        ],
-                                      ),
+                                      color: _primary.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        'S$sessNum',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: _primary,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            _timeTag(
+                                              icon: Icons.login_rounded,
+                                              time: _fmtTime(
+                                                sess['started_at']?.toString(),
+                                              ),
+                                              color: _accent,
+                                              bg: _accent.withValues(
+                                                alpha: 0.08,
+                                              ),
+                                            ),
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 5,
+                                              ),
+                                              child: Icon(
+                                                Icons.arrow_forward_rounded,
+                                                size: 12,
+                                                color: _textLight,
+                                              ),
+                                            ),
+                                            _timeTag(
+                                              icon: Icons.logout_rounded,
+                                              time: sess['ended_at'] != null
+                                                  ? _fmtTime(
+                                                      sess['ended_at']
+                                                          .toString(),
+                                                    )
+                                                  : 'Active',
+                                              color: sess['ended_at'] != null
+                                                  ? _red
+                                                  : _orange,
+                                              bg: sess['ended_at'] != null
+                                                  ? _red.withValues(alpha: 0.08)
+                                                  : _orange.withValues(
+                                                      alpha: 0.08,
+                                                    ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (sessLate &&
+                                            sess['late_text'] != null) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              // const Icon(
+                                              //   Icons.schedule_rounded,
+                                              //   size: 11,
+                                              //   color: _orange,
+                                              // ),
+                                              // const SizedBox(width: 3),
+                                              // Text(
+                                              //   'Late: ${sess['late_text']}',
+                                              //   style: const TextStyle(
+                                              //     fontSize: 10,
+                                              //     color: _orange,
+                                              //     fontWeight: FontWeight.w600,
+                                              //   ),
+                                              // ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: sessLate
+                                          ? _orange.withValues(alpha: 0.08)
+                                          : _accent.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
                                       _fmtMinutes(sessMin),
                                       style: TextStyle(
-                                        fontSize: 11.5,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.grey.shade700,
+                                        color: sessLate ? _orange : _accent,
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-
-                            // Divider
-                            Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: Colors.grey.shade100,
-                            ),
-
-                            // Visits — each row matches AttendanceScreen log list item
+                            Divider(height: 1, color: Colors.grey.shade100),
                             if (visits.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.all(12),
                                 child: Text(
                                   'No site visits in this session.',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey.shade500,
+                                    color: _textMid,
                                   ),
                                 ),
                               )
                             else
                               ...visits.asMap().entries.map((e) {
-                                final vi = e.key;
                                 final v = e.value;
-                                final isLast = vi == visits.length - 1;
+                                final isOpen = v['out_time'] == null;
                                 final vMin =
                                     (v['worked_minutes'] as num?)?.toInt() ?? 0;
-                                final isOpen = v['out_time'] == null;
-                                final siteName =
+                                final sName =
                                     v['site_name'] as String? ?? 'Unknown';
                                 final siteId = v['site_id'] as int?;
+                                final isLast = e.key == visits.length - 1;
 
                                 return InkWell(
-                                  onTap: () =>
-                                      _openSiteInMaps(siteId, siteName),
+                                  onTap: () => _openSiteInMaps(siteId, sName),
                                   borderRadius: isLast
                                       ? const BorderRadius.vertical(
                                           bottom: Radius.circular(14),
                                         )
                                       : BorderRadius.zero,
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      10,
+                                      12,
+                                      10,
                                     ),
                                     child: Row(
                                       children: [
-                                        // Icon container — matches log list item icon
                                         Container(
                                           width: 36,
                                           height: 36,
                                           decoration: BoxDecoration(
                                             color: isOpen
-                                                ? Colors.green.shade50
-                                                : Colors.grey.shade100,
+                                                ? _accent.withValues(
+                                                    alpha: 0.08,
+                                                  )
+                                                : const Color(0xFFF8FAFC),
                                             borderRadius: BorderRadius.circular(
                                               10,
                                             ),
+                                            border: Border.all(color: _border),
                                           ),
                                           child: Icon(
                                             isOpen
-                                                ? Icons.radio_button_on_rounded
+                                                ? Icons.location_on_rounded
                                                 : Icons
                                                       .check_circle_outline_rounded,
                                             size: 18,
                                             color: isOpen
-                                                ? Colors.green
-                                                : Colors.grey,
+                                                ? _accent
+                                                : _textLight,
                                           ),
                                         ),
                                         const SizedBox(width: 10),
-
-                                        // Site name + times
                                         Expanded(
                                           child: Column(
                                             crossAxisAlignment:
@@ -4097,42 +3755,39 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                                                 children: [
                                                   Expanded(
                                                     child: Text(
-                                                      siteName,
+                                                      sName,
                                                       style: const TextStyle(
                                                         fontWeight:
                                                             FontWeight.w700,
-                                                        fontSize: 13.5,
-                                                        color: Color(
-                                                          0xFF1A1A2E,
-                                                        ),
+                                                        fontSize: 13,
+                                                        color: _textDark,
                                                       ),
                                                       maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
                                                     ),
                                                   ),
-                                                  Icon(
+                                                  const Icon(
                                                     Icons.open_in_new_rounded,
-                                                    size: 12,
-                                                    color:
-                                                        Colors.indigo.shade300,
+                                                    size: 11,
+                                                    color: _textLight,
                                                   ),
                                                 ],
                                               ),
                                               const SizedBox(height: 4),
-                                              // Time tags — exact same _timeTag widget
                                               Wrap(
-                                                spacing: 6,
-                                                runSpacing: 4,
+                                                spacing: 5,
+                                                runSpacing: 3,
                                                 children: [
                                                   _timeTag(
                                                     icon: Icons.login_rounded,
                                                     time: _fmtTime(
                                                       v['in_time']?.toString(),
                                                     ),
-                                                    color:
-                                                        Colors.green.shade700,
-                                                    bg: Colors.green.shade50,
+                                                    color: _accent,
+                                                    bg: _accent.withValues(
+                                                      alpha: 0.08,
+                                                    ),
                                                   ),
                                                   _timeTag(
                                                     icon: Icons.logout_rounded,
@@ -4143,11 +3798,15 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                                                                 ?.toString(),
                                                           ),
                                                     color: isOpen
-                                                        ? Colors.orange.shade700
-                                                        : Colors.red.shade400,
+                                                        ? _orange
+                                                        : _red,
                                                     bg: isOpen
-                                                        ? Colors.orange.shade50
-                                                        : Colors.red.shade50,
+                                                        ? _orange.withValues(
+                                                            alpha: 0.08,
+                                                          )
+                                                        : _red.withValues(
+                                                            alpha: 0.08,
+                                                          ),
                                                   ),
                                                 ],
                                               ),
@@ -4155,39 +3814,29 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-
-                                        // Duration — gradient matches log list
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
+                                            horizontal: 9,
+                                            vertical: 5,
                                           ),
                                           decoration: BoxDecoration(
-                                            gradient: isOpen
-                                                ? LinearGradient(
-                                                    colors: [
-                                                      Colors.green.shade400,
-                                                      Colors.green.shade600,
-                                                    ],
+                                            color: isOpen
+                                                ? _accent.withValues(
+                                                    alpha: 0.08,
                                                   )
-                                                : LinearGradient(
-                                                    colors: [
-                                                      Colors.grey.shade300,
-                                                      Colors.grey.shade400,
-                                                    ],
-                                                  ),
+                                                : const Color(0xFFF1F5F9),
                                             borderRadius: BorderRadius.circular(
-                                              10,
+                                              20,
                                             ),
                                           ),
                                           child: Text(
                                             _fmtMinutes(vMin),
                                             style: TextStyle(
-                                              fontSize: 11.5,
+                                              fontSize: 11,
                                               fontWeight: FontWeight.w700,
                                               color: isOpen
-                                                  ? Colors.white
-                                                  : Colors.grey.shade700,
+                                                  ? _accent
+                                                  : _textMid,
                                             ),
                                           ),
                                         ),
@@ -4203,25 +3852,28 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                   ),
           ),
 
-          // Footer — same TextButton style as AttendanceScreen dialogs
+          // Footer
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
             child: SizedBox(
               width: double.infinity,
-              child: TextButton(
+              height: 46,
+              child: FilledButton(
                 onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  backgroundColor: const Color(0xFFEEF2FF),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _primary.withValues(alpha: 0.08),
+                  foregroundColor: _primary,
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 child: const Text(
                   'Close',
                   style: TextStyle(
-                    color: Colors.indigo,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: _primary,
                   ),
                 ),
               ),
@@ -4232,36 +3884,56 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── Shared widgets (copied from AttendanceScreen) ─────────────────────────
+  Widget _dialogChip({required IconData icon, required String label}) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
 
-  /// Identical to AttendanceScreen._timeTag
   Widget _timeTag({
     required IconData icon,
     required String time,
     required Color color,
     required Color bg,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 3),
-          Text(
-            time,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
+  }) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withValues(alpha: 0.2)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: color),
+        const SizedBox(width: 3),
+        Text(
+          time,
+          style: TextStyle(
+            fontSize: 11,
+            color: color,
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 }

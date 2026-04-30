@@ -61,7 +61,6 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
       errorMessage = null;
     });
     try {
-      // ✅ FIX: correct endpoint + no trailing spaces
       final res = await ApiClient.get('/employees/${widget.employeeId}/leaves');
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -82,11 +81,20 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
     }
   }
 
+  static int _parseDays(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.ceil(); // 0.5 → 1, 1.0 → 1
+    if (value is String) {
+      // handles "1", "1.0", "0.5"
+      final d = double.tryParse(value);
+      if (d != null) return d.ceil();
+    }
+    return 0;
+  }
+
   Future<void> submitLeave() async {
     if (leaveType == null || fromDate == null || toDate == null) return;
-    // ✅ Manager applies leave → server auto-approves (role_id = 8)
-    // Edit is not needed for manager since leaves are instantly Approved
-    // but kept for safety if editingLeaveId is ever set
     try {
       final bodyMap = {
         'leave_type': leaveType,
@@ -154,10 +162,9 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
   // ─── Summary ──────────────────────────────────────────────────────────────────
   int get _approvedDays => leaves
       .where((e) => e['status'] == 'Approved')
-      .fold<int>(0, (s, e) => s + (e['number_of_days'] as int));
+      .fold<int>(0, (s, e) => s + _parseDays(e['number_of_days']));
   int get _remainingDays =>
       (_totalAllowed - _approvedDays).clamp(0, _totalAllowed);
-  // ✅ FIX: manager has no pending — count is always 0 but kept for safety
   int get _pendingCount =>
       leaves.where((e) => e['status'] == 'Pending_Manager').length;
 
@@ -219,7 +226,6 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
           runSpacing: gap,
           children: List.generate(
             leaves.length,
-            // ✅ Manager leaves are instantly Approved — no edit/cancel needed
             (i) => SizedBox(
               width: itemW,
               child: _LeaveCard(leave: leaves[i]),
@@ -231,11 +237,7 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
   }
 
   Widget _buildLeaveList(Responsive r) => Column(
-    children: List.generate(
-      leaves.length,
-      // ✅ Manager leaves are instantly Approved — no edit/cancel needed
-      (i) => _LeaveCard(leave: leaves[i]),
-    ),
+    children: List.generate(leaves.length, (i) => _LeaveCard(leave: leaves[i])),
   );
 
   // ─── Sliver AppBar ────────────────────────────────────────────────────────────
@@ -359,7 +361,6 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
               ),
             ),
             const Spacer(),
-            // ── Holiday view button ──────────────────────────────────────
             GestureDetector(
               onTap: () => Navigator.push(
                 context,
@@ -398,7 +399,6 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
                 ),
               ),
             ),
-            // ── Records chip ─────────────────────────────────────────────
             if (leaves.isNotEmpty) ...[
               const SizedBox(width: 8),
               Container(
@@ -541,7 +541,9 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _ApplyLeaveSheet(
-        isEdit: false, // ✅ Manager always applies fresh — no editing
+        // ✅ Pass real employeeId so the sheet can fetch actual balances
+        employeeId: widget.employeeId,
+        isEdit: false,
         initialLeaveType: leaveType,
         initialFromDate: fromDate,
         initialToDate: toDate,
@@ -559,11 +561,10 @@ class _MGLeaveScreenState extends State<MGLeaveScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Leave Card — simplified for Manager (no edit/cancel, no TL/HR blocks)
+// Leave Card
 // ═══════════════════════════════════════════════════════════════════════════════
 class _LeaveCard extends StatefulWidget {
   final Map<String, dynamic> leave;
-
   const _LeaveCard({required this.leave});
 
   @override
@@ -575,12 +576,10 @@ class _LeaveCardState extends State<_LeaveCard> {
 
   static const Color _primary = Color(0xFF1A56DB);
   static const Color _accent = Color(0xFF0E9F6E);
-  static const Color _red = Color(0xFFEF4444);
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMid = Color(0xFF64748B);
   static const Color _textLight = Color(0xFF94A3B8);
 
-  // ✅ Only statuses a manager will ever see
   static const _statusCfg = <String, Map<String, dynamic>>{
     'Approved': {
       'label': 'Approved',
@@ -645,6 +644,18 @@ class _LeaveCardState extends State<_LeaveCard> {
     } catch (_) {
       return s;
     }
+  }
+
+  static int _parseDays(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.ceil(); // 0.5 → 1, 1.0 → 1
+    if (value is String) {
+      // handles "1", "1.0", "0.5"
+      final d = double.tryParse(value);
+      if (d != null) return d.ceil();
+    }
+    return 0;
   }
 
   @override
@@ -755,7 +766,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                                   borderRadius: BorderRadius.circular(5),
                                 ),
                                 child: Text(
-                                  '${leave['number_of_days']}d',
+                                  '${_parseDays(leave['number_of_days'])}d',
                                   style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
@@ -823,7 +834,6 @@ class _LeaveCardState extends State<_LeaveCard> {
 
   Widget _buildDetails(Map<String, dynamic> leave, Color statusColor) {
     final hasCancelNote = (leave['cancel_reason'] ?? '').toString().isNotEmpty;
-
     return Column(
       children: [
         Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
@@ -832,18 +842,17 @@ class _LeaveCardState extends State<_LeaveCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Duration
               _infoBlock(
                 icon: Icons.today_rounded,
                 iconColor: _primary,
                 title: 'Duration',
-                content:
-                    '${leave['number_of_days']} day${leave['number_of_days'] == 1 ? '' : 's'}'
-                    '  ·  ${_fmtDate(leave['leave_start_date'])}  →  ${_fmtDate(leave['leave_end_date'])}',
+                content: () {
+                  final days = _parseDays(leave['number_of_days']);
+                  return '$days day${days == 1 ? '' : 's'}'
+                      '  ·  ${_fmtDate(leave['leave_start_date'])}  →  ${_fmtDate(leave['leave_end_date'])}';
+                }(),
               ),
               const SizedBox(height: 10),
-
-              // Reason
               _infoBlock(
                 icon: Icons.person_outline_rounded,
                 iconColor: _primary,
@@ -851,8 +860,6 @@ class _LeaveCardState extends State<_LeaveCard> {
                 content: leave['reason'] ?? '-',
               ),
               const SizedBox(height: 10),
-
-              // ✅ Self-approved block
               _infoBlock(
                 icon: Icons.verified_rounded,
                 iconColor: _accent,
@@ -860,8 +867,6 @@ class _LeaveCardState extends State<_LeaveCard> {
                 content: 'Self Approved',
                 contentColor: _accent,
               ),
-
-              // Cancellation note
               if (hasCancelNote) ...[
                 const SizedBox(height: 10),
                 _infoBlock(
@@ -872,10 +877,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                   contentColor: _textMid,
                 ),
               ],
-
               const SizedBox(height: 10),
-
-              // Applied / Updated timestamps
               Row(
                 children: [
                   Expanded(
@@ -926,7 +928,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                 title,
                 style: const TextStyle(
                   fontSize: 11,
-                  color: _textMid,
+                  color: Color(0xFF64748B),
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.4,
                 ),
@@ -955,7 +957,7 @@ class _LeaveCardState extends State<_LeaveCard> {
         label,
         style: const TextStyle(
           fontSize: 10,
-          color: _textLight,
+          color: Color(0xFF94A3B8),
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
         ),
@@ -965,7 +967,7 @@ class _LeaveCardState extends State<_LeaveCard> {
         value,
         style: const TextStyle(
           fontSize: 11,
-          color: _textDark,
+          color: Color(0xFF0F172A),
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -974,9 +976,10 @@ class _LeaveCardState extends State<_LeaveCard> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Apply Leave Bottom Sheet
+// Apply Leave Bottom Sheet — fetches REAL balance from API
 // ═══════════════════════════════════════════════════════════════════════════════
 class _ApplyLeaveSheet extends StatefulWidget {
+  final String employeeId; // ✅ NEW: needed to fetch real balance
   final bool isEdit;
   final String? initialLeaveType;
   final DateTime? initialFromDate;
@@ -985,6 +988,7 @@ class _ApplyLeaveSheet extends StatefulWidget {
   final Function(String, DateTime, DateTime, String) onSubmit;
 
   const _ApplyLeaveSheet({
+    required this.employeeId, // ✅ NEW
     required this.isEdit,
     this.initialLeaveType,
     this.initialFromDate,
@@ -1002,6 +1006,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   static const Color _textDark = Color(0xFF0F172A);
   static const Color _textMid = Color(0xFF64748B);
 
+  // ✅ Leave options now populated from real API data
+  List<Map<String, dynamic>> _leaveOptions = [];
+  bool _loadingBalance = true; // ✅ show spinner while fetching balance
+
+  Map<String, dynamic>? _selectedTypeInfo;
   late String? leaveType;
   late DateTime? fromDate;
   late DateTime? toDate;
@@ -1014,12 +1023,154 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     fromDate = widget.initialFromDate;
     toDate = widget.initialToDate;
     reason = widget.initialReason ?? '';
+    _fetchLeaveBalance();
   }
+
+  // ✅ Fetch real leave balance from /employees/:empId/leave-balance
+  Future<void> _fetchLeaveBalance() async {
+    try {
+      final res = await ApiClient.get(
+        '/employees/${widget.employeeId}/leave-balance',
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['success'] == true) {
+          final List balances = data['data'] as List;
+
+          // ── Build options from server data ──────────────────────────────
+          // We only show Casual, Sick, Paid (and Comp-Off if needed).
+          // For Casual & Sick: monthly limit = 1 day → use remaining_this_month
+          // For Paid: is_unlimited → always available
+          final Map<String, Map<String, dynamic>> balMap = {
+            for (final b in balances) b['leave_type'] as String: b,
+          };
+
+          final options = <Map<String, dynamic>>[];
+
+          // ── Casual Leave ────────────────────────────────────────────────
+          final casual = balMap['Casual'];
+          if (casual != null) {
+            final remMonth =
+                (casual['remaining_this_month'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Casual',
+              'label': 'Casual Leave',
+              'icon': Icons.beach_access_rounded,
+              // ✅ remaining for THIS MONTH (max 1/month enforced by backend)
+              'remaining': remMonth,
+              'has_balance': remMonth > 0,
+              'subtitle': remMonth > 0
+                  ? '${remMonth.toStringAsFixed(1)} day${remMonth == 1.0 ? '' : 's'} left this month'
+                  : 'No balance this month',
+            });
+          }
+
+          // ── Sick Leave ──────────────────────────────────────────────────
+          final sick = balMap['Sick'];
+          if (sick != null) {
+            final remMonth =
+                (sick['remaining_this_month'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Sick',
+              'label': 'Sick Leave',
+              'icon': Icons.sick_rounded,
+              'remaining': remMonth,
+              'has_balance': remMonth > 0,
+              'subtitle': remMonth > 0
+                  ? '${remMonth.toStringAsFixed(1)} day${remMonth == 1.0 ? '' : 's'} left this month'
+                  : 'No balance this month',
+            });
+          }
+
+          // ── Paid Leave (unlimited) ──────────────────────────────────────
+          final paid = balMap['Paid'];
+          if (paid != null) {
+            final isUnlimited = paid['is_unlimited'] == true;
+            final remDays = isUnlimited
+                ? 999.0
+                : (paid['remaining_days'] as num?)?.toDouble() ?? 0.0;
+            options.add({
+              'type': 'Paid',
+              'label': 'Paid Leave',
+              'icon': Icons.event_available_rounded,
+              'remaining': remDays,
+              'has_balance': isUnlimited || remDays > 0,
+              'subtitle': isUnlimited
+                  ? 'Unlimited'
+                  : '${remDays.toStringAsFixed(1)} days left',
+            });
+          }
+
+          // ── Fallback: if server returned nothing, use safe defaults ─────
+          if (options.isEmpty) {
+            options.addAll(_fallbackOptions());
+          }
+
+          if (mounted) {
+            setState(() {
+              _leaveOptions = options;
+              _loadingBalance = false;
+            });
+          }
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // On any error → fall back to safe defaults (all disabled except Paid)
+    if (mounted) {
+      setState(() {
+        _leaveOptions = _fallbackOptions();
+        _loadingBalance = false;
+      });
+    }
+  }
+
+  /// Safe fallback used when API call fails
+  List<Map<String, dynamic>> _fallbackOptions() => [
+    {
+      'type': 'Casual',
+      'label': 'Casual Leave',
+      'icon': Icons.beach_access_rounded,
+      'remaining': 0.0,
+      'has_balance': false,
+      'subtitle': 'Unable to load balance',
+    },
+    {
+      'type': 'Sick',
+      'label': 'Sick Leave',
+      'icon': Icons.sick_rounded,
+      'remaining': 0.0,
+      'has_balance': false,
+      'subtitle': 'Unable to load balance',
+    },
+    {
+      'type': 'Paid',
+      'label': 'Paid Leave',
+      'icon': Icons.event_available_rounded,
+      'remaining': 999.0,
+      'has_balance': true,
+      'subtitle': 'Unlimited',
+    },
+  ];
 
   String _fmt(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/'
       '${d.month.toString().padLeft(2, '0')}/'
       '${d.year}';
+
+  Color _typeColor(String type) {
+    switch (type) {
+      case 'Casual':
+        return Colors.orange;
+      case 'Sick':
+        return Colors.red;
+      case 'Paid':
+        return Colors.green;
+      default:
+        return Colors.blue;
+    }
+  }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -1053,199 +1204,282 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           top: 16,
           bottom: MediaQuery.of(context).viewInsets.bottom + 28,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Drag handle ──────────────────────────────────────────────
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Apply for Leave',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _textDark,
-              ),
-            ),
-            const SizedBox(height: 2),
-            // ✅ Let manager know it's self-approved
-            const Text(
-              'Your leave will be approved instantly',
-              style: TextStyle(fontSize: 13, color: Color(0xFF0E9F6E)),
-            ),
-            const SizedBox(height: 20),
-            DropdownButtonFormField<String>(
-              initialValue: leaveType,
-              decoration: InputDecoration(
-                labelText: 'Leave Type *',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 16),
+              const Text(
+                'Apply for Leave',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _textDark,
                 ),
               ),
-              items: const [
-                DropdownMenuItem(value: 'Casual', child: Text('Casual Leave')),
-                DropdownMenuItem(value: 'Sick', child: Text('Sick Leave')),
-                DropdownMenuItem(value: 'Paid', child: Text('Paid Leave')),
-              ],
-              onChanged: (v) => setState(() => leaveType = v),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _datePicker(
-                    label: 'From Date *',
-                    value: fromDate,
-                    onPick: () async {
-                      final p = await showDatePicker(
-                        context: context,
-                        initialDate: fromDate ?? DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime(DateTime.now().year + 2),
-                        builder: (ctx, child) => Theme(
-                          data: Theme.of(ctx).copyWith(
-                            colorScheme: const ColorScheme.light(
-                              primary: _primary,
-                            ),
-                          ),
-                          child: child!,
+              const SizedBox(height: 2),
+              const Text(
+                'Your leave will be approved instantly',
+                style: TextStyle(fontSize: 13, color: Color(0xFF0E9F6E)),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Leave type tiles ─────────────────────────────────────────
+              // ✅ Show spinner while fetching balance
+              if (_loadingBalance)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: CircularProgressIndicator(
+                      color: _primary,
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _leaveOptions.map((opt) {
+                    final type = opt['type'] as String;
+                    final label = opt['label'] as String;
+                    final icon = opt['icon'] as IconData;
+                    final subtitle = opt['subtitle'] as String;
+                    final noBalance = opt['has_balance'] == false;
+                    final selected = leaveType == type;
+                    final color = _typeColor(type);
+
+                    return GestureDetector(
+                      onTap: noBalance
+                          ? null
+                          : () => setState(() {
+                              leaveType = type;
+                              _selectedTypeInfo = opt;
+                            }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: (MediaQuery.of(context).size.width - 40 - 8) / 2,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                      );
-                      if (p != null) {
-                        setState(() {
-                          fromDate = p;
-                          toDate = null;
-                        });
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _datePicker(
-                    label: 'To Date *',
-                    value: toDate,
-                    enabled: fromDate != null,
-                    onPick: fromDate == null
-                        ? null
-                        : () async {
-                            final p = await showDatePicker(
-                              context: context,
-                              initialDate: toDate ?? fromDate!,
-                              firstDate: fromDate!,
-                              lastDate: DateTime(DateTime.now().year + 2),
-                              builder: (ctx, child) => Theme(
-                                data: Theme.of(ctx).copyWith(
-                                  colorScheme: const ColorScheme.light(
-                                    primary: _primary,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? color.withOpacity(0.08)
+                              : noBalance
+                              ? const Color(0xFFF8FAFC)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected ? color : const Color(0xFFE2E8F0),
+                            width: selected ? 1.8 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              icon,
+                              size: 16,
+                              color: noBalance ? Colors.grey : color,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: noBalance
+                                          ? Colors.grey
+                                          : Colors.black,
+                                    ),
                                   ),
-                                ),
-                                child: child!,
+                                  // ✅ Shows real balance / "No balance this month"
+                                  Text(
+                                    subtitle,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: noBalance ? Colors.grey : color,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            );
-                            if (p != null) setState(() => toDate = p);
-                          },
-                  ),
+                            ),
+                            if (selected)
+                              Icon(Icons.check_circle, size: 16, color: color),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              ],
-            ),
-            if (fromDate != null && toDate != null) ...[
-              const SizedBox(height: 8),
+
+              const SizedBox(height: 12),
+
+              // ── Date pickers ─────────────────────────────────────────────
               Row(
                 children: [
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
+                  Expanded(
+                    child: _datePicker(
+                      label: 'From Date *',
+                      value: fromDate,
+                      onPick: () async {
+                        final p = await showDatePicker(
+                          context: context,
+                          initialDate: fromDate ?? DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(DateTime.now().year + 2),
+                          builder: (ctx, child) => Theme(
+                            data: Theme.of(ctx).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: _primary,
+                              ),
+                            ),
+                            child: child!,
+                          ),
+                        );
+                        if (p != null) {
+                          setState(() {
+                            fromDate = p;
+                            toDate = null;
+                          });
+                        }
+                      },
                     ),
-                    decoration: BoxDecoration(
-                      color: _primary.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${toDate!.difference(fromDate!).inDays + 1} day(s)',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: _primary,
-                      ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _datePicker(
+                      label: 'To Date *',
+                      value: toDate,
+                      enabled: fromDate != null,
+                      onPick: fromDate == null
+                          ? null
+                          : () async {
+                              final p = await showDatePicker(
+                                context: context,
+                                initialDate: toDate ?? fromDate!,
+                                firstDate: fromDate!,
+                                lastDate: DateTime(DateTime.now().year + 2),
+                                builder: (ctx, child) => Theme(
+                                  data: Theme.of(ctx).copyWith(
+                                    colorScheme: const ColorScheme.light(
+                                      primary: _primary,
+                                    ),
+                                  ),
+                                  child: child!,
+                                ),
+                              );
+                              if (p != null) setState(() => toDate = p);
+                            },
                     ),
                   ),
                 ],
               ),
+
+              if (fromDate != null && toDate != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${toDate!.difference(fromDate!).inDays + 1} day(s)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
+              // ── Reason ───────────────────────────────────────────────────
+              TextFormField(
+                initialValue: reason,
+                maxLines: 3,
+                onChanged: (v) => reason = v,
+                decoration: InputDecoration(
+                  labelText: 'Reason *',
+                  alignLabelWithHint: true,
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Submit ───────────────────────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () {
+                    if (leaveType == null)
+                      return _snack('Please select leave type');
+                    if (fromDate == null)
+                      return _snack('Please select from date');
+                    if (toDate == null) return _snack('Please select to date');
+                    if (reason.trim().isEmpty)
+                      return _snack('Please enter a reason');
+                    // ✅ Block if no balance (checked from real API data)
+                    if (_selectedTypeInfo?['has_balance'] == false) {
+                      return _snack('No balance remaining for this leave type');
+                    }
+                    widget.onSubmit(leaveType!, fromDate!, toDate!, reason);
+                  },
+                  child: const Text(
+                    'SUBMIT REQUEST',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
             ],
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: reason,
-              maxLines: 3,
-              onChanged: (v) => reason = v,
-              decoration: InputDecoration(
-                labelText: 'Reason *',
-                alignLabelWithHint: true,
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () {
-                  if (leaveType == null) {
-                    return _snack('Please select leave type');
-                  }
-                  if (fromDate == null) {
-                    return _snack('Please select from date');
-                  }
-                  if (toDate == null) return _snack('Please select to date');
-                  if (reason.trim().isEmpty) {
-                    return _snack('Please enter a reason');
-                  }
-                  widget.onSubmit(leaveType!, fromDate!, toDate!, reason);
-                },
-                child: const Text(
-                  'SUBMIT REQUEST',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
